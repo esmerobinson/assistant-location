@@ -1,62 +1,99 @@
 name: journal-swipe-back
 
-# Runs UITests/JournalSwipeBackUITest.swift on an iOS 26 simulator: Journal
-# (self-wrapped More-overflow module) opened by shortcut, swiped back, then
-# re-opened by tile and by shortcut. Also streams the app's log so the
-# "GLMoreNavState" lines (selected VC / More stack / wrapper children) are in
-# the uploaded artifact.
+# Runs the Journal navigation UI tests (JournalNavigationStressUITest,
+# JournalSwipeBackUITest, ...) on two simulator runtimes: iOS 26 (macos-15
+# image) and iOS 27.0 (the `xcode-27` preview runner image, which ships Xcode
+# 27.x and iOS 27.0-27.2 simulators per actions/runner-images'
+# xcode-27-arm64-Readme.md). Also streams the app log, dumps crash reports
+# (DiagnosticReports/*Overland*.ips) and uploads the xcresult.
 #
 # Manual only, opt-in, like sim-test (see MODULES.md "CI budget").
+# Inputs: `tests` is a comma-separated list of UITests classes; `probe_only`
+# just lists the runner's Xcode versions and simulator runtimes and exits.
 on:
   workflow_dispatch:
+    inputs:
+      tests:
+        description: "Comma-separated UITests classes (without the UITests/ prefix)"
+        default: "JournalNavigationStressUITest,JournalSwipeBackUITest"
+      probe_only:
+        description: "Only list Xcode versions and simulator runtimes"
+        type: boolean
+        default: false
+      matrix_only:
+        description: "Run only one matrix entry: ios26 or ios27 (empty = both)"
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  journal-swipe-back:
-    runs-on: macos-15
+  journal-nav:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # The name axis is filtered by the matrix_only input; the include
+        # entries add the runner/runtime for whichever names survive.
+        name: ${{ fromJSON(inputs.matrix_only == '' && '["ios26","ios27"]' || format('["{0}"]', inputs.matrix_only)) }}
+        include:
+          - name: ios26
+            runner: macos-15
+            runtime_prefix: "com.apple.CoreSimulator.SimRuntime.iOS-26"
+          - name: ios27
+            runner: xcode-27
+            runtime_prefix: "com.apple.CoreSimulator.SimRuntime.iOS-27-0"
     steps:
       - uses: actions/checkout@v4
 
+      - name: Probe runner (Xcode versions, runtimes)
+        run: |
+          sw_vers
+          ls -d /Applications/Xcode*.app
+          xcodebuild -version || true
+          xcrun simctl list runtimes
+
       - name: Select newest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+        if: ${{ !inputs.probe_only }}
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | grep -v Release_Candidate | sort -V | tail -1)" && xcodebuild -version
 
       - name: Add UITest target
+        if: ${{ !inputs.probe_only }}
         run: |
           gem install xcodeproj --no-document
           ruby scripts/add_uitest_target.rb
 
       - name: Install pods
+        if: ${{ !inputs.probe_only }}
         run: pod install
 
-      - name: Boot iOS 26 simulator
+      - name: Boot simulator
+        if: ${{ !inputs.probe_only }}
         run: |
           set -euo pipefail
-          # Same pick as sim-test.yml / unit-test.yml: the Journal/More
-          # behaviour is iOS 26 (Liquid Glass tab bar) specific.
-          RUNTIME_ID=$(xcrun simctl list runtimes -j | jq -r \
-            '[.runtimes[] | select(.isAvailable) | select(.identifier | startswith("com.apple.CoreSimulator.SimRuntime.iOS-26"))] | sort_by(.version) | last | .identifier // empty')
-          test -n "$RUNTIME_ID" || { echo "FATAL: no iOS 26 runtime"; exit 1; }
+          RUNTIME_ID=$(xcrun simctl list runtimes -j | jq -r --arg p "${{ matrix.runtime_prefix }}" \
+            '[.runtimes[] | select(.isAvailable) | select(.identifier | startswith($p))] | sort_by(.version) | last | .identifier // empty')
+          test -n "$RUNTIME_ID" || { echo "FATAL: no runtime ${{ matrix.runtime_prefix }}*"; exit 1; }
+          echo "RUNTIME_ID=$RUNTIME_ID"
           UDID=$(xcrun simctl list devices available -j | jq -r --arg rt "$RUNTIME_ID" \
             '.devices[$rt][]? | select(.name | test("^iPhone")) | .udid' | head -1)
           test -n "$UDID" || { echo "FATAL: no iPhone under $RUNTIME_ID"; exit 1; }
           echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
-          # Same pre-seeded default sim-test.yml uses to skip Esme's
-          # notification-permission alert, which would cover the screen.
+          xcrun simctl list devices | grep "$UDID"
           xcrun simctl spawn "$UDID" defaults write com.oliverullman.assistantlocation UITestSkipNotificationPrompt -bool true
           # Without a pre-seeded endpoint the unbaked build raises
-          # "GL_BAKED_HOST is empty or unbaked" in TrackerAppLifecycle at
-          # launch (run 1 of this workflow: app dead before the test could
-          # touch it). Same defaults sim-test.yml writes; nothing listens
-          # there, which is fine, this test never needs the server.
+          # "GL_BAKED_HOST is empty or unbaked" at launch. Nothing listens
+          # there, which is fine, these tests never need the server.
           xcrun simctl spawn "$UDID" defaults write com.oliverullman.assistantlocation GLAPIEndpointDefaults "http://127.0.0.1:8399/overland"
           xcrun simctl spawn "$UDID" defaults write com.oliverullman.assistantlocation GLAPIAccessTokenDefaults "simtok0123456789"
 
-      - name: Run JournalSwipeBackUITest
+      - name: Run Journal UI tests
+        if: ${{ !inputs.probe_only }}
         run: |
           set -o pipefail
           xcrun simctl spawn "$SIM_UDID" log stream --level debug --style compact \
@@ -64,27 +101,45 @@ jobs:
           LOG_PID=$!
           sleep 2
           rm -f /tmp/glnav.log
+          ONLY=""
+          IFS=',' read -ra CLASSES <<< "${{ inputs.tests }}"
+          for c in "${CLASSES[@]}"; do ONLY="$ONLY -only-testing:UITests/$c"; done
           RC=0
           xcodebuild test \
             -workspace Overland.xcworkspace \
             -scheme OverlandUITests \
             -destination "id=$SIM_UDID" \
-            -only-testing:UITests/JournalSwipeBackUITest \
+            $ONLY \
+            -resultBundlePath build/result.xcresult \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             2>&1 | tee test-output.log || RC=$?
           sleep 2
           kill $LOG_PID 2>/dev/null || true
-          echo "=== app state log (/tmp/glnav.log) ==="
+          echo "=== per-test results ==="
+          grep -E "^Test Case '.*' (passed|failed)" test-output.log | sed -E "s/ \([0-9.]+ seconds\)//" || true
+          echo "=== STRESS failures ==="
+          grep -E "error: .*\[[A-Z] seed=" test-output.log | cut -c1-400 || true
           cp /tmp/glnav.log glnav.log 2>/dev/null || echo "(no state log written)"
-          cat glnav.log 2>/dev/null | cut -c1-400 | head -80 || true
           exit $RC
 
+      - name: Collect crash reports
+        if: ${{ always() && !inputs.probe_only }}
+        run: |
+          mkdir -p crash-logs
+          ls -la ~/Library/Logs/DiagnosticReports/ || true
+          cp ~/Library/Logs/DiagnosticReports/*Overland*.ips crash-logs/ 2>/dev/null || echo "no Overland .ips crash reports"
+          cp ~/Library/Logs/DiagnosticReports/*Overland*.crash crash-logs/ 2>/dev/null || true
+          for f in crash-logs/*; do [ -f "$f" ] && { echo "=== $f ==="; head -c 6000 "$f"; }; done || true
+
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() && !inputs.probe_only }}
         with:
-          name: journal-swipe-back-logs
+          name: journal-nav-logs-${{ matrix.name }}
           path: |
             app.log
             glnav.log
             test-output.log
+            crash-logs
+            build/result.xcresult
+          if-no-files-found: warn
