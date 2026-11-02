@@ -32,6 +32,8 @@ input,textarea{-webkit-user-select:text;user-select:text}
 .sheetlayer .bs .save{margin:auto 0 10px!important}
 .sheetlayer .bs .pair{margin-top:auto}
 .sheetlayer .bs.cf .acts .save{margin:0!important}
+/* A long issue text fills the sheet to its min height, leaving no free space; keep a floor between the recipient line and the buttons. */
+.sheetlayer .bs.cf .to{margin-bottom:16px}
 .sheetlayer .bs.nf{min-height:0}
 .sheetlayer .bs.nf .acts .save{margin:24px 0 10px!important}
 

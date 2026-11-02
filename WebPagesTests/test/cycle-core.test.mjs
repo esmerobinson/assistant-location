@@ -768,3 +768,29 @@ test('goal: deleting a log after the deadline applies the miss', () => {
   const r = goalDel(days, ['2026-10-30'], at('2026-11-20', 9));
   assert.equal(r.g.status, 'failed'); assert.deepEqual(r.lines.map((x) => [x.day, x.pts]), [['2026-11-05', -50]]);
 });
+
+// ---- Raise issue ----
+test('issueHeldUntil: 08:00 the next calendar day in the sender tz, whatever the time of day', () => {
+  const next = at('2026-10-21', 8);
+  assert.equal(C.issueHeldUntil(at('2026-10-20', 7), TZ), next, '7 am still waits for the next morning, not this one');
+  assert.equal(C.issueHeldUntil(at('2026-10-20', 19, 59), TZ), next);
+  assert.equal(C.issueHeldUntil(at('2026-10-20', 23), TZ), next);
+});
+test('issueHeldUntil: DST days resolve the wall time, not now + 24h', () => {
+  // US fall back: Sun 2026-11-01 is 25 h long, so 08:00 that morning is EST (UTC-5).
+  assert.equal(C.issueHeldUntil(Date.parse('2026-10-31T23:00:00-04:00'), TZ), Date.parse('2026-11-01T08:00:00-05:00'));
+  // US spring forward: Sun 2027-03-14 is 23 h long, 08:00 is EDT (UTC-4).
+  assert.equal(C.issueHeldUntil(Date.parse('2027-03-13T20:00:00-05:00'), TZ), Date.parse('2027-03-14T08:00:00-04:00'));
+  // The sender's calendar decides: 23:00 New York is already the next UTC day, but the answer is still Oct 21 08:00 New York.
+  assert.equal(C.issueHeldUntil(Date.parse('2026-10-21T03:00:00Z'), TZ), at('2026-10-21', 8));
+});
+test('buildItem: held_until overrides the Ask hold, even when the couple holds asks for 0 minutes', () => {
+  const now = at('2026-10-20', 22), until = C.issueHeldUntil(now, TZ);
+  for (const hold_ask_min of [0, 60]) {
+    const couple = { id: 'c', hold_ask_min, hold_focus_min: 0, hold_truth_min: 0, hold_kudos_min: 0 };
+    const it = C.buildItem({ id: 'i', couple, me: ME, to: YOU, kind: 'ask', body: 'x', origin: 'issue', response_type: 'apologize', ask_type: 'ownup', needs_note: true, held_until: until, now });
+    assert.deepEqual([it.status, it.held_until, it.delivered_at, it.origin, it.response_type, it.ask_type], ['held', new Date(until).toISOString(), null, 'issue', 'apologize', 'ownup']);
+  }
+  const couple = { id: 'c', hold_ask_min: 0 };
+  assert.throws(() => C.buildItem({ id: 'i', couple, me: ME, to: YOU, kind: 'ask', body: 'x', held_until: until, at: until, now }), /exclusive/);
+});

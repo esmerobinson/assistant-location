@@ -195,7 +195,7 @@ describe('nudges', () => {
   test('Today has no Send row, even from a saved order that still lists it', async () => {
     // Send was removed from Today; an order saved before that must drop it, keep the user's arrangement
     // and append rows added since instead of rendering a dead Send row.
-    const cases = [[undefined, ['nudges', 'todo', 'fight']], [['send', 'todo', 'fight'], ['todo', 'fight', 'nudges']], [['send', 'nudges', 'todo', 'fight'], ['nudges', 'todo', 'fight']], [['ack', 'todo', 'nudges', 'fight'], ['todo', 'nudges', 'fight']]];
+    const cases = [[undefined, ['issue', 'nudges', 'todo', 'fight']], [['send', 'todo', 'fight'], ['todo', 'fight', 'issue', 'nudges']], [['send', 'nudges', 'todo', 'fight'], ['nudges', 'todo', 'fight', 'issue']], [['ack', 'todo', 'nudges', 'fight'], ['todo', 'nudges', 'fight', 'issue']]];
     for (const [rows, want] of cases) {
       const s = seed(ME);
       if (rows) s['priv.' + ME].prefs.rows = rows;

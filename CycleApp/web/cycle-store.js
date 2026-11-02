@@ -364,7 +364,7 @@ var CycleStore = (function () {
     if (!m || !S.couple) return out;
     list('items').forEach(function (i) {
       if (i.sender_id === me() && i.status === 'held' && !i.deleted_at)
-        out.push({ id: 'held-' + i.id, at: Math.max(C.ms(i.held_until), now + 1000), title: 'Still send?', body: i.kind.charAt(0).toUpperCase() + i.kind.slice(1), route: 'held/' + i.id });
+        out.push({ id: 'held-' + i.id, at: Math.max(C.ms(i.held_until), now + 1000), title: i.origin === 'issue' ? 'Do you still want to send this?' : 'Still send?', body: i.origin === 'issue' ? i.body : i.kind.charAt(0).toUpperCase() + i.kind.slice(1), route: 'held/' + i.id });
     });
     // A to do I scheduled for myself appears for me at T. One my partner scheduled reaches
     // me as a remote push from the box at T, so a local notification here would be a duplicate.

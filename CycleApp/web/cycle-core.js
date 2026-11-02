@@ -39,6 +39,12 @@ var CycleCore = (function () {
     if (localHour(now, senderTz) < NUDGE_CUTOFF_H) return now;
     return zonedMs(addDays(localDay(now, senderTz), 1), NUDGE_MORNING_H, 0, recipientTz);
   }
+  // Raise issue: an issue the sender writes tonight reaches the partner no earlier than 08:00 the next calendar day
+  // on the sender's clock, and only after the sender confirms it (the "Still send?" card). Pure so the DST days
+  // (23 / 25 hour days) are testable; zonedMs resolves the wall time, not now + 24h.
+  function issueHeldUntil(now, tz) {
+    return zonedMs(addDays(localDay(now, tz), 1), NUDGE_MORNING_H, 0, tz);
+  }
   // Library sections. Pinned and All keep the author's manual order (sort_order); Recent is the 4
   // most recently sent-or-added unpinned nudges. A nudge sits in exactly one section: All is what
   // Pinned and Recent leave behind.
@@ -153,7 +159,10 @@ var CycleCore = (function () {
   function scheduleAt(couple, kind, at, now) { return Math.max(at, heldUntil(now, holdMinutes(couple, kind))); }
 
   function buildItem(o) {
-    var held = o.at != null ? 0 : holdMinutes(o.couple, o.kind);
+    // o.held_until (ms) is an absolute hold that replaces the couple's per-kind hold. Raise issue relies on it so the
+    // Ask hold setting (even 0) can never shorten the next-morning delay. A scheduled item (o.at) is never an issue.
+    if (o.held_until != null && o.at != null) throw new Error('held_until and at are exclusive');
+    var held = o.held_until != null ? Math.max(1, Math.ceil((o.held_until - o.now) / MIN)) : o.at != null ? 0 : holdMinutes(o.couple, o.kind);
     // o.at (ms): scheduled, born delivered with delivered_at = o.at, no hold.
     var due = o.at != null ? o.at : o.now;
     var item = {
@@ -165,7 +174,7 @@ var CycleCore = (function () {
       period: o.kind === 'ask' && o.ask_type === 'habit' ? o.period : null,
       points_earn: o.kind === 'ask' && o.points_earn != null ? o.points_earn : null, points_miss: o.kind === 'ask' && o.points_miss != null ? o.points_miss : null, needs_note: o.kind === 'ask' && !!o.needs_note,
       origin: o.origin || null, response_type: o.response_type || null, fight_marker_id: o.fight_marker_id || null,
-      held_until: held > 0 ? new Date(heldUntil(o.now, held)).toISOString() : null,
+      held_until: o.held_until != null ? new Date(o.held_until).toISOString() : held > 0 ? new Date(heldUntil(o.now, held)).toISOString() : null,
       status: held > 0 ? 'held' : 'delivered',
       delivered_at: held > 0 ? null : new Date(due).toISOString(),
       opened_at: null, kept: null,
@@ -498,7 +507,7 @@ var CycleCore = (function () {
     localDay: localDay, addDays: addDays, dayDiff: dayDiff, dow: dow, weekStart: weekStart,
     appendSpeech: appendSpeech, dueInfo: dueInfo, holdMinutes: holdMinutes, heldUntil: heldUntil, countdown: countdown, heldLabel: heldLabel, durText: durText, ms: ms,
     isScheduled: isScheduled, scheduleAt: scheduleAt, buildItem: buildItem, askToTodo: askToTodo,
-    zonedMs: zonedMs, deliverAt: deliverAt, sectionNudges: sectionNudges,
+    zonedMs: zonedMs, deliverAt: deliverAt, issueHeldUntil: issueHeldUntil, sectionNudges: sectionNudges,
     addMonths: addMonths, splitPayout: splitPayout, awardStatus: awardStatus,
     earnPts: earnPts, missPts: missPts, periodOf: periodOf, habitCount: habitCount, habitMisses: habitMisses, requireNote: requireNote, isEdited: isEdited,
     computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, dailyDigest: dailyDigest, phase: phase, needsYou: needsYou, monthGrid: monthGrid,

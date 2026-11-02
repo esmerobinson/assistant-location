@@ -54,6 +54,10 @@ const TODOS = [
   td('t-ownup-open', { title: 'I went quiet when you asked about Friday and left the room', type: 'ownup', needs_note: true, points_earn: 0, points_miss: 0 }),
   td('t-ownup-done', { title: 'I interrupted you at dinner and brushed off what you said', type: 'ownup', owner_id: HER, created_by: HER, needs_note: true, done_at: iso(6) }),
   // Scheduled: stamped with a future time, so they show only under the To do screen's "Scheduled" section until then.
+  // Raise issue: one delivered each way (apologize owed by her, change owed by me) plus one she finished.
+  td('t-iss-mine', { title: 'You went quiet at dinner and I did not know whether I had done something wrong', owner_id: HER, created_by: ME, type: 'ownup', needs_note: true, item_id: 'i-iss-sent', created_at: iso(30) }),
+  td('t-iss-done', { title: 'Please text when you are running late', owner_id: HER, created_by: ME, item_id: 'i-iss-done', created_at: iso(60), done_at: iso(40) }),
+  td('t-iss-hers', { title: 'You promised to call the landlord about the heating and it is still not done', type: 'task', created_by: HER, item_id: 'i-iss-hers', created_at: iso(20) }),
   td('t-sched-me', { title: 'Renew the passport before the trip in March', created_at: iso(-44) }),
   td('t-sched-her', { title: 'Take the recycling out', owner_id: HER, created_by: ME, item_id: 'i-sched', created_at: iso(-20) }),
 ];
@@ -63,6 +67,11 @@ const SHARED = {
   rows: {
     items: Object.fromEntries([item('i-kg', { kind: 'kudos', ask_type: null, body: 'Thank you for cooking when I was exhausted this week', gift_points: 5, status: 'delivered', delivered_at: iso(30), held_until: null }),
       item('i-kr', { kind: 'kudos', ask_type: null, sender_id: HER, recipient_id: ME, body: 'You listened', points: false, status: 'delivered', delivered_at: iso(10), held_until: null }),
+      item('i-iss-held', { body: 'You said you would plan the weekend and then left it all to me again, and I would like that to change', origin: 'issue', response_type: 'change', held_until: iso(-10) }),
+      item('i-iss-ready', { body: 'You brushed me off in front of your friends', origin: 'issue', response_type: 'apologize', ask_type: 'ownup', needs_note: true, held_until: iso(1) }),
+      item('i-iss-sent', { body: 'You went quiet at dinner', origin: 'issue', response_type: 'apologize', ask_type: 'ownup', needs_note: true, status: 'delivered', delivered_at: iso(30), held_until: iso(31) }),
+      item('i-iss-done', { body: 'Please text when you are running late', origin: 'issue', response_type: 'change', status: 'delivered', delivered_at: iso(60), held_until: iso(61) }),
+      item('i-iss-hers', { body: 'You promised to call the landlord', origin: 'issue', response_type: 'change', sender_id: HER, recipient_id: ME, status: 'delivered', delivered_at: iso(20), held_until: iso(21) }),
       item('i-held', { body: 'Clean the kitchen before Sunday dinner' }),
       item('i-ready', { body: 'Pick up the parcel', held_until: iso(1) }),
       item('i-sched', { body: 'Take the recycling out', held_until: null, status: 'delivered', delivered_at: iso(-20) })].map((r) => [r.id, r])),
@@ -128,7 +137,9 @@ const SCENARIOS = [
   ['nudge-incoming', ['nudgein:s1']], ['nudge-new', ['row:nudges', 'nudgenew']],
   ['todo-new-later', ['tab:todo', 'addpick', 'newtodo:task', 'nwhen:later']], ['todo-new-later-me', ['tab:todo', 'addpick', 'newtodo:task', 'nfor:me', 'nwhen:later']],
   ['ownup-new', ['tab:todo', 'addpick', 'newtodo:ownup']], ['ownup-new-later', ['tab:todo', 'addpick', 'newtodo:ownup', 'nwhen:later']], ['ownup-edit', ['tab:todo', 'etodo:t-ownup-open']],
-  ['ownup-note', ['tab:todo', 'done:t-ownup-open']], ['ownup-detail-hers', ['tview:t-ownup-done']]
+  ['ownup-note', ['tab:todo', 'done:t-ownup-open']], ['ownup-detail-hers', ['tview:t-ownup-done']],
+  ['issues', ['row:issue']], ['issue-still', ['row:issue', 'still:i-iss-held']], ['issue-still-ready', ['row:issue', 'still:i-iss-ready']],
+  ['issue-new', ['row:issue', 'issuenew']], ['issue-new-long', ['row:issue', 'issuenew', 'fill:ibody=You said you would plan the weekend and then left it all to me again, and I would like that to change because it keeps happening', 'itype:change']]
 ];
 
 // Runs in the page. Returns violation strings: "<selector> <what> <numbers>".

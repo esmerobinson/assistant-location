@@ -161,7 +161,7 @@ function tabbar(active) {
   return '<nav class="tabbar">' + tab('home', 'moon', 'Today') + tab('todo', 'circ', 'Actions', n) + tab('us', 'us', 'Us') + '</nav>';
 }
 function tabFor(r) { return ['todo', 'tododetail', 'challenge', 'newch'].indexOf(r) >= 0 ? 'todo' : ['us', 'points', 'shop', 'settings', 'cycle'].indexOf(r) >= 0 ? 'us' : 'home'; }
-function backLabel() { var p = ui.stack[ui.stack.length - 1]; return { home: 'Today', us: 'Us', cycle: 'Cycle', points: 'Points', todo: 'Actions', settings: 'Settings', nudges: 'Reminders', nudge: 'Reminder', nudgedone: 'Done' }[p && p.route] || 'Today'; }
+function backLabel() { var p = ui.stack[ui.stack.length - 1]; return { home: 'Today', us: 'Us', cycle: 'Cycle', points: 'Points', todo: 'Actions', settings: 'Settings', nudges: 'Reminders', nudge: 'Reminder', nudgedone: 'Done', issues: 'Raise issue', issuenew: 'Raise issue' }[p && p.route] || 'Today'; }
 function back() { var p = ui.stack.pop(); ui.route = p ? p.route : 'home'; ui.d = {}; ui.sheet = null; render(); }
 function go(route, extra) {
   ui.stack.push({ route: ui.route });
@@ -225,7 +225,7 @@ function rowsOrder() {
   // The saved order wins. Rows added since it was saved (a new default id) are appended in default order,
   // and saved ids no longer in the default set (the removed Send row) are dropped, so an old order never
   // renders a row with no label or screen and never loses the user's arrangement.
-  var def = ['nudges', 'todo', 'fight'], kept = (prefs().rows || []).filter(function (id) { return def.indexOf(id) >= 0; });
+  var def = ['issue', 'nudges', 'todo', 'fight'], kept = (prefs().rows || []).filter(function (id) { return def.indexOf(id) >= 0; });
   return kept.concat(def.filter(function (id) { return kept.indexOf(id) < 0; }));
 }
 function rowMeta(id) {
@@ -235,6 +235,7 @@ function rowMeta(id) {
     return nudgeTier('esme').nudges.filter(live).length + ' saved';
   }
   if (id === 'todo') return todoCount();
+  if (id === 'issue') return issueEntries().filter(function (e) { return e.open; }).length || 'None';
   var f = S.priv.fights.slice().sort(function (a, b) { return b.at - a.at; })[0];
   if (!f) return 'None';
   var d = C.localDay(f.at, tz());
@@ -254,7 +255,7 @@ function digestCard(led) {
       return '<p class="dgl' + (l.pts < 0 ? ' ls' : '') + '"><b>' + sg(l.pts) + '</b><span>' + esc(l.label) + (l.who ? ' &middot; ' + esc(l.who) : '') + '</span></p>';
     }).join('') + (more > 0 ? '<p class="dgm">+' + more + ' more</p>' : '') + '</div>';
 }
-var ROWLAB = { nudges: 'Reminders', todo: 'Actions', fight: 'Log fight' };
+var ROWLAB = { issue: 'Raise issue', nudges: 'Reminders', todo: 'Actions', fight: 'Log fight' };
 
 SCREEN.home = function () {
   var led = ledger(), t = today();
@@ -315,7 +316,7 @@ function stillSheet() {
     (i.origin === 'fight' ? '<p class="fm"><svg><use href="#fa"/></svg>Fight</p>' : '') +
     (e ? '<div class="ta"><textarea data-d="edit">' + esc(val('edit', i.body)) + '</textarea></div>' : '<p class="ask">' + esc(i.body) + '</p>') +
     '<p class="to">To ' + esc(nameOf(i.recipient_id)) + '</p>' +
-    '<div class="acts"><div class="save" data-a="' + (e ? 'editsave' : 'deliver') + ':' + i.id + '">' + (e ? 'Save' : 'Send') + '</div>' + (e ? '' : '<div class="ghost" data-a="edit:' + i.id + '">Edit</div>') + '<div class="tdrop" data-a="drop:' + i.id + '">Drop</div></div>');
+    '<div class="acts"><div class="save' + (!e && i.origin === 'issue' && C.ms(i.held_until) > now() ? ' dis' : '') + '" data-a="' + (e ? 'editsave' : 'deliver') + ':' + i.id + '">' + (e ? 'Save' : 'Send') + '</div>' + (e ? '' : '<div class="ghost" data-a="edit:' + i.id + '">Edit</div>') + '<div class="tdrop" data-a="drop:' + i.id + '">Drop</div></div>');
 }
 
 function tdDesc(x) { return x.description ? '<p class="tdd">' + esc(x.description) + '</p>' : ''; }
@@ -786,6 +787,43 @@ SCREEN.nudgenew = function () {
       '<div class="pair"><span class="ghost" data-a="nudgesave">Save</span><span class="save" data-a="nudgenewsend">' + (late ? 'Send tomorrow<span class="qm" data-a="tip">?</span>' : 'Send') + '</span></div>'), { tab: false });
 };
 
+// ---- Raise issue ----------------------------------------------------------------------------------------------------
+// An issue is an ask item (origin 'issue') held until 08:00 the next day and sent only when its sender confirms the
+// "Still send?" card. Delivery turns it into an ownup (Apologize) or task (Change) to do for the partner, linked by item_id.
+var ISSUE_TYPE = { apologize: 'Apologize', change: 'Change' };
+function issueEntries() {
+  var me = St.me();
+  return L('items').filter(function (i) { return i.origin === 'issue' && !i.deleted_at && i.status !== 'dropped' && (i.sender_id === me || i.status === 'delivered'); })
+    .map(function (i) {
+      var t = L('todos').filter(function (x) { return x.item_id === i.id && !x.deleted_at; })[0];
+      return { item: i, todo: t, mine: i.sender_id === me, open: i.status === 'held' || !!(t && !t.done_at) };
+    });
+}
+SCREEN.issues = function () {
+  var es = issueEntries();
+  var held = es.filter(function (e) { return e.item.status === 'held'; }).sort(function (a, b) { return C.ms(a.item.held_until) - C.ms(b.item.held_until); });
+  function sent(list, who) {
+    list.sort(function (a, b) { return byDelivered(a.item, b.item); });
+    return list.length ? list.map(function (e) {
+      var d = C.localDay(C.ms(e.item.delivered_at), tz());
+      return '<div class="td-row"' + (e.todo ? ' data-a="tview:' + e.todo.id + '"' : '') + '><span class="om"></span><div class="tx"><p>' + esc(e.item.body) + '</p><small>' + ISSUE_TYPE[e.item.response_type] + ' &middot; ' + who + ' &middot; ' + fmtDay(d) + ' &middot; ' + (e.todo && e.todo.done_at ? 'Done' : 'Open') + '</small></div></div>';
+    }).join('') : '<p class="empty">None</p>';
+  }
+  var yours = es.filter(function (e) { return e.mine && e.item.status === 'delivered'; }), theirs = es.filter(function (e) { return !e.mine; });
+  return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Raise issue</h2></div><span class="plus" data-a="issuenew">' + ic('plus') + '</span></header>' +
+    section('Held', held.length ? held.map(function (e) {
+      var i = e.item;
+      return '<div class="td-row hrow2" data-a="still:' + i.id + '"><span class="om"><svg class="hold-ic"><use href="#hg"/></svg></span><p class="ht">' + esc(i.body) + '</p><p class="hm2">' + ISSUE_TYPE[i.response_type] + ' &middot; To ' + pn() + '</p><div class="hact"><span class="cd">' + C.countdown(C.ms(i.held_until), now()) + '</span></div></div>';
+    }).join('') : '<p class="empty">None</p>', 'held') +
+    section('Yours', sent(yours, 'To ' + pn()), 'ro2') + section('From ' + pnx(pName()), sent(theirs, 'From ' + pn()), 'ro2')); // the Still send? sheet is appended by render() (sheetFor)
+};
+SCREEN.issuenew = function () {
+  return phone('p2 nd', '<header class="hd"><div><h2>Raise issue</h2><p class="dl">&nbsp;</p></div><span class="txtbtn" data-a="back">Cancel</span></header>' +
+    '<div class="ta msg"><textarea data-d="ibody" placeholder="What happened">' + esc(val('ibody')) + '</textarea></div>' +
+    '<section>' + seg([['apologize', 'Apologize'], ['change', 'Change']], ui.itype, 'itype') + '</section>' +
+    '<div class="save" data-a="issuesave">Hold until tomorrow</div>', { tab: false });
+};
+
 // Creates (or, when editing, updates) the nudge from the form. Returns the row so Send can follow.
 function saveNudge() {
   var body = (ui.d.nbody || '').trim();
@@ -894,7 +932,7 @@ function draftKey() {
     if (s.type === 'chlog' || s.type === 'broke' || s.type === 'chedit') return s.type + ':' + ui.chId;
     return s.type === 'addreward' ? 'addreward' : null; // the rest (pickers, confirms) have no text field
   }
-  if (name === 'fight' || name === 'newch') return name;
+  if (name === 'fight' || name === 'issuenew' || name === 'newch') return name;
   if (name === 'fightdetail') return name + ':' + ui.fightId;
   if (name === 'tododetail') return name + ':' + ui.todoId;
   if (name === 'nudge') return name + ':' + ui.nid;
@@ -903,7 +941,7 @@ function draftKey() {
   return null;
 }
 // Choices held outside ui.d. Without them a restored ask to the partner would come back as a note to self.
-var DRAFT_UI = { 'nudgenew': ['nfor'] };
+var DRAFT_UI = { 'nudgenew': ['nfor'], 'issuenew': ['itype'] };
 function saveDraft(k) {
   if (!k) return;
   var all = S.priv.drafts, had = all[k];
@@ -1024,7 +1062,7 @@ function deliver(item) {
   if (item.kind === 'ask') deliverAsk(S.rows.items[item.id]);
 }
 function sendItem(kind, o) {
-  var item = C.buildItem({ id: St.uuid(), couple: S.couple, me: St.me(), to: St.partner().user_id, kind: kind, gift_points: o.gift_points, body: o.body, description: o.description, ask_type: o.ask_type, due_date: o.due_date, target: o.target, period: o.period, points_earn: o.points_earn, points_miss: o.points_miss, needs_note: o.needs_note, origin: o.origin, response_type: o.response_type, fight_marker_id: o.fight_marker_id, now: now(), at: o.at != null ? C.scheduleAt(S.couple, kind, o.at, now()) : null });
+  var item = C.buildItem({ id: St.uuid(), couple: S.couple, me: St.me(), to: St.partner().user_id, kind: kind, gift_points: o.gift_points, body: o.body, description: o.description, ask_type: o.ask_type, due_date: o.due_date, target: o.target, period: o.period, points_earn: o.points_earn, points_miss: o.points_miss, needs_note: o.needs_note, origin: o.origin, response_type: o.response_type, fight_marker_id: o.fight_marker_id, held_until: o.held_until, now: now(), at: o.at != null ? C.scheduleAt(S.couple, kind, o.at, now()) : null });
   St.insert('items', item);
   if (item.status === 'delivered' && kind === 'ask') deliverAsk(item);
   return item;
@@ -1117,7 +1155,7 @@ var ACT = {
   }),
   sharecode: guard(function () { return St.native.shareText('Together code: ' + ui.code); }),
   codedone: function () { ui.code = null; ui.copied = false; ui.d = {}; render(); },
-  row: function (id) { if (ui.reorder) return; go(id === 'fight' ? 'fight' : id); },
+  row: function (id) { if (ui.reorder) return; go(id === 'issue' ? 'issues' : id); },
   reorderdone: function () { ui.reorder = false; render(); },
   decline: guard(function (id) { St.patch('redemptions', id, { status: 'declined', decided_by: St.me(), decided_at: nowIso() }); }),
   approve: guard(function (id) {
@@ -1128,7 +1166,7 @@ var ACT = {
   still: function (id) { ui.sheet = stillHeld(id) ? { type: 'still', id: id } : null; ui.d = {}; render(); },
   edit: function (id) { ui.sheet.edit = true; render(); },
   editsave: guard(function (id) { var b = (ui.d.edit || '').trim(); if (!b) throw new Error('Message needed'); St.patch('items', id, { body: b }); draftSent(); ui.sheet.edit = false; ui.d = {}; render(); }),
-  deliver: guard(function (id) { var el = document.querySelector('.bs .save'); deliver(S.rows.items[id]); M.play('send', el); ui.sheet = null; render(); }),
+  deliver: guard(function (id) { var it = S.rows.items[id]; if (it.origin === 'issue' && C.ms(it.held_until) > now()) throw new Error('Not yet'); var el = document.querySelector('.bs .save'); deliver(S.rows.items[id]); M.play('send', el); ui.sheet = null; render(); }),
   drop: guard(function (id) { St.patch('items', id, { status: 'dropped' }); ui.sheet = null; render(); }),
   addpick: function () { ui.sheet = { type: 'addpick' }; ui.d = {}; render(); },
   newtodo: function (kind) { ui.sheet = { type: 'newtodo', who: 'them', when: 'now', kind: 'task', period: 'week', tgt: 3, pe: 3, pm: 3, pt: false, nn: false }; ui.d = {}; ACT.nkind(kind); },
@@ -1323,6 +1361,18 @@ var ACT = {
   }),
   nudgestop: guard(function () { St.patch('nudge_awards', awardOf(ui.nid).id, { stopped_at: new Date(now()).toISOString() }); render(); }),
   nudgearchive: guard(function () { nPatch(ui.ntier, ui.nid, { archived_at: nowIso() }); back(); }),
+  issuenew: function () { go('issuenew', { itype: 'apologize' }); },
+  itype: function (v) { ui.itype = v; render(); },
+  issuesave: guard(function () {
+    var body = (ui.d.ibody || '').trim(), el = document.querySelector('.save');
+    if (!body) { M.play('jiggle', document.querySelector('.ta')); throw new Error('Issue needed'); }
+    // No partner yet means nothing to send to; unlike a to do there is no queue, since the hold is computed now.
+    if (!St.partner()) throw new Error('No partner yet');
+    var apologize = ui.itype === 'apologize';
+    celebrate(sendItem('ask', { body: body, origin: 'issue', response_type: ui.itype, ask_type: apologize ? 'ownup' : 'task', needs_note: apologize,
+      held_until: C.issueHeldUntil(now(), St.myMember().tz || tz()) }), el);
+    draftSent(); back();
+  }),
   nudgenew: function () { go('nudgenew', { nedit: null, nfor: ui.ntier }); },
   nudgefor: function (v) { ui.nfor = v; render(); },
   // Save only: the nudge joins the library of the tier chosen in For, and the library shows that tier.
