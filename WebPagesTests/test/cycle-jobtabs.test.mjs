@@ -348,6 +348,29 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
     assert.equal(await page.locator('[data-a="openfight:fh"] .ix').count(), 0, 'no intensity on her fight');
     await page.click('[data-a="openfight:fh"]'); await page.waitForSelector('.fd');
     assert.equal(await page.locator('.fd .ix').count(), 0, 'nor on her fight detail');
+    assert.equal(await page.locator('.fd .arrows').count(), 0, 'and no picker on her fight');
+    await context.close();
+  });
+  test('B8b my fight intensity is labeled, editable from its detail, persists on the phone, and never syncs', async () => {
+    const sd = seed({ rows: { fight_markers: [mine] }, priv: { fights: [{ id: 'fm', at: Date.parse(mine.at), intensity: 2 }] } });
+    const { context, page } = await open({ sd, offline: true });
+    await ready(page);
+    await page.click('[data-a="tab:fights"]'); await page.waitForSelector('.rf');
+    assert.equal(await page.locator('[data-a="openfight:fm"] .ixl').innerText(), 'INTENSITY');
+    await page.click('[data-a="openfight:fm"]'); await page.waitForSelector('.fd');
+    await page.fill('.fd textarea', 'keep this draft');
+    assert.equal(await page.locator('.fd .arrows .sel b').innerText(), '2');
+    await page.click('[data-a="fightint:5"]');
+    assert.equal(await page.locator('.fd .arrows .sel b').innerText(), '5');
+    assert.equal(await page.inputValue('.fd textarea'), 'keep this draft', 'picking keeps the typed note');
+    assert.equal((await priv(page)).fights[0].intensity, 5);
+    const outbox = await page.evaluate(() => JSON.parse(localStorage.getItem('cycle:shared.u-me')).outbox);
+    assert.deepEqual(outbox, [], 'intensity stays private');
+    await page.click('[data-a="fightint:1"]');
+    assert.equal((await priv(page)).fights[0].intensity, 1, 'and back down');
+    await page.reload(); await ready(page);
+    await page.click('[data-a="tab:fights"]'); await page.waitForSelector('.rf');
+    assert.equal(await page.locator('[data-a="openfight:fm"] .ix i.f').count(), 1, 'list reflects the edit after reload');
     await context.close();
   });
 

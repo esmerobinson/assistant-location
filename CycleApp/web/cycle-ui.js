@@ -461,13 +461,16 @@ function yn(k) {
   return '<div class="tdc">' + [['yes', 'Yes'], ['no', 'No']].map(function (c) { return '<span class="chip' + (ui.d[k] === c[0] ? ' on' : '') + '" data-a="yn:' + k + ':' + c[0] + '">' + c[1] + '</span>'; }).join('') + '</div>';
 }
 function ynVal(v) { return v === 'yes' ? true : v === 'no' ? false : null; }
+function intensityPicker(i, action) {
+  var arrows = [1, 2, 3, 4, 5].map(function (n) {
+    return '<span' + (n === i ? ' class="sel"' : ' style="color:#5e5e5e"') + ' data-a="' + action + ':' + n + '"><svg><use href="#' + (n === i ? 'arwh' : 'arw') + '"/></svg><b>' + n + '</b></span>';
+  }).join('');
+  return '<section><p class="lab">Intensity</p><div class="arrows">' + arrows + '</div><div class="ends"><span>Low</span><span>High</span></div></section>';
+}
 SCREEN.fight = function () {
   var d = ui.d, i = d.int || 3, chips = d.chips || {}, esme = St.myMember().hits_self;
-  var arrows = [1, 2, 3, 4, 5].map(function (n) {
-    return '<span' + (n === i ? ' class="sel"' : ' style="color:#5e5e5e"') + ' data-a="int:' + n + '"><svg><use href="#' + (n === i ? 'arwh' : 'arw') + '"/></svg><b>' + n + '</b></span>';
-  }).join('');
   return phone('p2 s2', '<header class="hd"><div><h2>Log a fight</h2></div><span class="txtbtn" data-a="back">Cancel</span></header>' +
-    '<section><p class="lab">Intensity</p><div class="arrows">' + arrows + '</div><div class="ends"><span>Low</span><span>High</span></div></section>' +
+    intensityPicker(i, 'int') +
     // Esme is the one who may hit herself, so her questions are in the first person; the flag lives on her member row.
     '<section><p class="lab">' + (esme ? 'Did you hit yourself?' : 'Did she hit herself?') + '</p>' + yn('hit') +
     (d.hit === 'yes' ? '<div class="frow"><span class="lab0">How many times?</span><div class="stp"><span data-a="hitn:-1"><svg class="ic sm"><path d="M6 12h12"/></svg></span><b>' + (d.hitN === 0.5 ? '.5' : d.hitN || 1) + '</b><span data-a="hitn:1">' + ic('plus', 'sm') + '</span></div></div>' : '') +
@@ -507,7 +510,8 @@ SCREEN.fightdetail = function () {
   }).join('');
   var chips = fightChips(mk);
   return phone('p2 fd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Fight</h2><p class="dl">' + noteStamp(C.ms(mk.at)) + '</p></div></header>' +
-    (old || chips ? '<section class="meta2">' + (old ? ix(old.intensity) : '') + '<div class="rcs">' + chips + '</div></section>' : '') +
+    (old ? intensityPicker(old.intensity, 'fightint') : '') +
+    (chips ? '<section class="meta2"><div class="rcs">' + chips + '</div></section>' : '') +
     (list ? '<section class="fns">' + list + '</section>' : '') +
     '<section><p class="lab">' + (mk.logged_by !== St.me() && !mine ? 'Add your version' : 'Add more') + '</p>' + micTa('more', 'nt') + whenRow('mw') + '</section>' +
     '<div class="save" data-a="notesave">Save</div>');
@@ -993,7 +997,7 @@ function chipsFor(f) {
   if (hit) out += '<span class="rc">' + esc(hit) + '</span>';
   return out;
 }
-function ix(n) { var s = ''; for (var i = 1; i <= 5; i++) s += '<i' + (i <= n ? ' class="f"' : '') + '></i>'; return '<span class="ix">' + s + '</span>'; }
+function ix(n) { var s = ''; for (var i = 1; i <= 5; i++) s += '<i' + (i <= n ? ' class="f"' : '') + '></i>'; return '<span class="ixw"><span class="ixl">Intensity</span><span class="ix">' + s + '</span></span>'; }
 SCREEN.cycle = function () {
   var fights = fightRecs(), n = now(), t = today();
   var ph = C.phase(fights, n, tz(), 14);
@@ -1442,6 +1446,7 @@ var ACT = {
     if (k === 'done') todoDone(t, document.querySelector('[data-todo="' + t.id + '"] .om'), note); else todoTally(t, document.querySelector('[data-todo="' + t.id + '"] .p1b'), note);
   }),
   int: function (n) { ui.d.int = +n; render(); },
+  fightint: function (n) { ownFight(S.rows.fight_markers[ui.fightId]).intensity = +n; St.savePriv(); render(); },
   yn: function (a) { var p = a.split(':'), k = p[0], v = p[1]; ui.d[k] = ui.d[k] === v ? null : v; render(); },
   // Steps .5, 1, 2, 3...; .5 is a light hit.
   hitn: function (a) { var n = ui.d.hitN || 1; ui.d.hitN = n === 0.5 ? (+a > 0 ? 1 : 0.5) : n === 1 && +a < 0 ? 0.5 : n + +a; render(); },
