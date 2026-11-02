@@ -99,6 +99,10 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl list devices | grep "$UDID"
           xcrun simctl spawn "$UDID" defaults write com.oliverullman.assistantlocation UITestSkipNotificationPrompt -bool true
+          # Journal's keyboard raises a system "Enable Dictation?" alert on a fresh simulator; the default
+          # UI-interruption handler then taps "About Siri, Dictation & Privacy" and covers the app.
+          xcrun simctl spawn "$UDID" defaults write com.apple.assistant.support "Dictation Enabled" -bool true
+          xcrun simctl spawn "$UDID" defaults write com.apple.assistant.support "Suppress Dictation Opt In" -bool true
           # Without a pre-seeded endpoint the unbaked build raises
           # "GL_BAKED_HOST is empty or unbaked" at launch. Nothing listens
           # there, which is fine, these tests never need the server.

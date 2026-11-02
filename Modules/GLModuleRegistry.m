@@ -606,6 +606,23 @@ static NSMutableArray *GLRegisteredModules(void) {
     // more.html's touchend/click double-fire fix) and the second dispatch
     // hit this method while the first one's push was still the top view
     // controller.
+    // A push or pop already animating on this stack (cold launch pushes the
+    // default tab onto it) drops or overlaps a second one: UIKit logs
+    // "_applyViewControllers ... while an existing transition" and the
+    // requested module never shows. Run this open once that transition ends.
+    id<UIViewControllerTransitionCoordinator> inFlight = navigationController.transitionCoordinator;
+    if (inFlight != nil) {
+        [GLCrashReporter addBreadcrumb:[NSString stringWithFormat:
+            @"openModuleViewController: module=%@, stack mid-transition -- deferring",
+            NSStringFromClass(module.class)]];
+        [inFlight animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> _) {
+            // Next runloop turn: the coordinator is still attached inside its own completion.
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self openModuleViewController:module ontoNavigationController:navigationController];
+            });
+        }];
+        return YES;
+    }
     if (navigationController.topViewController == module) {
         [GLCrashReporter addBreadcrumb:[NSString stringWithFormat:
             @"openModuleViewController: push branch, module=%@, already on top -- no-op",

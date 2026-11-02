@@ -88,13 +88,22 @@ final class JournalNavigationStressUITest: XCTestCase {
         dismissKeyboard()
     }
 
+    /// The app dismisses the keyboard when the header is tapped. Gone = the note
+    /// view no longer holds keyboard focus (on iOS 27 the Keyboard element can
+    /// linger in the hierarchy after the keyboard is visibly down).
     private func dismissKeyboard() {
         let keyboard = app.keyboards.firstMatch
         guard keyboard.exists else { return }
-        if journalTitle.exists { journalTitle.tap() }
-        let gone = NSPredicate(format: "exists == false")
-        let e = XCTNSPredicateExpectation(predicate: gone, object: keyboard)
-        if XCTWaiter().wait(for: [e], timeout: 5) != .completed { fail("keyboard did not go away after tapping the Journal header") }
+        func gone() -> Bool {
+            !keyboard.exists || (noteView.exists && (noteView.value(forKey: "hasKeyboardFocus") as? Bool) == false)
+        }
+        // A tap landing mid-transition on a slow runner can be swallowed; a user taps again.
+        for _ in 0..<3 {
+            if journalTitle.exists { journalTitle.tap() }
+            let deadline = Date().addingTimeInterval(5)
+            while Date() < deadline { if gone() { return }; usleep(250_000) }
+        }
+        fail("keyboard did not go away after tapping the Journal header")
     }
 
     // MARK: - Actions (real UI)
