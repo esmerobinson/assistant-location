@@ -270,19 +270,23 @@ var CycleStore = (function () {
   async function pullTable(t) {
     var cur = CURSOR[t], since = cur && S.cursors[t];
     var q = t + '?select=*' + (since ? '&' + cur + '=gte.' + encodeURIComponent(since) : '') + '&order=' + (cur || ORDER[t] || 'at') + '.asc';
-    var max = since || null, from = 0;
+    var max = since || null, from = 0, seen = {};
     for (;;) { // PostgREST caps a response at 1000 rows: page with Range until a short page
       var page = await api('GET', q, undefined, { Range: from + '-' + (from + 999), 'Range-Unit': 'items' });
       page.forEach(function (row) {
         var pend = S.outbox.filter(function (o) { return o.table === t && o.id === row.id; });
         // A local edit not yet pushed wins over the server copy (last write wins).
         pend.forEach(function (o) { if (o.op === 'patch') for (var k in o.patch) row[k] = o.patch[k]; });
-        S.rows[t][row.id] = row;
+        S.rows[t][row.id] = row; seen[row.id] = true;
         if (cur && (!max || row[cur] > max)) max = row[cur];
       });
       if (page.length < 1000) break;
       from += 1000;
     }
+    // A table with no cursor is pulled whole, so a row the server no longer has was deleted there. Rows still waiting to push stay.
+    if (!cur) Object.keys(S.rows[t]).forEach(function (id) {
+      if (!seen[id] && !S.outbox.some(function (o) { return o.table === t && o.id === id; })) delete S.rows[t][id];
+    });
     if (cur) S.cursors[t] = max;
   }
   async function pull() {
@@ -486,13 +490,13 @@ var CycleStore = (function () {
     (S.priv ? S.priv.fights : []).forEach(function (f) {
       var at = f.at + 24 * 3600000;
       var mk = S.rows.fight_markers[f.id];
-      if (at > now && !f.followed && !(mk && mk.repaired_at)) out.push({ id: 'fu-' + f.id, at: at, title: 'Follow up', body: '', route: 'log-followup' });
+      if (mk && at > now && !f.followed && !mk.repaired_at) out.push({ id: 'fu-' + f.id, at: at, title: 'Follow up', body: '', route: 'log-followup' });
     });
     // A fight I logged with no note from me yet: ask 30 min after logging, then every 2 hours until there is one, skipping 22:00-08:00.
     // iOS can't repeat on its own, so the next 6 are scheduled and each change or launch tops them up. Fights logged before this have no logged_at.
     var hourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: m.tz || S.couple.tz, hourCycle: 'h23', hour: '2-digit' });
     (S.priv ? S.priv.fights : []).forEach(function (f) {
-      if (!f.logged_at || list('fight_notes').some(function (n) { return n.fight_marker_id === f.id && n.author_id === me(); })) return;
+      if (!f.logged_at || !S.rows.fight_markers[f.id] || list('fight_notes').some(function (n) { return n.fight_marker_id === f.id && n.author_id === me(); })) return;
       for (var k = 0, n = 0; n < 6; k++) {
         var at = f.logged_at + 30 * 60000 + k * 2 * 3600000, h = +hourFmt.format(at);
         if (at <= now || h >= 22 || h < 8) continue;

@@ -308,4 +308,18 @@ describe('webkit', { skip: !haveWebkit }, () => {
     assert.equal(pageErrors.length, 0, pageErrors.map((e) => e.message).join());
     await context.close();
   });
+
+  test('a fight deleted on the server leaves the phone on the next pull; one not pushed yet stays', async () => {
+    const mk = (id) => ({ id, couple_id: 'c1', logged_by: UID, at: ago(3), repaired_at: null, hit_self: false, hit_related: null, hit_count: null });
+    const { context, page } = await open({
+      tweak: (sh) => { sh.rows.fight_markers = { kept: mk('kept'), gone: mk('gone') }; },
+      handler: (r) => r.path === 'fight_markers' ? (r.method === 'GET' ? { status: 200, body: [mk('kept')] } : { status: 503, body: {} }) : undefined,
+    });
+    await ready(page);
+    await page.evaluate((m) => CycleStore.insert('fight_markers', m), mk('pending'));
+    await page.evaluate(() => CycleStore.sync()); await settle(page);
+    const ids = await page.evaluate(() => Object.keys(CycleStore.S.rows.fight_markers).sort());
+    assert.deepEqual(ids, ['kept', 'pending']);
+    await context.close();
+  });
 });

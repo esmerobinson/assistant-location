@@ -982,7 +982,7 @@ function ring(ph) {
   return '<svg class="chart" viewBox="2 14 342 248" width="342" height="248">' + out + mk + '<text class="ab" x="173" y="139" font-size="26" fill="#fff" text-anchor="middle">' + mid + '</text>' +
     '<text x="173" y="167" font-size="16" fill="#bdbdbd" text-anchor="middle" letter-spacing="1">' + sub + '</text></svg>';
 }
-function fightRecs() { return S.priv.fights.slice().sort(function (a, b) { return b.at - a.at; }); }
+function fightRecs() { return S.priv.fights.filter(function (f) { return S.rows.fight_markers[f.id]; }).sort(function (a, b) { return b.at - a.at; }); }
 // The logger's own words: the pre-sharing on-device text, else their first shared note.
 function fightText(f) { var n = fightNotes(f.id).filter(function (x) { return x.author_id === St.me(); })[0]; return f.about || (n ? n.body : ''); }
 function chipsFor(f) {

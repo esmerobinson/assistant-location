@@ -140,6 +140,17 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await context.close();
   });
 
+  test('a fight whose marker was deleted stops asking', async () => {
+    const { context, page } = await open();
+    await logFight(page);
+    await page.waitForFunction(() => window.__calls.filter((x) => x.cmd === 'notify.schedule' && x.args.id.startsWith('fnote-')).length >= 6);
+    const ns = await fnotes(page);
+    await page.evaluate(() => { const S = CycleStore.S; delete S.rows.fight_markers[S.priv.fights[0].id]; CycleStore.reschedule(); });
+    const cancelled = (await waitCalls(page, 'notify.cancel', 6)).map((a) => a.id);
+    assert.deepEqual(ns.map((n) => n.id).filter((x) => !cancelled.includes(x)), []);
+    await context.close();
+  });
+
   test('a fight logged with a note asks nothing', async () => {
     const { context, page } = await open();
     await logFight(page, 'It was the dishes');
