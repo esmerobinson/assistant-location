@@ -1326,7 +1326,8 @@ function logFight() {
 }
 function saveNote() {
   var body = (ui.d.more || '').trim();
-  if (!body) throw new Error('Note needed');
+  // Intensity saves on tap, so Save with no note has nothing left to do.
+  if (!body) return ACT.back();
   if (!S.rows.fight_markers[ui.fightId]) throw new Error('Fight is gone');
   St.insert('fight_notes', { id: St.uuid(), couple_id: S.couple.id, fight_marker_id: ui.fightId, author_id: St.me(), body: body, created_at: new Date(whenMs('mw')).toISOString() });
   draftSent(); ui.d.more = ''; delete ui.d.mwD; delete ui.d.mwT; render();

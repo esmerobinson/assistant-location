@@ -368,6 +368,12 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
     assert.deepEqual(outbox, [], 'intensity stays private');
     await page.click('[data-a="fightint:1"]');
     assert.equal((await priv(page)).fights[0].intensity, 1, 'and back down');
+    await page.fill('.fd textarea', '');
+    await page.click('[data-a="notesave"]');
+    await page.waitForSelector('.rf');
+    assert.equal(await page.locator('.errbar[role="alert"]').count(), 0, 'Save with no note is not an error');
+    assert.equal((await priv(page)).fights[0].intensity, 1, 'the picked intensity survives Save');
+    assert.deepEqual(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('cycle:shared.u-me')).rows.fight_notes)), [], 'and no empty note is written');
     await page.reload(); await ready(page);
     await page.click('[data-a="tab:fights"]'); await page.waitForSelector('.rf');
     assert.equal(await page.locator('[data-a="openfight:fm"] .ix i.f').count(), 1, 'list reflects the edit after reload');
@@ -406,7 +412,7 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
     await context.close();
   });
 
-  test('B11 Save with nothing to save says so instead of doing nothing (note, reply, comment)', async () => {
+  test('B11 Save with nothing to save says so instead of doing nothing (reply, comment)', async () => {
     const sd = threadSeed();
     sd['shared.' + UID].rows.fight_markers = byId([mine]);
     sd['shared.' + UID].rows.todos = byId([todo('t1')]);
@@ -420,9 +426,6 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
       assert.equal((await shared(page)).outbox.length, queuedBefore, label + ': nothing queued');
       await page.evaluate(() => { const e = document.querySelector('.errbar'); if (e) e.remove(); });
     };
-    await openFight(page);
-    await expectErr('[data-a="notesave"]', 'fight note');
-    await page.click('[data-a="back"]');
     await library(page); await page.click('[data-a="nudge:n1"]'); await page.waitForSelector('[data-a="nreply"]');
     await expectErr('[data-a="nreply"]', 'reply');
     await page.click('[data-a="back"]').catch(() => {});
