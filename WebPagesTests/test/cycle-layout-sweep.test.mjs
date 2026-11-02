@@ -291,6 +291,7 @@ describe('layout sweep (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_
     try {
       await page.setViewportSize({ width: 375, height: 667 });
       await act(page, 'tab:home'); await act(page, 'go:points'); await act(page, 'go:shop');
+      await page.waitForFunction(() => document.styleSheets.length > 1 && document.querySelector('.shop .rthumb').offsetWidth > 0); // stylesheet arrives async
       assert.deepEqual(await page.$$eval('.shop .it:not(.add) .rthumb', (e) => e.map((x) => { const r = x.getBoundingClientRect(); return [r.width, r.height]; })), Array(6).fill([112, 112]));
       assert.deepEqual(await page.evaluate(() => [document.documentElement.scrollWidth <= innerWidth, [...document.querySelectorAll('.shop .it')].every((e) => e.getBoundingClientRect().right <= innerWidth && e.scrollWidth <= e.clientWidth)]), [true, true]);
       assert.equal(await page.$eval('[data-a="reward:r5"] .rthumb', (e) => e.innerHTML), await page.evaluate(() => { const d = document.createElement('div'); d.innerHTML = artSvg(null, 'row'); return d.innerHTML; }));
