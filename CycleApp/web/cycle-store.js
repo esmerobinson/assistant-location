@@ -80,7 +80,7 @@ var CycleStore = (function () {
   var ORDER = { nudge_sends: 'created_at' };
   var S = { session: null, couple: null, members: [], rows: {}, cursors: {}, outbox: [], priv: null, syncError: null, syncing: false,
     // Writes the server permanently refused, kept whole (never deleted automatically) so the person can read and export the text.
-    deadLetters: [], persistError: null, loaded: false, pushFails: 0, pushNextAt: 0, pushErr: null };
+    deadLetters: [], errLog: [], persistError: null, loaded: false, pushFails: 0, pushNextAt: 0, pushErr: null };
   SHARED.forEach(function (t) { S.rows[t] = {}; });
   var listeners = [];
   function emit() { listeners.forEach(function (f) { f(); }); }
@@ -113,6 +113,7 @@ var CycleStore = (function () {
       if (uid && S.loaded) {
         jobs.push(kv.set('shared.' + uid, JSON.stringify({ couple: S.couple, members: S.members, rows: S.rows, cursors: S.cursors, outbox: S.outbox, deadLetters: S.deadLetters })));
         if (S.priv) jobs.push(kv.set('priv.' + uid, JSON.stringify(S.priv)));
+        jobs.push(kv.set('errlog.' + uid, JSON.stringify(S.errLog)));
       }
       await Promise.all(jobs);
       if (S.persistError) { S.persistError = null; emit(); }
@@ -185,12 +186,12 @@ var CycleStore = (function () {
     var text = await r.text();
     if (!r.ok) {
       var err = new Error(method + ' ' + path.split('?')[0] + ' ' + r.status + ' ' + text);
-      err.status = r.status; err.body = text; throw err;
+      err.status = r.status; err.body = text; err.where = method + ' ' + path.split('?')[0]; throw err;
     }
     if (!text) return { status: r.status, data: null };
     if (!/json/i.test(r.headers.get('content-type') || '')) {
       var bad = new Error('Unexpected reply (' + r.status + ') from ' + path.split('?')[0]);
-      bad.status = r.status; bad.badReply = true; throw bad;
+      bad.status = r.status; bad.badReply = true; bad.where = method + ' ' + path.split('?')[0]; throw bad;
     }
     return { status: r.status, data: JSON.parse(text) };
   }
@@ -208,6 +209,7 @@ var CycleStore = (function () {
     // A cache written before a table existed lacks it; the first pull fills it.
     SHARED.forEach(function (t) { if (!S.rows[t]) S.rows[t] = {}; });
     S.priv = JSON.parse((await kv.get('priv.' + uid)) || 'null') || emptyPriv();
+    S.errLog = JSON.parse((await kv.get('errlog.' + uid)) || 'null') || [];
     migrateAffirmations();
     S.loaded = true;
     // Owning-ups the partner finished that I opened (private, on-device). `since` is when this install first ran: rows
@@ -368,7 +370,7 @@ var CycleStore = (function () {
       var err = pushErr || pullErr;
       // Only fetch's own network failure is "offline"; a TypeError from our code is a bug and shows.
       if (!err || err.offline) { S.syncError = null; S.syncErrorStatus = null; }
-      else { S.syncError = err.message; S.syncErrorStatus = err.status || null; console.error('cycle sync failed:', err); }
+      else { S.syncError = err.message; S.syncErrorStatus = err.status || null; console.error('cycle sync failed:', err); logErr('sync', err); }
     } finally {
       S.syncing = false; persist(); emit(); reschedule();
       if (S.couple) registerPush();
@@ -384,6 +386,20 @@ var CycleStore = (function () {
     var keys = await kv.keys(''), out = {};
     for (var i = 0; i < keys.length; i++) out[keys[i]] = await kv.get(keys[i]);
     return JSON.stringify(out, null, 1);
+  }
+  // Last 20 failures kept on the device so the cause survives the 5s error bar. Never the request body or the row: only
+  // when (UTC), where (verb + table, never the filter), the HTTP status, and PostgREST's own `message` (its `details`
+  // can echo row values, so it is dropped). A non-HTTP error contributes only the first 120 chars of its own message.
+  function logErr(kind, e) {
+    var msg = String((e && e.message) || e), body = null;
+    if (e && e.status && e.body) { try { body = JSON.parse(e.body); } catch (x) { body = null; } }
+    msg = body && body.message ? String(body.message) : e && e.status ? 'HTTP ' + e.status : msg;
+    S.errLog.push({ t: nowIso(), kind: kind, where: (e && e.where) || null, status: (e && e.status) || null, msg: msg.slice(0, 120) });
+    if (S.errLog.length > 20) S.errLog.splice(0, S.errLog.length - 20);
+    persist();
+  }
+  function errLogText() {
+    return S.errLog.slice().reverse().map(function (r) { return [r.t, r.kind, r.status || '-', r.where || '-', r.msg].join(' | '); }).join('\n');
   }
   function deadLetterText() { return JSON.stringify(S.deadLetters, null, 2); }
 
@@ -558,6 +574,6 @@ var CycleStore = (function () {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
     kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
-    api: api, deadLetterText: deadLetterText, retryPush: retryPush, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
+    api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
   };
 })();

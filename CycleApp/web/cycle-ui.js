@@ -138,13 +138,13 @@ var PLAIN = [
   [/unexpected reply/i, 'Unexpected reply'], // a 2xx that was not PostgREST's (captive portal, proxy): the write was NOT delivered
   [/failed to fetch|load failed|networkerror|internet connection|network request failed/i, 'No connection']
 ];
-function plain(e) {
+function plain(e, what) {
   var m = String((e && e.message) || e);
   for (var i = 0; i < PLAIN.length; i++) if (PLAIN[i][0].test(m)) return PLAIN[i][1];
   if (e && e.status >= 500) return 'Server error';
   if (e && (e.status === 401 || e.status === 403)) return 'Sign in again';
-  if (e && e.status) return 'Try again';
-  return m.length <= 28 ? m : 'Try again';
+  if (e && e.status) return 'Couldn\'t ' + (what || 'save');
+  return m.length <= 28 ? m : 'Couldn\'t ' + (what || 'save');
 }
 function showErr(msg) {
   ui.err = msg; render();
@@ -153,7 +153,7 @@ function showErr(msg) {
 function guard(fn) {
   return function () {
     var args = arguments;
-    return Promise.resolve().then(function () { return fn.apply(null, args); }).catch(function (e) { console.error('cycle action failed:', e); showErr(plain(e)); });
+    return Promise.resolve().then(function () { return fn.apply(null, args); }).catch(function (e) { console.error('cycle action failed:', e); St.logErr('action', e); showErr(plain(e)); });
   };
 }
 // Last line of defence: anything that escapes a guard still reaches the person instead of vanishing into the console.
@@ -174,7 +174,7 @@ function errScreen(home) {
 function phone(cls, inner, o) {
   o = o || {};
   var band = o.band === false ? '' : '<div class="band" aria-hidden="true"></div>';
-  var dl = S.deadLetters.length, shown = ui.err || S.persistError || (S.syncError && plain({ message: S.syncError, status: S.syncErrorStatus }));
+  var dl = S.deadLetters.length, shown = ui.err || S.persistError || (S.syncError && plain({ message: S.syncError, status: S.syncErrorStatus }, 'sync'));
   // Refused writes sit in S.deadLetters until the person reads/exports them; the bar opens that list when nothing more urgent shows.
   var err = shown || (dl ? dl + (dl === 1 ? ' change' : ' changes') + ' not sent' : null), dlBar = !shown && dl;
   var off = !navigator.onLine || (S.outbox && S.outbox.length) ? '<span class="off' + (o.band === false ? ' nb' : '') + '">Offline</span>' : '';
@@ -630,6 +630,8 @@ SCREEN.settings = function () {
     '<section class="grp"><p class="lab">Holds<span class="tag">Shared</span></p>' + hold('truth') + hold('ask') + '</section>' +
     (St.hasNative ? '<div class="srow" data-a="facelock"><span>Face ID</span><span class="val">' + (ui.lockOn ? 'On' : 'Off') + '</span></div>' : '') +
     '<div class="srow" data-a="export"><span>Export</span>' + ic('chevr', 'sm') + '</div>' +
+    '<div class="srow" data-a="errlog"><span>Errors</span><span class="val">' + S.errLog.length + '</span></div>' +
+    (ui.errOpen ? '<pre class="errlog" data-a="errcopy">' + (esc(St.errLogText()) || 'None') + '</pre>' : '') +
     '<span class="ghost out" data-a="signout">Sign out</span>');
 };
 
@@ -1339,6 +1341,8 @@ var ACT = {
   }),
   bootsignout: guard(async function () { await St.signOut(); location.reload(); }),
   deadletters: function () { go('deadletters'); },
+  errlog: function () { ui.errOpen = !ui.errOpen; render(); },
+  errcopy: guard(function () { return St.native.copy(St.errLogText()); }),
   // Hands the unsent rows to the share sheet (native) or the clipboard (browser) so the text can be kept elsewhere.
   dlexport: guard(function () {
     var text = St.deadLetterText();

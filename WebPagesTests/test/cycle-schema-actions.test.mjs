@@ -262,6 +262,34 @@ describe('detail actions (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     await context.close();
   });
 
+  test('the Archived card scrolls fully clear of the tab bar', async () => {
+    const { context, page } = await open(seed({ challenges: [chal('k', { archived_at: '2026-10-10T12:00:00Z' })] }));
+    await page.click('.tabbar [data-a="tab:progress"]'); await page.waitForSelector('.deck .ach');
+    await page.evaluate(() => { const s = document.querySelector('.scr'); s.scrollTop = s.scrollHeight; });
+    const g = await page.evaluate(() => ({ card: document.querySelector('.deck .ach').getBoundingClientRect().bottom, bar: document.querySelector('.tabbar').getBoundingClientRect().top }));
+    assert.ok(g.card <= g.bar - 8, 'card bottom ' + g.card + ' vs tab bar top ' + g.bar);
+    await context.close();
+  });
+
+  test('error log: bar names what failed, log keeps cause without row data, Settings shows and copies it', async () => {
+    const { context, page } = await open(seed({ challenges: [chal('k')] }));
+    await context.route('https://x.test/**', (r) => r.fulfill({ status: 400, contentType: 'application/json',
+      body: JSON.stringify({ code: '23514', message: 'new row violates check constraint "x"', details: 'Failing row contains (SECRETNOTE)' }) }));
+    await page.evaluate(() => window.CycleStore.syncNow().catch(() => {}));
+    await page.waitForSelector('.errbar');
+    assert.equal(await page.textContent('.errbar'), "Couldn't sync");
+    const log = await page.evaluate(() => window.CycleStore.S.errLog);
+    assert.ok(log.length >= 1);
+    assert.equal(log[0].kind, 'sync'); assert.equal(log[0].status, 400); assert.match(log[0].where, /^(GET|POST|PATCH) /); assert.match(log[0].msg, /violates check constraint/);
+    assert.ok(!JSON.stringify(log).includes('SECRETNOTE'), 'row details are never logged');
+    await page.evaluate(() => { for (let i = 0; i < 25; i++) window.CycleStore.logErr('action', new Error('e' + i)); });
+    assert.equal(await page.evaluate(() => window.CycleStore.S.errLog.length), 20, 'capped at 20');
+    await page.click('.tabbar [data-a="tab:home"]'); await page.click('[data-a="go:more"]');
+    await page.click('[data-a="go:settings"]'); await page.click('[data-a="errlog"]');
+    assert.match(await page.textContent('.errlog'), /\| action \| - \| - \| e24/, 'newest first, readable in Settings');
+    await context.close();
+  });
+
   test('redemption cancel: the requester cancels a pending ask from the shop; nothing spends', async () => {
     const rw = { id: 'w1', couple_id: 'c1', name: 'Massage', price: 30, art: null, archived: false, created_at: NOW, updated_at: NOW };
     const rd = { id: 'r1', couple_id: 'c1', reward_id: 'w1', price: 30, requested_by: ME, status: 'pending', decided_by: null, decided_at: null, created_at: NOW, updated_at: NOW };
