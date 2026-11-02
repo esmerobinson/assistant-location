@@ -93,7 +93,15 @@ need no project change). The shell has no logic of its own beyond the `cycle` br
 survives updates), `notify.permission/status/schedule/cancel` as local notifications (`status` never prompts; `app.openSettings` opens the app's Settings page) (`CycleNotifier`; the
 page's id is the notification identifier, so re-scheduling an id replaces it), `haptic`, and `ready`.
 A notification tap calls `window.cycleNative.route(route)`, queued until the page sends `ready`;
-`cycleNative.foreground()` fires on becoming active. No push, no background modes. The page's
+`cycleNative.foreground()` fires on becoming active. No background modes. Remote push (APNs, sent by the box's
+`cycle-server`) is delivered by the embedded `CycleNSE` Notification Service Extension (`com.oliverullman.cycle.nse`,
+`CycleNSE/`, `scripts/add_cycle_nse.rb`, profiles `Cycle NSE AdHoc`/`Cycle NSE AppStore`, signed in both `cycle_adhoc` and
+`cycle_beta`): the box sends `mutable-content` pushes carrying `receipt: {id, url}`, and the extension POSTs `{id}` to
+`<boxUrl>/push/delivered` (https only, 5 s, alert shown unchanged whether or not it succeeds) so the box's
+`~/.config/cycle/push-receipts.json` records `deliveredAt` per send. APNs 200 only means Apple accepted it; this is the
+only delivery signal. Receipt parsing and the exactly-once contentHandler gate live in `CycleNSE/CycleReceipt.m`
+(unit-tested in `SharedTests/CycleReceiptTests.m`); `ota-cycle` opens the built ipa and checks the appex id and signing.
+Adding the extension needed a reinstall (native code), not a web OTA. The page's
 `config.js` (Supabase URL and anon key, box URL) is generated in the workflows from the secrets
 `CYCLE_SUPABASE_URL`, `CYCLE_SUPABASE_ANON_KEY`, `CYCLE_BOX_URL`, never committed (`.gitignore`), and
 the build fails when any is empty. Tests: `SharedTests/Cycle*Tests.m` (store, bridge, notifier, and

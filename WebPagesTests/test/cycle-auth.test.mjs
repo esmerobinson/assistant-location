@@ -38,7 +38,8 @@ function load({ refresh = 'ok', creds = null } = {}) {
       return { ok: true, status: 200, json: async () => tokens('R' + ++n) };
     }
     if (url.includes('/auth/v1/token?grant_type=password')) { posts.push('password'); return { ok: true, status: 200, json: async () => tokens('P' + ++n) }; }
-    if (url.includes('/rest/v1/')) return { ok: true, status: 200, json: async () => [] };
+    // api() now reads text() and requires a JSON content-type on a real answer, so the fake carries both.
+    if (url.includes('/rest/v1/')) return { ok: true, status: 200, headers: { get: () => 'application/json' }, text: async () => '[]', json: async () => [] };
     throw new Error('unexpected fetch ' + url);
   };
   vm.runInThisContext(fs.readFileSync(path.join(dir, 'cycle-store.js'), 'utf8') + '\n;globalThis.__store = CycleStore;', { filename: 'cycle-store.js' });

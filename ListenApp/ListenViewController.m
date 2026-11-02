@@ -236,6 +236,8 @@ static NSURL *ListenBaseURL(void) {
 
 - (void)webView:(WKWebView *)webView didCommitNavigation:(WKNavigation *)navigation {
     [_shellLoader webView:webView didCommitNavigation:navigation];
+    _errorLabel.hidden = YES; // a page arrived, so an earlier failure no longer describes the screen
+    _retryButton.hidden = YES;
 }
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
@@ -322,7 +324,7 @@ static NSURL *ListenBaseURL(void) {
 }
 
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-    [_shellLoader webView:webView didFailNavigation:navigation];
+    if ([_shellLoader webView:webView didFailNavigation:navigation withError:error]) return;
     [self showLoadError:error];
 }
 

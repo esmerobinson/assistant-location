@@ -35,6 +35,7 @@
 		0FFD317A1BAB7C7F009B3A03 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 0FFD31761BAB7C7F009B3A03 /* libsqlite3.tbd */; };
 		0FFD317B1BAB7C7F009B3A03 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0FFD31771BAB7C7F009B3A03 /* UIKit.framework */; };
 		0FFD317F1BAB7CC7009B3A03 /* LOLDatabase.m in Sources */ = {isa = PBXBuildFile; fileRef = 0FFD317E1BAB7CC7009B3A03 /* LOLDatabase.m */; };
+		102E064F2412400B5CA72E0F /* CycleNSE.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = AA6D686B07B52AA8BCABECC7 /* CycleNSE.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		110B601098FC9D4BA08CC0DE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 38C541F3B108E46430FB9946 /* Assets.xcassets */; };
 		11F0366F7DABECCFFA204D9B /* Location.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 0946AF14FFFC4EFC7C176019 /* Location.storyboard */; };
 		1B52D2A212B2DC690DD02C69 /* ListenAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 73E3DE8A2F5CE7C60EAF6605 /* ListenAppDelegate.m */; };
@@ -58,6 +59,7 @@
 		44798CCB7F2FC0AAFD74C9A0 /* GripesAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = C18F3769FCC5261152B88157 /* GripesAppDelegate.m */; };
 		4686E4D4C21FC2D681FB5E19 /* MarketplaceAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 3606117AE6D8C917D05BFCA9 /* MarketplaceAppDelegate.m */; };
 		4D6C0BA4C08F38478E8B0403 /* CycleViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 2D295CB7F8A901E60A30D124 /* CycleViewController.m */; };
+		5059B36743C696317488B849 /* CycleNotificationService.m in Sources */ = {isa = PBXBuildFile; fileRef = 0E008A35B5F7D8F2A8E373DE /* CycleNotificationService.m */; };
 		508E69B394DE7BA2889B9DA8 /* QuotesDailyNotifier.m in Sources */ = {isa = PBXBuildFile; fileRef = 6BB00D20F2C5F4B29C6577C6 /* QuotesDailyNotifier.m */; };
 		51E9530999CB831E5A97C73D /* ListenVoiceListener.m in Sources */ = {isa = PBXBuildFile; fileRef = ABA35468274A7A69C930D00C /* ListenVoiceListener.m */; };
 		56F6EB36E0C92372C98F4E61 /* QuotesAIFilterClient.m in Sources */ = {isa = PBXBuildFile; fileRef = 6ECB989B93C31A322B16FB01 /* QuotesAIFilterClient.m */; };
@@ -76,6 +78,7 @@
 		789B4F310F1B086A4ECBF716 /* GLAppStateReporter.m in Sources */ = {isa = PBXBuildFile; fileRef = 37F9A9DE15183F9FCD6BD7CD /* GLAppStateReporter.m */; };
 		7B73274C7CDE1E381C61D56F /* QuotesImportViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 460E460B36683BA8BCEBD8C5 /* QuotesImportViewController.m */; };
 		7C663332930E3FAE836A14EC /* GripesVoiceListener.m in Sources */ = {isa = PBXBuildFile; fileRef = 5B90745C354ED99B391EA1C8 /* GripesVoiceListener.m */; };
+		7E302C9D5FB16C84A3D2E5F6 /* CycleWebUpdater.m in Sources */ = {isa = PBXBuildFile; fileRef = 5C1E0A7B3D9F4A6281B0C3D4 /* CycleWebUpdater.m */; };
 		7F6259EB7EC546E66423677C /* QuotesModels.m in Sources */ = {isa = PBXBuildFile; fileRef = 5C175DDE3AF681EFC5168106 /* QuotesModels.m */; };
 		7F92EE66C37B43E18D5889EB /* GLDropBackground.m in Sources */ = {isa = PBXBuildFile; fileRef = 0FB0000300000000000BB03B /* GLDropBackground.m */; };
 		7FC06A76E3E7DBD2B91DC58A /* MarketplaceViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 34FE341E1F3C22BC52D8A5A5 /* MarketplaceViewController.m */; };
@@ -85,7 +88,6 @@
 		93F7E370C94468030109A9F8 /* GLComponents.m in Sources */ = {isa = PBXBuildFile; fileRef = 39F4214726EF9CE8ABE22F9A /* GLComponents.m */; };
 		94B1DAF25740CE1107FE889B /* QuotesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD567BF2659A3687213F59F /* QuotesWidget.swift */; };
 		9510ED0449BCE1E1F6142D45 /* QuotesAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 00AC709BF0BE0004768193D4 /* QuotesAppDelegate.m */; };
-		7E302C9D5FB16C84A3D2E5F6 /* CycleWebUpdater.m in Sources */ = {isa = PBXBuildFile; fileRef = 5C1E0A7B3D9F4A6281B0C3D4 /* CycleWebUpdater.m */; };
 		98E111C08440F57B4EEB17C9 /* CycleAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 174EC6CB48C5FDB9407566C3 /* CycleAppDelegate.m */; };
 		99F79E79BDB577656CACEC7C /* stock-quotes.json in Resources */ = {isa = PBXBuildFile; fileRef = 541EB8CD40ED8147F1DD190B /* stock-quotes.json */; };
 		9A3CD543AEEBC60984E799BA /* gripes.html in Resources */ = {isa = PBXBuildFile; fileRef = 4AA3DB883A9C33FBD3FB880B /* gripes.html */; };
@@ -94,6 +96,7 @@
 		A0FB0DA205C9B77ED2249A3E /* QuotesRuleEditViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 42D147F50104CD93708D61B7 /* QuotesRuleEditViewController.m */; };
 		A1C0DE01B2D3E4F5A6B7C801 /* ListenDownloads.m in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE01B2D3E4F5A6B7C802 /* ListenDownloads.m */; };
 		A1C0DE01B2D3E4F5A6B7C811 /* ListenLinks.m in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE01B2D3E4F5A6B7C812 /* ListenLinks.m */; };
+		A1C0DE5EEC4000000000B001 /* CycleSpeech.m in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE5EEC4000000000F002 /* CycleSpeech.m */; };
 		A1EB2BDB66EA15EA70A987BB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E70E6E9899DAB913030A6D97 /* Assets.xcassets */; };
 		A63D3FE25194B9BE5E04205E /* GLDropUploader.m in Sources */ = {isa = PBXBuildFile; fileRef = 0FB0000100000000000BB01B /* GLDropUploader.m */; };
 		A75A51BD1B775242A773FD0F /* GLComponents.m in Sources */ = {isa = PBXBuildFile; fileRef = 34CC0DD399AC4E12573FD3DC /* GLComponents.m */; };
@@ -114,6 +117,7 @@
 		C74239B138D3319A4623C2AB /* QuotesStore.m in Sources */ = {isa = PBXBuildFile; fileRef = 99D9444F36981D9A3694E3B9 /* QuotesStore.m */; };
 		C77F8B92A4BF4DB1B7C3BFC6 /* GripesViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 36E26DEE3A40CC6E945CC86B /* GripesViewController.m */; };
 		D226B88D069E012B579BA21D /* QuotesWidgetLoader.m in Sources */ = {isa = PBXBuildFile; fileRef = 3DC73AA48D5FEE5DA2D2D55C /* QuotesWidgetLoader.m */; };
+		D3B54E1CCA9E6A9BE049C42A /* CycleReceipt.m in Sources */ = {isa = PBXBuildFile; fileRef = AB28C2D3C22F31376C448054 /* CycleReceipt.m */; };
 		D3C648D717AE356C1F5953AD /* QuotesWidgetReload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA6B7A4DC8EB14D7DA615D0 /* QuotesWidgetReload.swift */; };
 		D618818CA034328D7CCE98C6 /* GLTheme.m in Sources */ = {isa = PBXBuildFile; fileRef = FDE72BEFF07638FD4DABF8D5 /* GLTheme.m */; };
 		D691C8940271E5EE4EB73334 /* JournalControl.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 2A4581ACD88CE8F431D28C2A /* JournalControl.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -126,7 +130,6 @@
 		DEBC7E089072EADF306D5B93 /* QuotesImportParser.m in Sources */ = {isa = PBXBuildFile; fileRef = B946A6FC6128EB16224B1507 /* QuotesImportParser.m */; };
 		DF6A49F5F7BB1D97AA4505A4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0EE1BD7EC52C880580A7B995 /* Assets.xcassets */; };
 		E168A4F660C46FFF9EC9F2EB /* CycleNotifier.m in Sources */ = {isa = PBXBuildFile; fileRef = 8ADFB248EF1E03CC707165E2 /* CycleNotifier.m */; };
-		A1C0DE5EEC4000000000B001 /* CycleSpeech.m in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE5EEC4000000000F002 /* CycleSpeech.m */; };
 		E44CACC765BC42ECD30E9C02 /* GLWebKeyboardFocus.m in Sources */ = {isa = PBXBuildFile; fileRef = 3845CA82B3CED7FF9D0C0FB5 /* GLWebKeyboardFocus.m */; };
 		E49249CA108D62D4E6FD43C9 /* JournalIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 229AAEA2CB7EDD309E3673F4 /* JournalIntent.swift */; };
 		E49249CB108D62D4E6FD43CA /* JournalDebug.swift in Sources */ = {isa = PBXBuildFile; fileRef = 229AAEA3CB7EDD309E3673F5 /* JournalDebug.swift */; };
@@ -176,9 +179,27 @@
 			remoteGlobalIDString = D9AA09663733E518D5DEEDE0;
 			remoteInfo = JournalControl;
 		};
+		ED49F9228A0BFF425CE3F8D0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0FFD314A1BAB7A34009B3A03 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E2A90AC703FE0B33CEB9530F;
+			remoteInfo = CycleNSE;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		466B74D9BB195483B2579C31 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				102E064F2412400B5CA72E0F /* CycleNSE.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		587BF83832C03D8B447A4436 /* Embed App Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -226,6 +247,7 @@
 		07A7B8A17F764964E81B7FAD /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = MarketplaceApp/Assets.xcassets; sourceTree = "<group>"; };
 		0CF6D6486AE0D28C75579A71 /* ListenPocketView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ListenPocketView.h; path = ListenApp/ListenPocketView.h; sourceTree = "<group>"; };
 		0DD5A3D05DBA43B38657EAE2 /* ListenSpeakPhrases.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = ListenSpeakPhrases.m; path = ListenApp/ListenSpeakPhrases.m; sourceTree = "<group>"; };
+		0E008A35B5F7D8F2A8E373DE /* CycleNotificationService.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CycleNotificationService.m; path = CycleNSE/CycleNotificationService.m; sourceTree = "<group>"; };
 		0EE1BD7EC52C880580A7B995 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = ListenApp/Assets.xcassets; sourceTree = "<group>"; };
 		0F3E520E201E543200DCFAA4 /* OpenSansCondensed-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "OpenSansCondensed-Bold.ttf"; path = "Fonts/OpenSansCondensed-Bold.ttf"; sourceTree = SOURCE_ROOT; };
 		0F3E5212201E54FB00DCFAA4 /* OpenSans-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "OpenSans-Light.ttf"; path = "Fonts/OpenSans-Light.ttf"; sourceTree = SOURCE_ROOT; };
@@ -285,6 +307,7 @@
 		2D295CB7F8A901E60A30D124 /* CycleViewController.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CycleViewController.m; path = CycleApp/CycleViewController.m; sourceTree = "<group>"; };
 		2E16027FE776255F6BAC9C4E /* GLWebModuleViewController.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = GLWebModuleViewController.h; path = Shared/GLWebModuleViewController.h; sourceTree = "<group>"; };
 		3257FAE4D926D99594B46424 /* QuotesViewController.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = QuotesViewController.m; path = QuotesApp/Sources/QuotesViewController.m; sourceTree = "<group>"; };
+		338C79A506B38393051FD6B9 /* CycleNotificationService.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = CycleNotificationService.h; path = CycleNSE/CycleNotificationService.h; sourceTree = "<group>"; };
 		34CC0DD399AC4E12573FD3DC /* GLComponents.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GLComponents.m; path = Shared/GLComponents.m; sourceTree = "<group>"; };
 		34FE341E1F3C22BC52D8A5A5 /* MarketplaceViewController.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = MarketplaceViewController.m; path = MarketplaceApp/MarketplaceViewController.m; sourceTree = "<group>"; };
 		3606117AE6D8C917D05BFCA9 /* MarketplaceAppDelegate.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = MarketplaceAppDelegate.m; path = MarketplaceApp/MarketplaceAppDelegate.m; sourceTree = "<group>"; };
@@ -298,8 +321,6 @@
 		39D416D8CBF5C0D8599C33BC /* QuotesStore.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = QuotesStore.m; path = QuotesApp/Sources/QuotesStore.m; sourceTree = "<group>"; };
 		39F4214726EF9CE8ABE22F9A /* GLComponents.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GLComponents.m; path = Shared/GLComponents.m; sourceTree = "<group>"; };
 		3AAD79FED3E331486F66D4F4 /* gripes.css */ = {isa = PBXFileReference; includeInIndex = 1; name = gripes.css; path = GripesApp/web/gripes.css; sourceTree = "<group>"; };
-		5C1E0A7B3D9F4A6281B0C3D4 /* CycleWebUpdater.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CycleWebUpdater.m; path = CycleApp/CycleWebUpdater.m; sourceTree = "<group>"; };
-		6D2F1B8C4EA05B7392C1D4E5 /* CycleWebUpdater.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = CycleWebUpdater.h; path = CycleApp/CycleWebUpdater.h; sourceTree = "<group>"; };
 		3ADBF4951D11C817291F8AA2 /* CycleBridge.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CycleBridge.m; path = CycleApp/CycleBridge.m; sourceTree = "<group>"; };
 		3AF2E96E883BC7E6DD1EA31E /* DueSpikeApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DueSpikeApp.swift; path = DueSpikeApp/DueSpikeApp.swift; sourceTree = "<group>"; };
 		3CCE0D26F93B3FCD5A4A1D16 /* libPods-GPSLogger.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-GPSLogger.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -327,12 +348,12 @@
 		557A0353C5AA4C08AD032BC4 /* GLFormat.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GLFormat.m; path = Shared/GLFormat.m; sourceTree = "<group>"; };
 		57889160C257E5E5A8A0A306 /* GLKeyboardWebInset.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GLKeyboardWebInset.m; path = Shared/GLKeyboardWebInset.m; sourceTree = "<group>"; };
 		5793127957405AA155BBFA7B /* CycleNotifier.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = CycleNotifier.h; path = CycleApp/CycleNotifier.h; sourceTree = "<group>"; };
-		A1C0DE5EEC4000000000F003 /* CycleSpeech.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = CycleSpeech.h; path = CycleApp/CycleSpeech.h; sourceTree = "<group>"; };
 		5A17E00000000000000000F1 /* QuotesTheme.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = QuotesTheme.m; path = QuotesApp/Sources/QuotesTheme.m; sourceTree = "<group>"; };
 		5A42A58567064A0C6E8E5E5A /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = GripesApp/Info.plist; sourceTree = "<group>"; };
 		5A8B6626790188B865C5A36C /* gl-bridge.js */ = {isa = PBXFileReference; includeInIndex = 1; name = "gl-bridge.js"; path = "Modules/WebPages/gl-bridge.js"; sourceTree = "<group>"; };
 		5B90745C354ED99B391EA1C8 /* GripesVoiceListener.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GripesVoiceListener.m; path = GripesApp/GripesVoiceListener.m; sourceTree = "<group>"; };
 		5C175DDE3AF681EFC5168106 /* QuotesModels.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = QuotesModels.m; path = QuotesApp/Sources/QuotesModels.m; sourceTree = "<group>"; };
+		5C1E0A7B3D9F4A6281B0C3D4 /* CycleWebUpdater.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CycleWebUpdater.m; path = CycleApp/CycleWebUpdater.m; sourceTree = "<group>"; };
 		635C147F74909CEAD6226135 /* main.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = main.m; path = CycleApp/main.m; sourceTree = "<group>"; };
 		63DF056366F941F13AD21F36 /* stock-quotes.json */ = {isa = PBXFileReference; includeInIndex = 1; name = "stock-quotes.json"; path = "QuotesApp/Sources/stock-quotes.json"; sourceTree = "<group>"; };
 		6A1D0F3E5B7C4A2D91E8F0A1 /* GLOfflineShell.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GLOfflineShell.m; path = Shared/GLOfflineShell.m; sourceTree = "<group>"; };
@@ -341,6 +362,7 @@
 		6C70489E09AA4C29F850607B /* gripes-ui.js */ = {isa = PBXFileReference; includeInIndex = 1; name = "gripes-ui.js"; path = "GripesApp/web/gripes-ui.js"; sourceTree = "<group>"; };
 		6D2858CF222B133400F525E1 /* WifiZoneViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Location/WifiZoneViewController.h; sourceTree = "<group>"; };
 		6D2858D0222B133400F525E1 /* WifiZoneViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Location/WifiZoneViewController.m; sourceTree = "<group>"; };
+		6D2F1B8C4EA05B7392C1D4E5 /* CycleWebUpdater.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = CycleWebUpdater.h; path = CycleApp/CycleWebUpdater.h; sourceTree = "<group>"; };
 		6DEC9B3621F3F88500D9E8C4 /* Overland.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Overland.entitlements; sourceTree = "<group>"; };
 		6E987BDFDAD8F891E88D307E /* GripesAppDelegate.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = GripesAppDelegate.h; path = GripesApp/GripesAppDelegate.h; sourceTree = "<group>"; };
 		6ECB989B93C31A322B16FB01 /* QuotesAIFilterClient.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = QuotesAIFilterClient.m; path = QuotesApp/Sources/QuotesAIFilterClient.m; sourceTree = "<group>"; };
@@ -359,7 +381,6 @@
 		854A42D0AEE5B32C7124B468 /* GLHaptics.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = GLHaptics.h; path = Shared/GLHaptics.h; sourceTree = "<group>"; };
 		860B1267E840F50EEA5F6077 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = DueSpikeApp/Info.plist; sourceTree = "<group>"; };
 		8ADFB248EF1E03CC707165E2 /* CycleNotifier.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CycleNotifier.m; path = CycleApp/CycleNotifier.m; sourceTree = "<group>"; };
-		A1C0DE5EEC4000000000F002 /* CycleSpeech.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CycleSpeech.m; path = CycleApp/CycleSpeech.m; sourceTree = "<group>"; };
 		8C3D7DA0E2E44F97AF7F2CDC /* ListenSpeakPhrases.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ListenSpeakPhrases.h; path = ListenApp/ListenSpeakPhrases.h; sourceTree = "<group>"; };
 		8CA6B7A4DC8EB14D7DA615D0 /* QuotesWidgetReload.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = QuotesWidgetReload.swift; path = App/QuotesWidgetReload.swift; sourceTree = "<group>"; };
 		90F2A9D46A06816B84ECC289 /* GLAppStateReporter.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = GLAppStateReporter.h; path = Shared/GLAppStateReporter.h; sourceTree = "<group>"; };
@@ -380,11 +401,15 @@
 		A1C0DE01B2D3E4F5A6B7C803 /* ListenDownloads.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ListenDownloads.h; path = ListenApp/ListenDownloads.h; sourceTree = "<group>"; };
 		A1C0DE01B2D3E4F5A6B7C812 /* ListenLinks.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = ListenLinks.m; path = ListenApp/ListenLinks.m; sourceTree = "<group>"; };
 		A1C0DE01B2D3E4F5A6B7C813 /* ListenLinks.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ListenLinks.h; path = ListenApp/ListenLinks.h; sourceTree = "<group>"; };
+		A1C0DE5EEC4000000000F002 /* CycleSpeech.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CycleSpeech.m; path = CycleApp/CycleSpeech.m; sourceTree = "<group>"; };
+		A1C0DE5EEC4000000000F003 /* CycleSpeech.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = CycleSpeech.h; path = CycleApp/CycleSpeech.h; sourceTree = "<group>"; };
 		A3685645F6C3C4D744095650 /* Quotes.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; name = Quotes.entitlements; path = QuotesApp/Quotes.entitlements; sourceTree = "<group>"; };
 		A896363372934C60F0B23685 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = QuotesApp/Assets.xcassets; sourceTree = "<group>"; };
 		A8B8175664CF1675785B1E13 /* page.css */ = {isa = PBXFileReference; includeInIndex = 1; name = page.css; path = Modules/WebPages/page.css; sourceTree = "<group>"; };
 		A9BF1AFE5F85A521BE4B1920 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = ListenApp/Info.plist; sourceTree = "<group>"; };
 		AA08EF9CDB7B481B1B2721F1 /* GripesStore.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GripesStore.m; path = GripesApp/GripesStore.m; sourceTree = "<group>"; };
+		AA6D686B07B52AA8BCABECC7 /* CycleNSE.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CycleNSE.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB28C2D3C22F31376C448054 /* CycleReceipt.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CycleReceipt.m; path = CycleNSE/CycleReceipt.m; sourceTree = "<group>"; };
 		AB86F92F3D159301C9D3D2F1 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = QuotesWidget/Info.plist; sourceTree = "<group>"; };
 		ABA35468274A7A69C930D00C /* ListenVoiceListener.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = ListenVoiceListener.m; path = ListenApp/ListenVoiceListener.m; sourceTree = "<group>"; };
 		ABF6D7BD5B21E5D5B36842A4 /* gl-bridge.js */ = {isa = PBXFileReference; includeInIndex = 1; name = "gl-bridge.js"; path = "Modules/WebPages/gl-bridge.js"; sourceTree = "<group>"; };
@@ -401,11 +426,13 @@
 		BBA71FD76F26058F61174D4A /* Quotes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Quotes.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BC931CD6467CAA61EDA85CAC /* ListenProbe.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ListenProbe.h; path = ListenApp/ListenProbe.h; sourceTree = "<group>"; };
 		BDDD8A919E8821C00CB33B96 /* ShareConfig.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ShareConfig.h; path = ShareToDesktop/ShareConfig.h; sourceTree = "<group>"; };
+		BFC7BE9AE8F017F463D02EDA /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = CycleNSE/Info.plist; sourceTree = "<group>"; };
 		C18F3769FCC5261152B88157 /* GripesAppDelegate.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GripesAppDelegate.m; path = GripesApp/GripesAppDelegate.m; sourceTree = "<group>"; };
 		C26862A877E083F3D9FC04FF /* GLTodoOutbox.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = GLTodoOutbox.m; path = Shared/GLTodoOutbox.m; sourceTree = "<group>"; };
 		C3838A5C5DC494446CCD9A2F /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = GoalsApp/Info.plist; sourceTree = "<group>"; };
 		C733B18E36967EC64A31541F /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = DueSpikeApp/Assets.xcassets; sourceTree = "<group>"; };
 		C86906A951747BF0A1842B6E /* DueSpikeNSE.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DueSpikeNSE.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		CB2A7D4442B0237175820AF5 /* CycleReceipt.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = CycleReceipt.h; path = CycleNSE/CycleReceipt.h; sourceTree = "<group>"; };
 		D23D5B629B5EA0CC42C9A51A /* Goals.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Goals.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D29CCA00290036E9B8EA1DBC /* QuotesRuleEngine.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = QuotesRuleEngine.m; path = QuotesApp/Sources/QuotesRuleEngine.m; sourceTree = "<group>"; };
 		D3402F5F3C817C2253C97EE0 /* VoiceToDesktop.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VoiceToDesktop.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -461,6 +488,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		1E5FD9445F228D54811A730C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2D18D3B93F4686EC04963564 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -632,6 +666,7 @@
 				8A7386BE601C34922F581E4F /* DueSpikeApp */,
 				E42359B626B8D0AD2B41DD1B /* CycleApp */,
 				41744AB01A90A61F2AF04D0D /* VoiceToDesktop */,
+				86833AC44917FDF83150EAA2 /* CycleNSE */,
 			);
 			sourceTree = "<group>";
 		};
@@ -651,6 +686,7 @@
 				93672D722C7BC6F16A40D30F /* DueSpike.app */,
 				81790464364EA8E68F4C7C18 /* Cycle.app */,
 				D3402F5F3C817C2253C97EE0 /* VoiceToDesktop.appex */,
+				AA6D686B07B52AA8BCABECC7 /* CycleNSE.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -823,6 +859,18 @@
 				E020C3F8CA67589B3EC7D31F /* ShareViewController.m */,
 			);
 			name = ShareToDesktop;
+			sourceTree = SOURCE_ROOT;
+		};
+		86833AC44917FDF83150EAA2 /* CycleNSE */ = {
+			isa = PBXGroup;
+			children = (
+				0E008A35B5F7D8F2A8E373DE /* CycleNotificationService.m */,
+				AB28C2D3C22F31376C448054 /* CycleReceipt.m */,
+				338C79A506B38393051FD6B9 /* CycleNotificationService.h */,
+				CB2A7D4442B0237175820AF5 /* CycleReceipt.h */,
+				BFC7BE9AE8F017F463D02EDA /* Info.plist */,
+			);
+			name = CycleNSE;
 			sourceTree = SOURCE_ROOT;
 		};
 		8A7386BE601C34922F581E4F /* DueSpikeApp */ = {
@@ -1037,10 +1085,12 @@
 				83BEDB3D6F688451678646B3 /* Sources */,
 				FB5001AA5A63F712A0608F8F /* Frameworks */,
 				580055E0EB538C14926DACB5 /* Resources */,
+				466B74D9BB195483B2579C31 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				72507FA5BCB15FE95D7D3FFD /* PBXTargetDependency */,
 			);
 			name = Cycle;
 			productName = Cycle;
@@ -1187,6 +1237,23 @@
 			productReference = 2A4581ACD88CE8F431D28C2A /* JournalControl.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		E2A90AC703FE0B33CEB9530F /* CycleNSE */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C62D468E995750BE5257F71F /* Build configuration list for PBXNativeTarget "CycleNSE" */;
+			buildPhases = (
+				0E0F0C331B350589F081E866 /* Sources */,
+				2D18D3B93F4686EC04963564 /* Frameworks */,
+				F8B13A2C395D7E76866D25A1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CycleNSE;
+			productName = CycleNSE;
+			productReference = AA6D686B07B52AA8BCABECC7 /* CycleNSE.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -1241,6 +1308,7 @@
 				14A170EC6693E67D1186E75B /* DueSpike */,
 				4B03125E0607B4000E59DC43 /* Cycle */,
 				8BE9BE028670C5A5882323AA /* VoiceToDesktop */,
+				E2A90AC703FE0B33CEB9530F /* CycleNSE */,
 			);
 		};
 /* End PBXProject section */
@@ -1364,6 +1432,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F8B13A2C395D7E76866D25A1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -1428,6 +1503,15 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0E0F0C331B350589F081E866 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5059B36743C696317488B849 /* CycleNotificationService.m in Sources */,
+				D3B54E1CCA9E6A9BE049C42A /* CycleReceipt.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0FFD314E1BAB7A34009B3A03 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1631,6 +1715,12 @@
 			target = 10694AC288C074B5431563F5 /* QuotesWidget */;
 			targetProxy = 82BD87EBF7A20C1E784D21CF /* PBXContainerItemProxy */;
 		};
+		72507FA5BCB15FE95D7D3FFD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = CycleNSE;
+			target = E2A90AC703FE0B33CEB9530F /* CycleNSE */;
+			targetProxy = ED49F9228A0BFF425CE3F8D0 /* PBXContainerItemProxy */;
+		};
 		DCA55DD52AE4FFD7517AA376 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = JournalControl;
@@ -1673,6 +1763,59 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		06CDBC4AD7E00F96B7DC9B82 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = J66WVM2DTX;
+				ENABLE_BITCODE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CycleNSE/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oliverullman.cycle.nse;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "Cycle NSE AdHoc";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		0B8DA763FA7C534F00698A31 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = J66WVM2DTX;
+				ENABLE_BITCODE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CycleNSE/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oliverullman.cycle.nse;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "Cycle NSE AdHoc";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		0F48828DECF69CFB877CEA1F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2696,6 +2839,15 @@
 			buildConfigurations = (
 				0F48828DECF69CFB877CEA1F /* Release */,
 				41EBD9C1777FF3CDA9FA7610 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C62D468E995750BE5257F71F /* Build configuration list for PBXNativeTarget "CycleNSE" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0B8DA763FA7C534F00698A31 /* Release */,
+				06CDBC4AD7E00F96B7DC9B82 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

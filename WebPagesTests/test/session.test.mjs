@@ -799,7 +799,7 @@ test("loadProjects()/loadRecent() clear a stale error banner on the NEXT success
 });
 
 test('REGRESSION PROOF: without gl-bridge.js\'s per-call timeout option, a 6s-delayed voiceStop reply is dropped as a false "timeout"', async () => {
-  const context = await browser.newContext();
+  const context = await browser.newContext({ hasTouch: true });
   await context.addInitScript(buildMockBridgeScript(baseConfig({
     voiceStop: { text: 'delayed transcript' },
   })));
@@ -813,7 +813,8 @@ test('REGRESSION PROOF: without gl-bridge.js\'s per-call timeout option, a 6s-de
   await page.click('#session-record-btn'); // start
   await page.waitForSelector('#session-record-btn.recording');
   const t0 = Date.now();
-  await page.click('#session-record-btn'); // stop -> voiceStop, delayed 6s by the mock
+  // A tap-stop now auto-sends, so reach the insert path (which fills the prompt) with the real gesture: hold + Insert.
+  await stopViaInsert(page); // -> voiceStop, delayed 6s by the mock
   await page.waitForFunction(
     () => document.getElementById('session-prompt').value.indexOf('delayed transcript') !== -1,
     { timeout: 15000 }
@@ -1501,15 +1502,16 @@ async function slidePage(startBodies, { holdProjects = false } = {}) {
   return { context, page };
 }
 
-async function holdMic(page) {
-  const box = await page.locator('#session-record-btn').boundingBox();
+/** Long-presses a mic ('session' = launcher, 'detail' = reply row) while recording; returns touch helpers and the target centres. */
+async function holdMic(page, mic = 'session') {
+  const box = await page.locator(`#${mic}-record-btn`).boundingBox();
   const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const cdp = await page.context().newCDPSession(page);
   const touch = (type, pt) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pt ? [{ x: pt.x, y: pt.y }] : [] });
   await touch('touchStart', from);
-  await page.waitForSelector('#session-hold-targets:not([hidden])');
-  const t = await page.locator('#session-insert-target').boundingBox();
-  const c = await page.locator('#session-cancel-target').boundingBox();
+  await page.waitForSelector(`#${mic}-hold-targets:not([hidden])`);
+  const t = await page.locator(`#${mic}-insert-target`).boundingBox();
+  const c = await page.locator(`#${mic}-cancel-target`).boundingBox();
   return { touch, from, target: { x: t.x + t.width / 2, y: t.y + t.height / 2 }, cancel: { x: c.x + c.width / 2, y: c.y + c.height / 2 } };
 }
 
@@ -1898,7 +1900,7 @@ async function routeDetail(context, sess, opts = {}) {
 
 async function openDetailPage(opts = {}) {
   const sess = SESS(opts.sess);
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: !!opts.hasTouch });
   await context.addInitScript(buildMockBridgeScript(baseConfig()));
   await routeProjects(context);
   await routeRecent(context, [sess]);
@@ -1931,6 +1933,59 @@ test('assistant text is escaped, fenced blocks and inline code are formatted, to
   assert.equal(await page.locator('.gl-msg-assistant code:not(.gl-codeblock)').textContent(), 'npm test');
   assert.equal(await page.locator('#detail-scroll b').count(), 0, 'transcript text must never become markup');
   assert.equal(await page.locator('.gl-trunc-note').textContent(), 'Earlier messages hidden');
+  await context.close();
+});
+
+test('assistant markdown renders as formatting with no raw syntax left over', async () => {
+  const text = [
+    '**The Add button isn\'t shipped.** Costs **$3/month**, see `logins.json` and **`bold.code`**.',
+    '',
+    '## Add button',
+    'First line with *emphasis* and a [doc](https://example.com/a_b).',
+    'Second line https://example.com/x*y*z',
+    '',
+    '- bullet **one**',
+    '  - nested',
+    '1. numbered',
+    '',
+    '---',
+    '',
+    '| Plan | Cost |',
+    '|---|---:|',
+    '| **Azure** | $3 |',
+    '| Full | $23 |',
+    '',
+    'After table.',
+    '```js',
+    '**not bold** # not heading',
+    '```',
+  ].join('\n');
+  const { context, page } = await openDetailPage({ messages: [{ uuid: 'a', role: 'assistant', text, tools: [], at: 'x' }] });
+  const msg = page.locator('.gl-msg-assistant .gl-msg-text');
+  assert.deepEqual(await msg.locator('strong').allTextContents(), ['The Add button isn\'t shipped.', '$3/month', 'bold.code', 'one', 'Azure']);
+  assert.equal(await msg.locator('strong code').textContent(), 'bold.code');
+  assert.equal(await msg.locator('.gl-md-h2').textContent(), 'Add button');
+  assert.equal(await msg.locator('em').textContent(), 'emphasis');
+  assert.equal(await msg.locator('a', { hasText: 'doc' }).getAttribute('href'), 'https://example.com/a_b');
+  assert.equal(await msg.locator('a').nth(1).getAttribute('href'), 'https://example.com/x*y*z', 'a URL is never split by italics');
+  assert.deepEqual(await msg.locator('.gl-md-li').evaluateAll((els) => els.map((e) => [e.children[0].textContent, e.children[1].textContent, e.style.marginLeft])),
+    [['•', 'bullet one', '0px'], ['•', 'nested', '16px'], ['1.', 'numbered', '0px']]);
+  assert.equal(await msg.locator('hr').count(), 1);
+  assert.deepEqual(await msg.locator('tr').evaluateAll((rows) => rows.map((r) => [...r.children].map((c) => c.tagName + ':' + c.textContent))),
+    [['TH:Plan', 'TH:Cost'], ['TD:Azure', 'TD:$3'], ['TD:Full', 'TD:$23']]);
+  assert.equal(await msg.locator('.gl-md-p').last().textContent(), 'After table.', 'the line after a table is not swallowed');
+  assert.equal(await msg.locator('.gl-codeblock').textContent(), '**not bold** # not heading', 'fences stay literal');
+  const outside = await msg.evaluate((el) => { const c = el.cloneNode(true); c.querySelector('.gl-codeblock').remove(); return c.textContent; });
+  assert.doesNotMatch(outside, /\*\*|##|\|---/, 'no raw markdown left: ' + outside);
+  await context.close();
+});
+
+test('text that only resembles markdown stays literal', async () => {
+  const text = 'Compute 2 * 3 * 4 and a*b*c, plus snake_case_name and **unclosed.\nA | pipe line\nnext line';
+  const { context, page } = await openDetailPage({ messages: [{ uuid: 'a', role: 'assistant', text, tools: [], at: 'x' }] });
+  const msg = page.locator('.gl-msg-assistant .gl-msg-text');
+  assert.equal(await msg.textContent(), text);
+  assert.equal(await msg.locator('em, strong, table, .gl-md-li').count(), 0);
   await context.close();
 });
 
@@ -2180,7 +2235,7 @@ const START_QUEUE = 'gl-session-pending-starts-v1';
 const REPLY_QUEUE = 'gl-session-pending-replies-v1';
 
 async function startPageWithStartRoute(handler, opts = {}) {
-  const context = await browser.newContext();
+  const context = await browser.newContext({ hasTouch: !!opts.hasTouch });
   await context.addInitScript(buildMockBridgeScript(baseConfig()));
   if (opts.beforeNav) await opts.beforeNav(context);
   await routeProjects(context);
@@ -3218,7 +3273,7 @@ test('an asked Recent row whose answer is queued stays hidden across a reload wh
   assert.equal(queue[0].body.answers, 'askk1');
   await page.reload();
   await page.waitForSelector('#session-recent-list .gl-recent-group');
-  assert.equal(await page.locator('#session-recent-list .gl-ask-chips button').count(), 0, 'the answered question is not repainted');
+  assert.deepEqual(await page.locator('#session-recent-list .gl-ask-chips button').allTextContents(), ['Clarify'], 'the answered question is not repainted; only the queued Start\'s own chip remains');
   await context.close();
 });
 
@@ -3514,19 +3569,210 @@ test('interactive session: reply attach and dictate buttons are disabled with th
   await context.close();
 });
 
-test('reply dictation: tap mic to record, tap again to stop, transcript is INSERTED into the reply box (not sent, launcher prompt untouched)', async () => {
+// --- reply mic: same gesture as the launcher mic (tap-tap sends, hold = Insert / Cancel) ---
+
+const REPLY_LAUNCHES = 'gl-session-voice-reply-launches-v1';
+const replyLaunches = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{}'), REPLY_LAUNCHES);
+const mockVoice = (page, responses) => page.evaluate((r) => window.__glMock.configure({ responses: r }), responses);
+const pollNow = (page) => page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+
+async function recordingReplyPage(opts = {}) {
+  const r = await openDetailPage(opts);
+  await r.page.click('#detail-record-btn');
+  await r.page.waitForSelector('#detail-record-btn.recording');
+  return r;
+}
+
+test('reply dictation: tap-tap stops, transcribes and SENDS typed + transcript as a reply; box clears at once, launcher prompt untouched', async () => {
   const { context, page, h } = await openDetailPage();
   await page.fill('#detail-reply', 'before');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] })); // hold the transcript back to see the pending state
   await page.click('#detail-record-btn');
-  assert.equal(await page.locator('#detail-record-btn').evaluate((el) => el.classList.contains('recording')), true);
-  assert.equal(await page.locator('#detail-send').isDisabled(), false);
+  await page.waitForSelector('#detail-record-btn.recording');
   await page.click('#detail-record-btn');
-  await page.waitForFunction(() => document.getElementById('detail-reply').value.includes('a fake voice transcript'));
-  assert.equal(await page.inputValue('#detail-reply'), 'before a fake voice transcript');
-  assert.equal(h.replies.length, 0, 'no auto-send');
+  // Committed before any answer: box empty, a pending bubble with the typed text, a durable record naming the session.
+  assert.equal(await page.inputValue('#detail-reply'), '');
+  await page.waitForSelector('.gl-bubble.pending');
+  assert.equal(await page.locator('.gl-bubble.pending').textContent(), 'before …');
+  const rec = Object.values(await replyLaunches(page));
+  assert.equal(rec.length, 1);
+  assert.equal(rec[0].sessionId, 'sess-uuid-1');
+  assert.equal(rec[0].prefix, 'before');
+  assert.equal(h.replies.length, 0);
+  await page.evaluate(() => window.__glMock.replyNow('voiceStop', { text: 'a fake voice transcript' }));
+  await waitFor(() => h.replies.length === 1, 'the voice reply');
+  assert.equal(h.replies[0].text, 'before a fake voice transcript');
   assert.equal(await page.inputValue('#session-prompt'), '');
-  const calls = await page.evaluate(() => window.__glCallLog.map((c) => c.method));
-  assert.ok(calls.includes('voiceStart') && calls.includes('voiceStop'));
+  await page.waitForFunction(() => document.querySelector('.gl-bubble.pending') === null || document.querySelector('.gl-bubble:not(.pending)'));
+  assert.ok((await callsTo(page, 'voiceAck')).length >= 1, 'recording acked once the reply is durable');
+  await page.waitForFunction((k) => localStorage.getItem(k) === null, REPLY_LAUNCHES);
+  await context.close();
+});
+
+test('reply dictation: typed text and attached screenshots both go with the voice reply', async () => {
+  const uploads = [];
+  const { context, page, h } = await openDetailPage({ beforeNav: (c) => routeUpload(c, uploads) });
+  await page.fill('#detail-reply', 'see this');
+  await page.setInputFiles('#detail-attach-input', fakeImage('one.png'));
+  await page.waitForSelector('#detail-thumbs .gl-thumb');
+  await page.click('#detail-record-btn');
+  await page.waitForSelector('#detail-record-btn.recording');
+  await page.click('#detail-record-btn');
+  assert.equal(await page.locator('#detail-thumbs .gl-thumb').count(), 0, 'screenshots leave the composer with the send');
+  await waitFor(() => h.replies.length === 1, 'the voice reply');
+  assert.equal(h.replies[0].text, 'see this a fake voice transcript');
+  assert.deepEqual(h.replies[0].attachments, ['id-one.png']);
+  await context.close();
+});
+
+test('reply dictation: hold + Insert puts the transcript in the reply box and sends nothing', async () => {
+  const { context, page, h } = await recordingReplyPage({ hasTouch: true });
+  await page.fill('#detail-reply', 'before');
+  const { touch, target } = await holdMic(page, 'detail');
+  await touch('touchMove', target);
+  await page.waitForSelector('#detail-insert-target.armed');
+  await touch('touchEnd');
+  await page.waitForFunction(() => document.getElementById('detail-reply').value === 'before a fake voice transcript');
+  await page.waitForTimeout(300);
+  assert.equal(h.replies.length, 0, 'insert must not send');
+  assert.equal(await page.locator('#detail-record-btn').evaluate((el) => el.classList.contains('recording')), false);
+  assert.deepEqual(await replyLaunches(page), {});
+  await context.close();
+});
+
+test('reply dictation: hold + Cancel discards the audio (voiceCancel), no transcription, nothing sent, typed text kept', async () => {
+  const { context, page, h } = await recordingReplyPage({ hasTouch: true });
+  await page.fill('#detail-reply', 'keep me');
+  const { touch, cancel } = await holdMic(page, 'detail');
+  await touch('touchMove', cancel);
+  await page.waitForSelector('#detail-cancel-target.armed');
+  await touch('touchEnd');
+  await page.waitForFunction(() => window.__glCallLog.some((c) => c.method === 'voiceCancel'));
+  await page.waitForSelector('#detail-hold-targets', { state: 'hidden' });
+  assert.equal((await callsTo(page, 'voiceStop')).length, 0);
+  assert.equal(await page.inputValue('#detail-reply'), 'keep me');
+  await page.waitForTimeout(300);
+  assert.equal(h.replies.length, 0);
+  await context.close();
+});
+
+test('reply dictation: releasing the hold elsewhere dismisses the targets and keeps recording', async () => {
+  const { context, page, h } = await recordingReplyPage({ hasTouch: true });
+  const { touch } = await holdMic(page, 'detail');
+  await touch('touchMove', { x: 380, y: 100 });
+  await touch('touchEnd');
+  await page.waitForSelector('#detail-hold-targets', { state: 'hidden' });
+  assert.equal(await page.locator('#detail-record-btn').evaluate((el) => el.classList.contains('recording')), true);
+  assert.equal((await callsTo(page, 'voiceStop')).length, 0);
+  assert.equal((await callsTo(page, 'voiceCancel')).length, 0);
+  assert.equal(h.replies.length, 0);
+  await context.close();
+});
+
+test('reply hold targets pop ABOVE the mic, left-aligned and fully on screen at 390x844', async () => {
+  const { context, page } = await recordingReplyPage({ hasTouch: true });
+  const { touch } = await holdMic(page, 'detail');
+  const mic = await page.locator('#detail-record-btn').boundingBox();
+  for (const id of ['detail-insert-target', 'detail-cancel-target']) {
+    const b = await page.locator('#' + id).boundingBox();
+    assert.ok(b.y + b.height <= mic.y, `${id} sits above the mic`);
+    assert.ok(b.x >= 0 && b.x + b.width <= 390 && b.y >= 0, `${id} is fully on screen`);
+  }
+  if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
+  await touch('touchEnd');
+  await context.close();
+});
+
+test('reply dictation, queued stop: the late transcript from voicePending is sent to the session that dictated it, even after the detail was closed', async () => {
+  const { context, page, h } = await recordingReplyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#detail-reply', 'typed');
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v9' }, voicePending: { ready: [], failed: [], pending: [], waiting: 1 } });
+  await page.click('#detail-record-btn');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting' && r.voiceId === 'v9'), REPLY_LAUNCHES);
+  assert.equal(await page.inputValue('#detail-reply'), '');
+  await page.waitForSelector('.gl-bubble.pending');
+  await page.click('#gl-back-btn'); // leave the session before the transcript exists
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'late words', launchId }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await waitFor(() => h.replies.length === 1, 'the late reply');
+  assert.equal(h.replies[0].text, 'typed late words');
+  assert.equal(await page.inputValue('#session-prompt'), '', 'never the launcher prompt');
+  await pollNow(page);
+  await page.waitForTimeout(300);
+  assert.equal(h.replies.length, 1, 'sent once');
+  assert.ok((await callsTo(page, 'voiceAck')).some((p) => p.id === 'v9'));
+  await context.close();
+});
+
+test('reply dictation, queued stop then page reload: the transcript still reaches the right session', async () => {
+  const { context, page, h } = await recordingReplyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#detail-reply', 'typed');
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v9' } });
+  await page.click('#detail-record-btn');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting'), REPLY_LAUNCHES);
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await page.reload();
+  await page.waitForFunction(() => !!document.getElementById('session-project-pill').dataset.ready);
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'after reload', launchId }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await waitFor(() => h.replies.length === 1, 'the reply after reload');
+  assert.equal(h.replies[0].text, 'typed after reload');
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  await context.close();
+});
+
+test('reply dictation, empty transcript: typed text and screenshots come back to the reply box with an error, nothing sent', async () => {
+  const uploads = [];
+  const { context, page, h } = await openDetailPage({ beforeNav: (c) => routeUpload(c, uploads) });
+  await page.fill('#detail-reply', 'do not lose me');
+  await page.setInputFiles('#detail-attach-input', fakeImage('keep.png'));
+  await page.waitForSelector('#detail-thumbs .gl-thumb');
+  await mockVoice(page, { voiceStop: { code: 'empty_transcript' } });
+  await page.click('#detail-record-btn');
+  await page.waitForSelector('#detail-record-btn.recording');
+  await page.click('#detail-record-btn');
+  await page.waitForFunction(() => document.getElementById('detail-reply').value === 'do not lose me');
+  assert.equal(await page.locator('#detail-thumbs .gl-thumb').count(), 1, 'screenshot restored');
+  assert.match(await page.locator('#gl-error-text').textContent(), /Didn't catch anything/);
+  assert.equal(await page.locator('.gl-bubble.pending').count(), 0);
+  assert.deepEqual(await replyLaunches(page), {});
+  // The restored screenshot is still sendable: its blob was kept.
+  await page.click('#detail-send');
+  await waitFor(() => h.replies.length === 1, 'the manual reply');
+  assert.equal(h.replies[0].text, 'do not lose me');
+  assert.deepEqual(h.replies[0].attachments, ['id-keep.png']);
+  await context.close();
+});
+
+test('reply recording left running when the detail is closed: stopping it from the launcher mic inserts the transcript in the prompt, sends nothing', async () => {
+  const { context, page, h } = await recordingReplyPage();
+  await page.click('#gl-back-btn');
+  await page.waitForSelector('#gl-launcher', { state: 'visible' }); // the launcher mic does not show the reply's recording state, but its tap stops it
+  await page.click('#session-record-btn');
+  await page.waitForFunction(() => document.getElementById('session-prompt').value === 'a fake voice transcript');
+  await page.waitForTimeout(300);
+  assert.equal(h.replies.length, 0, 'no reply auto-sent');
+  assert.deepEqual(await replyLaunches(page), {});
+  assert.equal(await page.evaluate(() => localStorage.getItem('gl-session-voice-launches-v1')), null, 'no launcher launch either');
+  assert.ok((await callsTo(page, 'voiceAck')).length >= 1, 'recording acked after the insert');
+  await context.close();
+});
+
+test('reply dictation, failed transcription while the detail is closed: the text waits and is restored when the session is reopened', async () => {
+  const { context, page } = await recordingReplyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#detail-reply', 'still mine');
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v7' } });
+  await page.click('#detail-record-btn');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting'), REPLY_LAUNCHES);
+  await page.click('#gl-back-btn');
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await mockVoice(page, { voicePending: { ready: [], failed: [{ id: 'v7', error: 'asr down', launchId }], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await page.waitForFunction(() => /asr down/.test(document.getElementById('gl-error-text').textContent));
+  await page.click('#session-recent-list .gl-row');
+  await page.waitForFunction(() => document.getElementById('detail-reply').value === 'still mine');
+  assert.deepEqual(await replyLaunches(page), {});
   await context.close();
 });
 
@@ -3877,5 +4123,391 @@ test('MIGRATE: an in-flight gl-session-voice-autosend-v1 entry from before the u
   assert.equal(await page.evaluate(() => localStorage.getItem('gl-session-voice-autosend-v1')), null, 'legacy key removed once migrated');
   await page.waitForFunction((k) => localStorage.getItem(k) === null, START_QUEUE);
   assert.deepEqual(await callsTo(page, 'voiceAck'), [{ id: 'v7' }]);
+  await context.close();
+});
+
+// --- clarifying a Start from its Sending row, whichever Start the card is showing ---
+
+const sendingRow = (page, text) => page.locator('#session-recent-list .gl-row', { hasText: text });
+
+test('clarify from a Sending row: goes to THAT Start, not the one on the card, waits offline, shows on the row, and is sent after its Start is answered', async () => {
+  let offline = true;
+  const { context, page, calls } = await startPageWithStartRoute((route) => (offline ? route.abort('connectionrefused') : OK_START(route)));
+  const bodies = await routeClarify(context, (route) => OK_JSON(route, 200, { delivered: 'live' }));
+  await pressStart(page, 'older prompt');
+  await pressStart(page, 'newer prompt');
+  await sendingRow(page, 'newer prompt').waitFor();
+  const queue = JSON.parse(await page.evaluate(() => localStorage.getItem('gl-session-pending-starts-v1')));
+  const older = queue.find((e) => e.body.prompt === 'older prompt');
+  const newer = queue.find((e) => e.body.prompt === 'newer prompt');
+
+  await sendingRow(page, 'older prompt').locator('button', { hasText: 'Clarify' }).click();
+  assert.equal(await page.locator('#session-confirmation-body').textContent(), 'older prompt');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'session-clarify-text');
+  await page.fill('#session-clarify-text', 'for the older one');
+  await page.click('#session-clarify-send');
+
+  await sendingRow(page, 'older prompt').locator('.gl-recent-summary', { hasText: '1 clarification waiting' }).waitFor();
+  assert.equal(await sendingRow(page, 'newer prompt').locator('.gl-recent-summary', { hasText: 'clarification' }).count(), 0);
+  const held = JSON.parse(await page.evaluate((k) => localStorage.getItem(k), CLARIFY_QUEUE));
+  assert.deepEqual(held.map((c) => [c.startKey, c.text]), [[older.key, 'for the older one']]);
+  assert.equal(bodies.length, 0, 'no clarify while its Start is unanswered');
+
+  offline = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await waitFor(() => bodies.length === 1, 'the clarification after its Start was answered');
+  assert.equal(bodies[0].startKey, older.key);
+  assert.notEqual(bodies[0].startKey, newer.key);
+  assert.ok(calls.some((c) => c.idempotencyKey === older.key), 'its Start went out under the same key');
+  await drained(page, CLARIFY_QUEUE);
+  await context.close();
+});
+
+test('clarify from a Sending row: a transcribing voice send has the chip, and discarding it closes the box aimed at it', async () => {
+  const { context, page } = await slidePage([]);
+  await page.evaluate(() => window.__glMock.configure({ delays: { voiceStop: 3000 } }));
+  await page.click('#session-record-btn');
+  const row = sendingRow(page, 'typed words');
+  await row.waitFor();
+  await page.evaluate(() => document.getElementById('session-confirmation').classList.add('gl-hidden'));
+  await row.locator('button', { hasText: 'Clarify' }).click();
+  await page.waitForSelector('#session-clarify:not(.gl-hidden)');
+  await row.locator('button', { hasText: 'Discard' }).click();
+  await page.waitForSelector('#session-confirmation.gl-hidden', { state: 'attached' });
+  await context.close();
+});
+
+test('clarify from a Sending row: a Failed row has no Clarify chip', async () => {
+  const { context, page } = await startPageWithStartRoute((route) => OK_JSON(route, 400, { error: 'refused' }));
+  await page.fill('#session-prompt', 'refused prompt');
+  await page.waitForFunction(() => !document.getElementById('session-start-btn').disabled);
+  await page.click('#session-start-btn');
+  const row = page.locator('.gl-row-failed', { hasText: 'refused prompt' });
+  await row.waitFor();
+  assert.deepEqual(await row.locator('button').allTextContents(), ['Retry', 'Edit', 'Discard']);
+  await context.close();
+});
+
+// --- clarify mic: same gesture as the launcher and reply mics (tap-tap sends, hold = Insert / Cancel) ---
+
+const CLARIFY_LAUNCHES = 'gl-session-voice-clarify-launches-v1';
+const clarifyLaunchRecords = (page) => page.evaluate((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')), CLARIFY_LAUNCHES);
+
+/** A page whose Start succeeded, with the card's clarify box showing; records clarify bodies. */
+async function startedClarifyPage(opts = {}) {
+  const r = await startPageWithStartRoute(OK_START, { hasTouch: !!opts.hasTouch, beforeNav: opts.beforeNav });
+  const bodies = await routeClarify(r.context, (route) => OK_JSON(route, 200, { delivered: 'live' }));
+  await pressStart(r.page, 'build the thing');
+  await waitFor(() => r.calls.length === 1, 'the start');
+  // Answered, not just sent: a reload that interrupts the answer leaves the Start queued, and clarifications wait for it.
+  await drained(r.page, 'gl-session-pending-starts-v1');
+  return { ...r, bodies };
+}
+
+async function recordClarify(page) {
+  await page.click('#session-clarify-record-btn');
+  await page.waitForSelector('#session-clarify-record-btn.recording');
+}
+
+test('clarify mic: tap-tap SENDS typed + transcript to that Start; box clears at once, launcher prompt untouched, recording acked', async () => {
+  const { context, page, calls, bodies } = await startedClarifyPage();
+  await page.fill('#session-clarify-text', 'before');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  assert.equal(await page.locator('#session-record-btn.recording').count(), 0, 'only the clarify mic goes red');
+  await page.click('#session-clarify-record-btn');
+  // Committed before any answer: box empty, a durable record naming the Start, nothing sent yet.
+  assert.equal(await page.inputValue('#session-clarify-text'), '');
+  const recs = await clarifyLaunchRecords(page);
+  assert.equal(recs.length, 1);
+  assert.equal(recs[0].startKey, calls[0].idempotencyKey);
+  assert.equal(recs[0].prefix, 'before');
+  assert.equal(bodies.length, 0);
+  await page.evaluate(() => window.__glMock.replyNow('voiceStop', { text: 'a fake voice transcript' }));
+  await waitFor(() => bodies.length === 1, 'the voice clarification');
+  assert.equal(bodies[0].text, 'before a fake voice transcript');
+  assert.equal(bodies[0].startKey, calls[0].idempotencyKey);
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  await page.waitForFunction(() => /Clarification sent into the running session/.test(document.getElementById('session-clarify-status').textContent));
+  await page.waitForFunction((k) => localStorage.getItem(k) === null, CLARIFY_LAUNCHES);
+  await context.close();
+});
+
+test('clarify mic: hold + Insert puts the transcript in the clarify box and sends nothing', async () => {
+  const { context, page, bodies } = await startedClarifyPage({ hasTouch: true });
+  await page.fill('#session-clarify-text', 'before');
+  await recordClarify(page);
+  const { touch, target } = await holdMic(page, 'session-clarify');
+  await touch('touchMove', target);
+  await page.waitForSelector('#session-clarify-insert-target.armed');
+  await touch('touchEnd');
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'before a fake voice transcript');
+  await page.waitForTimeout(300);
+  assert.equal(bodies.length, 0, 'insert must not send');
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  assert.deepEqual(await clarifyLaunchRecords(page), []);
+  await context.close();
+});
+
+test('clarify mic: hold + Cancel discards the audio, nothing transcribed or sent, typed text kept', async () => {
+  const { context, page, bodies } = await startedClarifyPage({ hasTouch: true });
+  await page.fill('#session-clarify-text', 'keep me');
+  await recordClarify(page);
+  const { touch, cancel } = await holdMic(page, 'session-clarify');
+  await touch('touchMove', cancel);
+  await page.waitForSelector('#session-clarify-cancel-target.armed');
+  await touch('touchEnd');
+  await page.waitForFunction(() => window.__glCallLog.some((c) => c.method === 'voiceCancel'));
+  assert.equal((await callsTo(page, 'voiceStop')).length, 0);
+  assert.equal(await page.inputValue('#session-clarify-text'), 'keep me');
+  await page.waitForTimeout(300);
+  assert.equal(bodies.length, 0);
+  await context.close();
+});
+
+test('clarify mic: a recording native never heard of after a reload fails loudly and keeps the typed text visible', async () => {
+  const { context, page, bodies } = await startedClarifyPage();
+  await page.fill('#session-clarify-text', 'typed');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  await page.reload();
+  await page.waitForFunction(() => /not saved before the app closed.*typed/.test(document.getElementById('gl-error-text').textContent));
+  assert.equal(bodies.length, 0);
+  assert.deepEqual(await clarifyLaunchRecords(page), []);
+  await context.close();
+});
+
+test('clarify mic: a transcript that arrives by poll before voiceStop answers is matched by launchId and reaches that Start, never the prompt', async () => {
+  const { context, page, calls, bodies } = await startedClarifyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#session-clarify-text', 'typed');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  assert.ok(launchId, 'native is told which record owns the recording');
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'polled words', launchId }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await waitFor(() => bodies.length === 1, 'the clarification');
+  assert.equal(bodies[0].text, 'typed polled words');
+  assert.equal(bodies[0].startKey, calls[0].idempotencyKey);
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  await context.close();
+});
+
+test('clarify mic, queued stop then page reload: the transcript still reaches the right Start, never the prompt', async () => {
+  const { context, page, calls, bodies } = await startedClarifyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#session-clarify-text', 'typed');
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v9' } });
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting' && r.voiceId === 'v9'), CLARIFY_LAUNCHES);
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await page.reload();
+  await page.waitForFunction(() => !!document.getElementById('session-project-pill').dataset.ready);
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'after reload', launchId }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await waitFor(() => bodies.length === 1, 'the clarification after reload');
+  assert.equal(bodies[0].text, 'typed after reload');
+  assert.equal(bodies[0].startKey, calls[0].idempotencyKey);
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  await context.close();
+});
+
+test('clarify mic: the card moving to a newer Start mid-recording still sends to the Start that dictated it', async () => {
+  const { context, page, calls, bodies } = await startedClarifyPage();
+  await recordClarify(page);
+  await pressStart(page, 'a second session');
+  await waitFor(() => calls.length === 2, 'the second start');
+  await page.fill('#session-clarify-text', 'for the newer one');
+  await page.click('#session-clarify-record-btn');
+  await waitFor(() => bodies.length === 1, 'the clarification');
+  assert.equal(bodies[0].startKey, calls[0].idempotencyKey, 'addressed to the first Start');
+  assert.equal(bodies[0].text, 'a fake voice transcript', "the newer card's typed text is not swept in");
+  assert.equal(await page.inputValue('#session-clarify-text'), 'for the newer one');
+  await context.close();
+});
+
+test('clarify mic, empty transcript: typed text comes back to the box with an error, nothing sent', async () => {
+  const { context, page, bodies } = await startedClarifyPage();
+  await page.fill('#session-clarify-text', 'typed');
+  await page.evaluate(() => window.__glMock.configure({ responses: { voiceStop: { code: 'empty_transcript' } } }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'typed');
+  assert.match(await page.locator('#gl-error-text').textContent(), /Didn't catch anything/);
+  assert.equal(bodies.length, 0);
+  assert.deepEqual(await clarifyLaunchRecords(page), []);
+  await context.close();
+});
+
+test('clarify mic: a Start retried while its clarification is transcribing: the clarification follows the retried key', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { context, page, calls } = await startPageWithStartRoute(async (route, n) => {
+    if (n === 1) { await gate; return OK_JSON(route, 400, { error: 'refused' }); }
+    return OK_START(route);
+  });
+  const bodies = await routeClarify(context, (route) => OK_JSON(route, 200, { delivered: 'live' }));
+  await pressStart(page, 'build the thing');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  release();
+  const row = page.locator('.gl-row-failed', { hasText: 'build the thing' });
+  await row.waitFor();
+  await row.locator('button', { hasText: 'Retry' }).click();
+  await waitFor(() => calls.length === 2, 'the retried start');
+  assert.notEqual(calls[1].idempotencyKey, calls[0].idempotencyKey, 'premise: a retry rekeys');
+  await page.evaluate(() => window.__glMock.replyNow('voiceStop', { text: 'late words' }));
+  await waitFor(() => bodies.length === 1, 'the clarification');
+  assert.equal(bodies[0].startKey, calls[1].idempotencyKey);
+  await context.close();
+});
+
+test('clarify mic: a transcription that fails on a later poll puts the typed text back in the box', async () => {
+  const { context, page, bodies } = await startedClarifyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#session-clarify-text', 'typed');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await mockVoice(page, { voicePending: { ready: [], failed: [{ id: 'v9', error: 'bad audio', launchId }], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'typed');
+  assert.match(await page.locator('#gl-error-text').textContent(), /Transcription failed: bad audio/);
+  assert.equal(bodies.length, 0);
+  assert.deepEqual(await clarifyLaunchRecords(page), []);
+  await context.close();
+});
+
+test('clarify mic: a transcript redelivered after a reload (ack failed the first time) is one clarification, and the record clears', async () => {
+  const { context, page, bodies } = await startedClarifyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.evaluate(() => window.__glMock.configure({ errors: { voiceAck: 'nope' } }));
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v9' } });
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting'), CLARIFY_LAUNCHES);
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  const ready = { voicePending: { ready: [{ id: 'v9', text: 'words', launchId }], failed: [], pending: [], waiting: 0 } };
+  await mockVoice(page, ready);
+  await pollNow(page);
+  await waitFor(() => bodies.length === 1, 'the first delivery');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'delivered'), CLARIFY_LAUNCHES);
+  await page.reload();
+  await page.waitForFunction(() => !!document.getElementById('session-project-pill').dataset.ready);
+  await mockVoice(page, ready);
+  await pollNow(page);
+  await page.waitForFunction((k) => localStorage.getItem(k) === null, CLARIFY_LAUNCHES);
+  await page.waitForTimeout(300);
+  assert.equal(bodies.length, 1, 'sent once');
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  await context.close();
+});
+
+test('clarify mic: a poll reporting the recording pending records its voice id, so the lost-recording sweep cannot kill it', async () => {
+  const { context, page } = await startedClarifyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await mockVoice(page, { voicePending: { ready: [], failed: [], pending: [{ id: 'v9', launchId }], waiting: 1 } });
+  await pollNow(page);
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting' && r.voiceId === 'v9'), CLARIFY_LAUNCHES);
+  await context.close();
+});
+
+test('clarify mic: hold + Insert while the box is unreachable: the late transcript fills the clarify box, not the prompt', async () => {
+  const { context, page, bodies } = await startedClarifyPage({ hasTouch: true, beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v9' } });
+  await recordClarify(page);
+  const { touch, target } = await holdMic(page, 'session-clarify');
+  await touch('touchMove', target);
+  await page.waitForSelector('#session-clarify-insert-target.armed');
+  await touch('touchEnd');
+  await page.waitForFunction(() => window.__glCallLog.some((c) => c.method === 'voiceStop'));
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'late words' }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'late words');
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  assert.equal(bodies.length, 0);
+  await context.close();
+});
+
+test('clarify mic: a Start retried WHILE the mic is recording: the clarification goes to the retried key', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { context, page, calls } = await startPageWithStartRoute(async (route, n) => {
+    if (n === 1) { await gate; return OK_JSON(route, 400, { error: 'refused' }); }
+    return OK_START(route);
+  });
+  const bodies = await routeClarify(context, (route) => OK_JSON(route, 200, { delivered: 'live' }));
+  await pressStart(page, 'build the thing');
+  await recordClarify(page);
+  release();
+  const row = page.locator('.gl-row-failed', { hasText: 'build the thing' });
+  await row.waitFor();
+  await row.locator('button', { hasText: 'Retry' }).click();
+  await waitFor(() => calls.length === 2, 'the retried start');
+  await page.click('#session-clarify-record-btn');
+  await waitFor(() => bodies.length === 1, 'the clarification');
+  assert.equal(bodies[0].startKey, calls[1].idempotencyKey);
+  await context.close();
+});
+
+test('clarify mic: voiceStop erroring puts the typed text back with the error, nothing sent', async () => {
+  const { context, page, bodies } = await startedClarifyPage();
+  await page.fill('#session-clarify-text', 'typed');
+  await page.evaluate(() => window.__glMock.configure({ errors: { voiceStop: 'boom' } }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'typed');
+  assert.match(await page.locator('#gl-error-text').textContent(), /Transcription failed: boom/);
+  assert.equal(bodies.length, 0);
+  assert.deepEqual(await clarifyLaunchRecords(page), []);
+  await context.close();
+});
+
+test('clarify mic: storage refusing the record clears nothing, stops nothing, and says so', async () => {
+  const { context, page } = await startedClarifyPage();
+  await page.fill('#session-clarify-text', 'typed');
+  await recordClarify(page);
+  await page.evaluate(() => { const set = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (/clarify-launches/.test(k)) throw new Error('quota'); return set.call(this, k, v); }; });
+  await page.click('#session-clarify-record-btn');
+  await page.waitForSelector('#gl-error:not(.gl-hidden)');
+  assert.match(await page.locator('#gl-error-text').textContent(), /Couldn't save the clarification/);
+  assert.equal(await page.inputValue('#session-clarify-text'), 'typed');
+  assert.equal((await callsTo(page, 'voiceStop')).length, 0);
+  await context.close();
+});
+
+test('clarify mic: disabled while the launcher mic records', async () => {
+  const { context, page } = await startedClarifyPage();
+  await page.click('#session-record-btn');
+  await page.waitForSelector('#session-record-btn.recording');
+  assert.equal(await page.locator('#session-clarify-record-btn').isDisabled(), true);
+  await context.close();
+});
+
+test('launcher mic stops a clarify recording without starting a session', async () => {
+  const { context, page, calls } = await startedClarifyPage();
+  await recordClarify(page);
+  await page.click('#session-record-btn');
+  await page.waitForFunction(() => window.__glCallLog.some((c) => c.method === 'voiceStop'));
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'a fake voice transcript');
+  assert.equal(calls.length, 1, 'never auto-started a session');
+  await context.close();
+});
+
+test('reply mic: voiceStop names the launch, so a transcript polled before it answers still reaches that reply', async () => {
+  const { context, page, h } = await recordingReplyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await page.click('#detail-record-btn');
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  assert.ok(launchId, 'voiceStop carries the reply launch id');
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'polled words', launchId }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await waitFor(() => h.replies.length === 1, 'the reply');
+  assert.equal(h.replies[0].text, 'polled words');
   await context.close();
 });

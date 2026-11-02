@@ -180,6 +180,10 @@ test.add_file_references([group.new_reference("Modules/Clips/ClipsCatalog.m")])
   test.add_file_references([group.new_reference("CycleApp/#{n}.m")])
 end
 
+# CycleNSE/CycleReceipt.m: the Notification Service Extension's receipt parsing and exactly-once
+# gate. Foundation only, split out of the extension so it can be tested here.
+test.add_file_references([group.new_reference("CycleNSE/CycleReceipt.m")])
+
 test.build_configurations.each do |c|
   c.build_settings["PRODUCT_NAME"] = "SharedTests"
   c.build_settings["PRODUCT_BUNDLE_IDENTIFIER"] = "com.oliverullman.assistantlocation.sharedtests"
@@ -210,7 +214,7 @@ test.build_configurations.each do |c|
   # "QuotesModels.h"/"QuotesRuleEngine.h"/"QuotesImportParser.h" flat.
   # "Modules" itself for GLDefaultTabArbiterTests.m's "GLDefaultTabArbiter.h".
   # "Modules/WebBridge" for GLWebBackSwipeTests.m's "GLWebBackSwipe.h".
-  c.build_settings["HEADER_SEARCH_PATHS"] = ["$(inherited)", "$(SRCROOT)/App", "$(SRCROOT)/Shared", "$(SRCROOT)/Modules/Todos", "$(SRCROOT)/Modules/Esme", "$(SRCROOT)/QuotesApp/Sources", "$(SRCROOT)/ListenApp","$(SRCROOT)/Modules", "$(SRCROOT)/Modules/WebBridge", "$(SRCROOT)/Modules/CrashReporter", "$(SRCROOT)/Modules/Growth", "$(SRCROOT)/Modules/Clips", "$(SRCROOT)/CycleApp"]
+  c.build_settings["HEADER_SEARCH_PATHS"] = ["$(inherited)", "$(SRCROOT)/App", "$(SRCROOT)/Shared", "$(SRCROOT)/Modules/Todos", "$(SRCROOT)/Modules/Esme", "$(SRCROOT)/QuotesApp/Sources", "$(SRCROOT)/ListenApp","$(SRCROOT)/Modules", "$(SRCROOT)/Modules/WebBridge", "$(SRCROOT)/Modules/CrashReporter", "$(SRCROOT)/Modules/Growth", "$(SRCROOT)/Modules/Clips", "$(SRCROOT)/CycleApp", "$(SRCROOT)/CycleNSE"]
   # Deliberately no TEST_HOST / BUNDLE_LOADER: a standalone "logic test"
   # bundle needs no host app to launch, and no dependency edge onto
   # Overland -- which matters because a dependency edge would make the

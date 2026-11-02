@@ -32,6 +32,8 @@ input,textarea{-webkit-user-select:text;user-select:text}
 .sheetlayer .bs .save{margin:auto 0 10px!important}
 .sheetlayer .bs .pair{margin-top:auto}
 .sheetlayer .bs.cf .acts .save{margin:0!important}
+/* A long issue text fills the sheet to its min height, leaving no free space; keep a floor between the recipient line and the buttons. */
+.sheetlayer .bs.cf .to{margin-bottom:16px}
 .sheetlayer .bs.nf{min-height:0}
 .sheetlayer .bs.nf .acts .save{margin:24px 0 10px!important}
 
@@ -48,11 +50,6 @@ input.inp:focus{border-bottom-color:var(--pk)}
 input[type=time].pick,input[type=date].inp{color-scheme:dark}
 input[type=time].pick{background:none;font-family:inherit;width:auto}
 .p2 .ta.msg{min-height:200px}
-
-/* Drag handle state for hold-to-reorder on Home. */
-.rows .row{touch-action:none;transition:transform 120ms}
-.rows .row.drag{position:relative;z-index:6;transform:scale(1.03);box-shadow:0 8px 24px rgba(0,0,0,.6);transition:none}
-.rows .row.ph{opacity:.35}
 
 /* Error line: one bare message, pink, no explainer copy. */
 .errbar{position:relative;order:1;flex:none;margin:8px 12px;z-index:60;background:#0a0a0a;border:2px solid var(--pk);border-radius:16px;padding:12px 16px;font-size:14px;font-weight:700;color:var(--pk)}
@@ -172,7 +169,7 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .p2 label.pick.dp.wide{display:flex;width:100%;height:52px;padding:0 20px;border-radius:26px;justify-content:flex-start}
 .p2 .frow label.pick.dp{flex:0 1 auto}
 .p2.s2 main{gap:22px}
-.p2.s2 .arrows{padding-bottom:16px}
+.p2.s2 .arrows,.bs.t3 .arrows{padding-bottom:16px}
 .p2 .ck{display:flex;align-items:center;gap:12px;min-height:44px;margin-top:8px;cursor:pointer}
 .p2 .ck i{width:24px;height:24px;border-radius:6px;border:2px solid #5e5e5e;flex:none;position:relative}
 .p2 .ck.on i{background:var(--pk);border-color:var(--pk)}
@@ -197,8 +194,8 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 /* ---- Nudges (library, row actions, add sheet, thread). Ported from mockup-cycle-reminders.html and scoped under .nd
    so none of it leaks into other P2 screens. Class names rcn/qm avoid the existing global .rc/.q. ---- */
 .nd .hd{display:flex;justify-content:space-between;align-items:flex-start}
-.nd .plus{width:40px;height:40px;border-radius:50%;background:#0a0a0a;display:flex;align-items:center;justify-content:center;transform:translateY(-8px);cursor:pointer}
-.nd .plus .ic{width:22px;height:22px;color:var(--pk)}
+.nd .plus,.fl .plus{width:40px;height:40px;border-radius:50%;background:#0a0a0a;display:flex;align-items:center;justify-content:center;transform:translateY(-8px);cursor:pointer}
+.nd .plus .ic,.fl .plus .ic{width:22px;height:22px;color:var(--pk)}
 .nd .ic{fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .nd .lst{display:flex;flex-direction:column;gap:8px}
 .nd .lst .lab{margin-bottom:0}
@@ -376,3 +373,65 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .mic.rec{background:#ff2e88;color:#0a0a0a;animation:micpulse 1.2s ease-in-out infinite}
 @keyframes micpulse{50%{box-shadow:0 0 0 8px rgba(255,46,136,.28)}}
 .cdet .rule[data-a]{cursor:pointer}
+
+/* ---- Job tabs: Home / To-dos / Fights / Progress ---- */
+/* Four tabs share the bar, so each takes a quarter instead of the base 96px that fitted three. */
+.tabbar .tab{width:auto;flex:1;min-width:0}
+/* .phone prefix beats cycle.base.css's `.pts .tabbar{padding:9px 18px 0}`, which otherwise sat Home (and Points/Shop) 7px lower and narrower than the p2 tabs. */
+.phone .tabbar{padding:2px 8px 0}
+.p2 .seg.h4{height:52px}
+.p2 .seg.h4 span{flex:1;min-width:0;padding:0;font-size:13px;letter-spacing:.04em}
+/* Whose-it-is and kind pills under a to-do title */
+.tts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.tt{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:12px;border:1.5px solid #5e5e5e;color:#bdbdbd;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.p2 .td-row.dn p{color:#bdbdbd;font-weight:500}
+/* Home: momentum row, add rows */
+.nc.mom .x{font-family:"Archivo Black",sans-serif}
+/* Fights tab: weekly bars and the full list */
+.fchw{padding:6px 0 10px}
+.fchart{width:100%;height:auto;display:block}
+.fchart .b{fill:var(--pk)}
+.fchart .z{fill:#2a2a2a}
+.fchart text{font-family:"Space Grotesk",sans-serif;font-weight:700}
+.fchart .n{fill:#fff;font-size:13px}
+.fchart .d{fill:#bdbdbd;font-size:11px}
+/* Voice textarea: the mic sits in the corner of the box */
+.micta{position:relative}
+.micta textarea{padding-right:52px}
+.micta .mic{top:8px;right:8px;transform:none}
+/* Soft-deleted comment or reply, and the small text link that deletes one */
+.fn.gone p,.bub.gone{color:#bdbdbd;font-style:italic}
+.lnk{cursor:pointer;color:var(--pk);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:12px}
+.p2 .it.ed{outline:2px dashed var(--pk);outline-offset:-2px}
+
+/* Spacing the layout sweep demands (>=22px under the header, >=10px between stacked frames). The base gaps are 8px and the
+   segment/card sit 12-15px under the header, so each gets the few px it lacks; scoped to avoid moving other screens. */
+.p2 main > .hd + .seg{margin-top:10px}
+.p2 .hd + .card.in,.p2 main > .hd + .card.in{margin-top:21px}
+.pts main > .hd + .card.in{margin-top:14px}
+/* Progress has a one-line header, so its pink wedge ends lower than the Balance label would start; push the summary below it (pink-on-pink otherwise). */
+.p2 main > .hd + .sum{margin-top:30px}
+.nd .bub + .bub,.nd .bub.gone + .bub{margin-top:2px}
+.nd .rem.c + .rem.c{margin-top:2px}
+.rf .rcs{margin-top:10px;gap:10px}
+/* A long chip ("Hit herself, not related to <name>") wraps; let it grow instead of clipping two lines into a fixed-height pill. */
+.rf .rc{height:auto;min-height:30px;padding:6px 12px;line-height:1.25}
+
+/* Error screen (boot or a screen that cannot draw): no band, no tab bar, content centred in the safe area. Uses the p2 family for .save/.ghost. */
+.errscreen{justify-content:center;gap:16px;padding:var(--st) 24px var(--sb)}
+.errscreen h2{font-family:"Archivo Black",sans-serif;font-size:28px;line-height:1.05;text-transform:uppercase}
+.errscreen p:not(.ghost){color:var(--mu);font-size:15px}
+.errscreen .save{margin-top:8px}
+.ns{color:var(--pk);font-weight:700;font-size:13px}
+
+/* Home's pinned add row: a sibling of .scr (not inside it) so it never scrolls away; order:1 puts it between the scroller (0) and the tab bar (2). */
+.pts .rows.pin{order:1;flex-direction:row;gap:8px;padding:10px 22px;background:#0a0a0a;border-top:1px solid #222}
+.pts .pin .r2{flex:1;min-width:0;height:48px;padding:0 8px;gap:4px;justify-content:center;border-radius:24px}
+.pts .pin .r2 .lb{font-size:14px;white-space:nowrap}
+.pts .pin .r2 .mt{margin-left:0}
+.ixw{display:inline-flex;align-items:center;gap:6px;flex:none}
+.ixl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#bdbdbd}
+
+.fna{margin:10px 0 12px;text-align:right}
+
+.errlog{margin:8px 20px 16px;font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-all;user-select:text;-webkit-user-select:text}

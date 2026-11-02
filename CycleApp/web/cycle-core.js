@@ -39,6 +39,12 @@ var CycleCore = (function () {
     if (localHour(now, senderTz) < NUDGE_CUTOFF_H) return now;
     return zonedMs(addDays(localDay(now, senderTz), 1), NUDGE_MORNING_H, 0, recipientTz);
   }
+  // Raise issue: an issue the sender writes tonight reaches the partner no earlier than 08:00 the next calendar day
+  // on the sender's clock, and only after the sender confirms it (the "Still send?" card). Pure so the DST days
+  // (23 / 25 hour days) are testable; zonedMs resolves the wall time, not now + 24h.
+  function issueHeldUntil(now, tz) {
+    return zonedMs(addDays(localDay(now, tz), 1), NUDGE_MORNING_H, 0, tz);
+  }
   // Library sections. Pinned and All keep the author's manual order (sort_order); Recent is the 4
   // most recently sent-or-added unpinned nudges. A nudge sits in exactly one section: All is what
   // Pinned and Recent leave behind.
@@ -145,15 +151,18 @@ var CycleCore = (function () {
   function ms(v) { return typeof v === 'number' ? v : Date.parse(v); }
 
   // ---- scheduled rows -----------------------------------------------------
-  // A scheduled to do / ack / ask is written at once but stamped with its future time T in its natural timestamp
-  // (items: delivered_at, todos and acks: created_at). Until T it is invisible to both partners: every reader of
+  // A scheduled to do / ask is written at once but stamped with its future time T in its natural timestamp
+  // (items: delivered_at, todos: created_at). Until T it is invisible to both partners: every reader of
   // those tables goes through this predicate.
   function isScheduled(row, now) { return ms(row.delivered_at || row.created_at) > now; }
   // A partner-bound schedule cannot beat the hold on that kind of item: T is at least now + hold.
   function scheduleAt(couple, kind, at, now) { return Math.max(at, heldUntil(now, holdMinutes(couple, kind))); }
 
   function buildItem(o) {
-    var held = o.at != null ? 0 : holdMinutes(o.couple, o.kind);
+    // o.held_until (ms) is an absolute hold that replaces the couple's per-kind hold. Raise issue relies on it so the
+    // Ask hold setting (even 0) can never shorten the next-morning delay. A scheduled item (o.at) is never an issue.
+    if (o.held_until != null && o.at != null) throw new Error('held_until and at are exclusive');
+    var held = o.held_until != null ? Math.max(1, Math.ceil((o.held_until - o.now) / MIN)) : o.at != null ? 0 : holdMinutes(o.couple, o.kind);
     // o.at (ms): scheduled, born delivered with delivered_at = o.at, no hold.
     var due = o.at != null ? o.at : o.now;
     var item = {
@@ -165,7 +174,7 @@ var CycleCore = (function () {
       period: o.kind === 'ask' && o.ask_type === 'habit' ? o.period : null,
       points_earn: o.kind === 'ask' && o.points_earn != null ? o.points_earn : null, points_miss: o.kind === 'ask' && o.points_miss != null ? o.points_miss : null, needs_note: o.kind === 'ask' && !!o.needs_note,
       origin: o.origin || null, response_type: o.response_type || null, fight_marker_id: o.fight_marker_id || null,
-      held_until: held > 0 ? new Date(heldUntil(o.now, held)).toISOString() : null,
+      held_until: o.held_until != null ? new Date(o.held_until).toISOString() : held > 0 ? new Date(heldUntil(o.now, held)).toISOString() : null,
       status: held > 0 ? 'held' : 'delivered',
       delivered_at: held > 0 ? null : new Date(due).toISOString(),
       opened_at: null, kept: null,
@@ -187,17 +196,6 @@ var CycleCore = (function () {
     };
   }
 
-  // A delivered ask of type 'ack' is a request for an acknowledgment, not a to do: the recipient becomes the
-  // author and must write it (status 'requested' until they do). item_id links back to the Ask that carried it.
-  function askToAck(item, id, now) {
-    if (item.kind !== 'ask' || item.ask_type !== 'ack') throw new Error('askToAck needs an ack ask');
-    return {
-      id: id, couple_id: item.couple_id, author_id: item.recipient_id, requested_by: item.sender_id, item_id: item.id,
-      title: item.body, description: item.description || null, status: 'requested', done_at: null, read_at: null,
-      created_at: new Date(now).toISOString(), updated_at: new Date(now).toISOString(), deleted_at: null
-    };
-  }
-
   // ---- points ledger ----------------------------------------------------
   // Log fight's "Did she hit herself?" answer, as the Fight line's detail. Both partners read the same
   // ledger, so the follow-up names whoever logged the fight rather than saying "me" / "you".
@@ -207,8 +205,9 @@ var CycleCore = (function () {
   }
 
   // ---- habit goals: N logs per day / week / month ---------------------------------------------------------------
-  // Per-todo points; null = the rule default (task 3 earned / 3 lost, habit 1 / 0).
-  var DEF_PTS = { task: [3, 3], habit: [1, 0] };
+  // Per-todo points; null = the rule default (task 3 earned / 3 lost, habit 1 / 0). An 'ownup' to do scores like a task;
+  // a migrated one stores explicit 0 / 0, which `== null` keeps distinct from the default.
+  var DEF_PTS = { task: [3, 3], habit: [1, 0], ownup: [3, 3] };
   function earnPts(t) { return t.points_earn == null ? DEF_PTS[t.type][0] : t.points_earn; }
   function missPts(t) { return t.points_miss == null ? DEF_PTS[t.type][1] : t.points_miss; }
   // {start, end} (inclusive local days) of the day / Mon-first week / calendar month containing `day`.
@@ -238,18 +237,22 @@ var CycleCore = (function () {
   }
   // A to do that needs a note refuses an empty one (the UI shows this message).
   function requireNote(t, note) { if (t.needs_note && !(note || '').trim()) throw new Error('Note needed'); }
-  // Owner sees "Edited" on a to do their partner edited, until they next log it.
+  // Owner sees "Edited" on a to do their partner edited, until they next log it. An edit inside the author's edit window
+  // still counts: the partner may already have read the old text, and rows edited before the window existed carry it too.
   function isEdited(t, events, me) {
     return t.owner_id === me && t.created_by !== me && !!t.edited_at && !events.some(function (e) { return e.todo_id === t.id && e.user_id === me && ms(e.at) > ms(t.edited_at); });
   }
-
   // rows: {members, items, todos, todo_events, fight_markers, redemptions, challenges: [{id, name, start, breaks_on}], challenge_breaks: [{challenge_id, day}], challenge_days: [{challenge_id, day}]}
   // A challenge's start is the first local day that can pay; no rows.challenges means no challenges.
   // opts: {tz, now, since (YYYY-MM-DD, first day calm days can accrue)}
   function computeLedger(rows, opts) {
     if (!opts || !opts.tz || opts.now == null || !opts.since) throw new Error('computeLedger needs tz, now, since');
     var tz = opts.tz, today = localDay(opts.now, tz);
-    rows = Object.assign({}, rows, { items: rows.items.filter(function (r) { return !isScheduled(r, opts.now); }), todos: rows.todos.filter(function (r) { return !isScheduled(r, opts.now); }) });
+    // An approved-deleted fight, an undone to-do event and an undone tapped break are soft-deleted rows: they leave
+    // every line, streak and chart here, so both phones compute the same points once the delete has synced.
+    rows = Object.assign({}, rows, { items: rows.items.filter(function (r) { return !isScheduled(r, opts.now); }), todos: rows.todos.filter(function (r) { return !isScheduled(r, opts.now); }),
+      fight_markers: rows.fight_markers.filter(function (r) { return !r.deleted_at; }), todo_events: rows.todo_events.filter(function (r) { return !r.deleted_at; }),
+      challenge_breaks: (rows.challenge_breaks || []).filter(function (r) { return !r.deleted_at; }) });
     var nameOf = {};
     rows.members.forEach(function (m) { nameOf[m.user_id] = m.name; });
     var lines = []; // {day, pts, label, who}
@@ -273,14 +276,14 @@ var CycleCore = (function () {
     rows.nudge_sends.forEach(function (n) {
       if (n.deleted_at || ms(n.deliver_at) > opts.now) return;
       var d = dayOf(n.deliver_at);
-      if (n.opened_at && dayOf(n.opened_at) === d) add(d, 1, 'Nudge opened');
-      else if (d < today) add(d, -1, 'Nudge unopened');
+      if (n.opened_at && dayOf(n.opened_at) === d) add(d, 1, 'Reminder opened');
+      else if (d < today) add(d, -1, 'Reminder unopened');
     });
 
     // "Nudge done" installments from the author's awards to the recipient (see awardInstallments for the stop rule).
     rows.nudge_awards.forEach(function (a) {
       if (a.deleted_at) return;
-      awardInstallments(a, today, tz).forEach(function (x) { if (x.paid) add(x.day, x.points, 'Nudge done', nameOf[a.recipient_id]); });
+      awardInstallments(a, today, tz).forEach(function (x) { if (x.paid) add(x.day, x.points, 'Reminder done', nameOf[a.recipient_id]); });
     });
 
     var todoById = {};
@@ -349,9 +352,12 @@ var CycleCore = (function () {
       if (c.breaks_on === 'goal') return goalChallenge(c);
       var tap = c.breaks_on === 'tap', brokenOn = tap ? (tapBreaks[c.id] || {}) : hitsByDay;
       var n = 0, best = 0, earned = 0, days = [], accepted = !!c.accepted_at;
-      if (!accepted) return { id: c.id, name: c.name, for_user: c.for_user, breaks_on: tap ? 'tap' : 'hit', broken_today: false, accepted: false, start: null, day: 0, best: 0, earned: 0, tonight: 0, days: [], next: { week: 7, month: 30 } };
+      if (!accepted) return { id: c.id, name: c.name, archived: !!c.archived_at, for_user: c.for_user, breaks_on: tap ? 'tap' : 'hit', broken_today: false, accepted: false, start: null, day: 0, best: 0, earned: 0, tonight: 0, days: [], next: { week: 7, month: 30 } };
       var start = dayOf(c.accepted_at) > c.start ? dayOf(c.accepted_at) : c.start;
-      for (var d = start; d < today; d = addDays(d, 1)) {
+      // An archived challenge stops accruing on its archive day (points already earned stay); unarchiving clears
+      // archived_at, so the days in between then count again.
+      var endDay = c.archived_at && dayOf(c.archived_at) < today ? dayOf(c.archived_at) : today;
+      for (var d = start; d < endDay; d = addDays(d, 1)) {
         if (brokenOn[d]) { n = 0; days.push({ d: d, n: 0, bonus: false }); continue; }
         n++; best = Math.max(best, n);
         days.push({ d: d, n: n, bonus: n % 7 === 0 || n % 30 === 0 });
@@ -363,14 +369,14 @@ var CycleCore = (function () {
       // next = days from today until the day whose finish pays the bonus (0 = today's finish).
       var day = start > today || brokenOn[today] ? 0 : n + 1;
       // days: start..today, n = streak number that day (0 on a hit day); today's n is the day in progress.
-      if (start <= today) days.push({ d: today, n: day, bonus: false });
+      if (start <= today && endDay === today) days.push({ d: today, n: day, bonus: false });
       var tonight = day ? Math.min(day, 10) + (day % 7 === 0 ? 10 : 0) + (day % 30 === 0 ? 100 : 0) : 0;
-      return { id: c.id, name: c.name, for_user: c.for_user, breaks_on: tap ? 'tap' : 'hit', broken_today: !!brokenOn[today], accepted: true, start: start, day: day, best: best, earned: earned, tonight: tonight, days: days,
+      return { id: c.id, name: c.name, archived: !!c.archived_at, for_user: c.for_user, breaks_on: tap ? 'tap' : 'hit', broken_today: !!brokenOn[today], accepted: true, start: start, day: day, best: best, earned: earned, tonight: tonight, days: days,
         next: { week: Math.max(7, Math.ceil(day / 7) * 7) - day, month: Math.max(30, Math.ceil(day / 30) * 30) - day } };
     });
 
     function goalChallenge(c) {
-      var base = { id: c.id, name: c.name, for_user: c.for_user, breaks_on: 'goal', accepted: !!c.accepted_at, start: null, opens: c.start, deadline: addDays(c.start, c.goal_window_days - 1), count: 0, goal_days: c.goal_days, goal_earn: c.goal_earn, goal_miss: c.goal_miss, rule: c.rule,
+      var base = { id: c.id, name: c.name, archived: !!c.archived_at, for_user: c.for_user, breaks_on: 'goal', accepted: !!c.accepted_at, start: null, opens: c.start, deadline: addDays(c.start, c.goal_window_days - 1), count: 0, goal_days: c.goal_days, goal_earn: c.goal_earn, goal_miss: c.goal_miss, rule: c.rule,
         logged_today: false, status: 'active', broken_today: false, day: 0, best: 0, earned: 0, tonight: 0, days: [], next: { week: 7, month: 30 } };
       if (!c.accepted_at) return base;
       var start = dayOf(c.accepted_at) > c.start ? dayOf(c.accepted_at) : c.start, deadline = base.deadline;
@@ -420,29 +426,31 @@ var CycleCore = (function () {
     return { earned: arr(earned), lost: arr(lost) };
   }
 
-  // Today's first-open banner: ledger lines for the whole days from lastDay (the local day the banner was last dismissed)
-  // up to but not including today, because today's lines are still moving and stay on Points. lastDay is included: it was
-  // dismissed partway through, so its later lines were never seen. No lastDay (first run) means yesterday only, not the
-  // couple's whole history. Null when today's banner was already dismissed or nothing moved, so no empty card shows.
-  // Repeats merge (three tallies of one habit read +3 once) and the biggest moves sort first, with the label as the
-  // tiebreak so both phones list the same lines.
-  function dailyDigest(led, lastDay) {
-    var today = led.today, start = lastDay || addDays(today, -1);
-    if (start >= today) return null;
-    var inRange = function (d) { return d >= start && d < today; }, merged = {}, net = 0, any = false;
-    function take(pts, label, who) {
-      var k = label + '|' + (who || ''), m = merged[k] || (merged[k] = { pts: 0, label: label, who: who || null });
-      m.pts += pts; net += pts; any = true;
+
+  // ---- fight patterns (shared markers, both partners) ---------------------
+  // days: local YYYY-MM-DD of every fight either partner logged. Calm days are the days from `since` up to
+  // yesterday with no fight, the same rule computeLedger pays +3 for, so the numbers agree with the Points ledger.
+  // streak = calm days in a row ending yesterday (today is not over yet); best = longest such run; last28 = calm days
+  // among the 28 days before today. A `since` after today yields zeros.
+  function calmStats(days, today, since) {
+    var fought = {}; days.forEach(function (d) { fought[d] = true; });
+    var run = 0, best = 0, last28 = 0;
+    for (var d = since; d < today; d = addDays(d, 1)) {
+      run = fought[d] ? 0 : run + 1;
+      if (run > best) best = run;
+      if (!fought[d] && dayDiff(d, today) <= 28) last28++;
     }
-    Object.keys(led.weeks).forEach(function (w) {
-      Object.keys(led.weeks[w].days).forEach(function (d) { if (inRange(d)) led.weeks[w].days[d].lines.forEach(function (l) { take(l.pts, l.label, l.who); }); });
-    });
-    led.spends.forEach(function (s) { if (inRange(s.day)) take(s.pts, 'Redeemed', null); });
-    if (!any) return null;
-    var lines = Object.keys(merged).map(function (k) { return merged[k]; }).filter(function (m) { return m.pts; })
-      .sort(function (a, b) { return Math.abs(b.pts) - Math.abs(a.pts) || a.label.localeCompare(b.label) || String(a.who).localeCompare(String(b.who)); });
-    return { start: start, net: net, lines: lines };
+    return { streak: run, best: best, last28: last28 };
   }
+  // Fights per week for `weeks` weeks ending with the week of `today`: [{start, n}] oldest first.
+  function weeklyFights(days, today, weeks) {
+    var first = addDays(weekStart(today), -7 * (weeks - 1)), out = [];
+    for (var i = 0; i < weeks; i++) out.push({ start: addDays(first, 7 * i), n: 0 });
+    days.forEach(function (d) { var k = Math.floor(dayDiff(first, d) / 7); if (k >= 0 && k < weeks) out[k].n++; });
+    return out;
+  }
+  // May the author still change something they just submitted? True for `windowMin` minutes after `createdAtMs`.
+  function inEditWindow(createdAtMs, nowMs, windowMin) { return nowMs - createdAtMs < windowMin * MIN; }
 
   // ---- cycle phase (private fight log) -----------------------------------
   // fights: [{at (ms), intensity}]. Fight = day of fight, Cool = 1-2 days after,
@@ -462,7 +470,7 @@ var CycleCore = (function () {
   }
 
   // ---- needs you ---------------------------------------------------------
-  // s: {me, now, tz, items, redemptions, nudge_sends, nudge_replies, fight_markers, fight_notes, acks}
+  // s: {me, now, tz, items, redemptions, nudge_sends, nudge_replies, fight_markers, fight_notes, todos, seen, since}
   function needsYou(s) {
     var out = [];
     var ready = s.items.filter(function (i) {
@@ -483,17 +491,19 @@ var CycleCore = (function () {
     // a fight the other person logged that is unrepaired and where I have written nothing yet
     var mine = {};
     s.fight_notes.forEach(function (n) { if (n.author_id === s.me) mine[n.fight_marker_id] = true; });
-    s.fight_markers.filter(function (m) { return m.logged_by !== s.me && !m.repaired_at && !mine[m.id]; })
+    s.fight_markers.filter(function (m) { return m.logged_by !== s.me && !m.repaired_at && !m.deleted_at && !m.delete_requested_at && !mine[m.id]; })
       .sort(function (a, b) { return ms(b.at) - ms(a.at); })
       .forEach(function (m) { out.push({ type: 'fight', marker: m }); });
-    // an acknowledgment my partner asked me to write, then ones they wrote that I have not opened yet
-    var live = s.acks.filter(function (a) { return !a.deleted_at && !isScheduled(a, s.now); });
-    live.filter(function (a) { return a.author_id === s.me && a.status === 'requested'; })
-      .sort(function (a, b) { return ms(b.created_at) - ms(a.created_at); })
-      .forEach(function (a) { out.push({ type: 'ackreq', ack: a }); });
-    live.filter(function (a) { return a.author_id !== s.me && a.status === 'done' && !a.read_at; })
-      .sort(function (a, b) { return ms(b.done_at) - ms(a.done_at); })
-      .forEach(function (a) { out.push({ type: 'ackin', ack: a }); });
+    // the other person asked to delete a fight they logged: approve or decline. Carries only the shared marker.
+    s.fight_markers.filter(function (m) { return m.logged_by !== s.me && m.delete_requested_at && !m.deleted_at; })
+      .sort(function (a, b) { return ms(b.delete_requested_at) - ms(a.delete_requested_at); })
+      .forEach(function (m) { out.push({ type: 'fightdel', marker: m }); });
+    // An owning-up the other person finished that I have not opened yet. `seen` (ids I opened) is private on-device;
+    // `since` is when this install first ran, so rows finished before it (e.g. migrated acknowledgments) never pop up.
+    s.todos.filter(function (t) {
+      return t.type === 'ownup' && t.owner_id !== s.me && t.done_at && !t.deleted_at && !isScheduled(t, s.now) && ms(t.done_at) >= s.since && s.seen.indexOf(t.id) < 0;
+    }).sort(function (a, b) { return ms(b.done_at) - ms(a.done_at); })
+      .forEach(function (t) { out.push({ type: 'ownup', todo: t }); });
     return out;
   }
 
@@ -509,11 +519,11 @@ var CycleCore = (function () {
   return {
     localDay: localDay, addDays: addDays, dayDiff: dayDiff, dow: dow, weekStart: weekStart,
     appendSpeech: appendSpeech, dueInfo: dueInfo, holdMinutes: holdMinutes, heldUntil: heldUntil, countdown: countdown, heldLabel: heldLabel, durText: durText, ms: ms,
-    isScheduled: isScheduled, scheduleAt: scheduleAt, buildItem: buildItem, askToTodo: askToTodo, askToAck: askToAck,
-    zonedMs: zonedMs, deliverAt: deliverAt, sectionNudges: sectionNudges,
+    isScheduled: isScheduled, scheduleAt: scheduleAt, buildItem: buildItem, askToTodo: askToTodo,
+    zonedMs: zonedMs, deliverAt: deliverAt, issueHeldUntil: issueHeldUntil, sectionNudges: sectionNudges,
     addMonths: addMonths, splitPayout: splitPayout, awardStatus: awardStatus,
     earnPts: earnPts, missPts: missPts, periodOf: periodOf, habitCount: habitCount, habitMisses: habitMisses, requireNote: requireNote, isEdited: isEdited,
-    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, dailyDigest: dailyDigest, phase: phase, needsYou: needsYou, monthGrid: monthGrid,
+    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, needsYou: needsYou, calmStats: calmStats, weeklyFights: weeklyFights, inEditWindow: inEditWindow, monthGrid: monthGrid,
     // Only a still-held item may offer Send / Edit / Drop; a stale notification can point at a delivered or dropped one.
     isStillHeld: function (i) { return !!i && i.status === 'held' && !i.deleted_at; }
   };

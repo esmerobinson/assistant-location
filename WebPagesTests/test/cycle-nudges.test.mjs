@@ -54,10 +54,10 @@ describe('nudges', () => {
     const page = await context.newPage();
     page.on('pageerror', (e) => { throw e; });
     await page.goto(URL_, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('[data-a="row:nudges"]');
+    await page.waitForSelector('[data-a="go:fight"]');
     return { context, page, requests, who };
   }
-  const library = async (page) => { await page.click('[data-a="row:nudges"]'); await page.waitForSelector('.nd [data-nid], .nd .empty'); };
+  const library = async (page) => { await page.click('[data-a="tab:todo"]'); await page.click('[data-a="todoseg:rem"]'); await page.waitForSelector('.nd [data-nid], .nd .empty'); };
   const sections = (page) => page.$$eval('[data-sec]', (els) => Object.fromEntries(els.map((e) => [e.dataset.sec, [...e.querySelectorAll('[data-nid]')].map((r) => r.dataset.nid)])));
   // The store persists on a 50 ms debounce through an async kv, so give a write time to land before reading it back.
   const settle = (page) => page.waitForTimeout(400);
@@ -192,23 +192,8 @@ describe('nudges', () => {
     await context.close();
   });
 
-  test('Today has no Send row, even from a saved order that still lists it', async () => {
-    // Send was removed from Today; an order saved before that must drop it, keep the user's arrangement
-    // and append rows added since (ack) instead of rendering a dead Send row.
-    const cases = [[undefined, ['nudges', 'todo', 'ack', 'fight']], [['send', 'todo', 'fight'], ['todo', 'fight', 'nudges', 'ack']], [['send', 'nudges', 'todo', 'fight'], ['nudges', 'todo', 'fight', 'ack']]];
-    for (const [rows, want] of cases) {
-      const s = seed(ME);
-      if (rows) s['priv.' + ME].prefs.rows = rows;
-      const { context, page } = await open(s, ME);
-      await page.waitForSelector('.rows .row');
-      const ids = await page.$$eval('.rows .row:not(.ovr)', (els) => els.map((e) => e.dataset.id));
-      assert.deepEqual(ids, want, 'rows for saved order ' + JSON.stringify(rows));
-      await context.close();
-    }
-  });
-
   // ---- Done, with points -------------------------------------------------------------------------
-  const homeBal = async (page) => +(await page.textContent('.bal'));
+  const homeBal = async (page) => { await page.click('.tabbar [data-a="tab:progress"]'); const v = +(await page.textContent('.sum .big')); await page.click('.tabbar [data-a="tab:todo"]'); return v; };
   async function toDone(page, id = 'n1') {
     await library(page);
     await page.click('[data-a="nudge:' + id + '"]');
@@ -237,7 +222,7 @@ describe('nudges', () => {
     assert.deepEqual([aw[0].points, aw[0].payout, aw[0].nudge_id, aw[0].recipient_id, aw[0].body], [20, '3mo', 'n1', HER, 'Ten minutes out is allowed']);
     assert.ok(st.rows.nudges.n1.done_at);
     assert.ok(st.outbox.some((o) => o.table === 'nudge_awards'), 'award is in the outbox: ' + JSON.stringify(st.outbox.map((o) => o.table)));
-    await page.click('[data-a="back"]');
+    // The library is the To-dos tab root now, so there is no Back to press; homeBal switches tabs itself.
     assert.equal(await homeBal(page) - before, 7);
     await context.close();
   });
@@ -302,13 +287,13 @@ describe('nudges', () => {
     await context.close();
   });
 
-  test("Esme's ledger shows 'Nudge done' entries", async () => {
+  test("Esme's ledger shows 'Reminder done' entries", async () => {
     const aw = { id: 'a1', couple_id: 'c1', author_id: ME, recipient_id: HER, nudge_id: 'n1', body: 'x', points: 30, payout: 'now',
       done_at: '2026-10-25T14:00:00Z', stopped_at: null, created_at: '2026-10-25T14:00:00Z', updated_at: '2026-10-25T14:00:00Z', deleted_at: null };
     const { context, page } = await open(seed(HER, { nudges: [nd('n1', 'x', { done_at: aw.done_at })], awards: [aw] }), HER);
-    await page.click('.bal');
+    await page.click('.tabbar [data-a="tab:progress"]'); await page.click('[data-a="go:points"]');
     await page.waitForSelector('#balance');
-    assert.ok((await page.content()).includes('Nudge done'));
+    assert.ok((await page.content()).includes('Reminder done'));
     await context.close();
   });
 });

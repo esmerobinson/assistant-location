@@ -36,6 +36,9 @@ var CycleStore = (function () {
     keys: function (p) { return Promise.resolve(Object.keys(localStorage).filter(function (k) { return k.indexOf(LS + p) === 0; }).map(function (k) { return k.slice(LS.length); })); }
   };
   var native = {
+    // Tells the shell the page can take calls. CycleBridge holds the push token, notification taps, foreground and
+    // speech callbacks until this arrives, so without it the box never learns this phone's push token.
+    ready: function () { return hasNative ? bridge('ready') : Promise.resolve(); },
     permission: function () { return hasNative ? bridge('notify.permission') : Promise.resolve(false); },
     schedule: function (o) { return hasNative ? bridge('notify.schedule', o) : Promise.resolve(); },
     cancel: function (id) { return hasNative ? bridge('notify.cancel', { id: id }) : Promise.resolve(); },
@@ -68,14 +71,16 @@ var CycleStore = (function () {
   };
 
   // ---- state ---------------------------------------------------------------
-  var SHARED = ['items', 'todos', 'todo_events', 'fight_markers', 'rewards', 'redemptions', 'nudges', 'nudge_sends', 'nudge_replies', 'nudge_awards', 'fight_notes', 'acks', 'challenges', 'challenge_breaks', 'challenge_days', 'todo_comments', 'todo_nudges', 'challenge_nudges'];
+  var SHARED = ['items', 'todos', 'todo_events', 'fight_markers', 'rewards', 'redemptions', 'nudges', 'nudge_sends', 'nudge_replies', 'nudge_awards', 'fight_notes', 'challenges', 'challenge_breaks', 'challenge_days', 'todo_comments', 'todo_nudges', 'challenge_nudges'];
   // Pull strategy per table: cursor column, or null = re-pull everything each sync.
   // nudge_sends MUST be re-pulled whole: the recipient's RLS hides a send until deliver_at, and when it
   // becomes visible its updated_at is old (it was stamped at insert), so an updated_at cursor would skip it forever.
-  var CURSOR = { items: 'updated_at', todos: 'updated_at', rewards: 'updated_at', redemptions: 'updated_at', todo_events: 'at', fight_markers: null, nudges: 'updated_at', nudge_sends: null, nudge_replies: 'updated_at', nudge_awards: 'updated_at', fight_notes: 'updated_at', acks: 'updated_at', challenges: 'updated_at', challenge_breaks: 'updated_at', challenge_days: 'updated_at', todo_comments: 'updated_at', todo_nudges: 'updated_at', challenge_nudges: 'updated_at' };
+  var CURSOR = { items: 'updated_at', todos: 'updated_at', rewards: 'updated_at', redemptions: 'updated_at', todo_events: 'updated_at', fight_markers: null, nudges: 'updated_at', nudge_sends: null, nudge_replies: 'updated_at', nudge_awards: 'updated_at', fight_notes: 'updated_at', challenges: 'updated_at', challenge_breaks: 'updated_at', challenge_days: 'updated_at', todo_comments: 'updated_at', todo_nudges: 'updated_at', challenge_nudges: 'updated_at' };
   // Sort column for tables with no cursor (the default is `at`).
   var ORDER = { nudge_sends: 'created_at' };
-  var S = { session: null, couple: null, members: [], rows: {}, cursors: {}, outbox: [], priv: null, syncError: null, syncing: false };
+  var S = { session: null, couple: null, members: [], rows: {}, cursors: {}, outbox: [], priv: null, syncError: null, syncing: false,
+    // Writes the server permanently refused, kept whole (never deleted automatically) so the person can read and export the text.
+    deadLetters: [], errLog: [], persistError: null, loaded: false, pushFails: 0, pushNextAt: 0, pushErr: null };
   SHARED.forEach(function (t) { S.rows[t] = {}; });
   var listeners = [];
   function emit() { listeners.forEach(function (f) { f(); }); }
@@ -93,22 +98,35 @@ var CycleStore = (function () {
   var persistTimer = 0;
   function persist() {
     clearTimeout(persistTimer);
-    persistTimer = setTimeout(persistNow, 50);
+    // persistNow already reported its failure (S.persistError + error bar); the catch only stops a second, unhandled rejection.
+    persistTimer = setTimeout(function () { persistNow().catch(function () {}); }, 50);
   }
-  function persistNow() {
+  // Writes everything that must survive a kill. A failed write is never silent: it sets S.persistError (shown in the
+  // error bar) and still rejects so an awaiting caller (sign-out, token refresh) stops too.
+  // S.loaded guards the shared/priv writes: if loadUserData failed half way, S holds empty rows, and writing them would
+  // overwrite the person's real data with nothing.
+  async function persistNow() {
     clearTimeout(persistTimer);
-    var uid = me();
-    var jobs = [kv.set('session', JSON.stringify(S.session))];
-    if (uid) {
-      jobs.push(kv.set('shared.' + uid, JSON.stringify({ couple: S.couple, members: S.members, rows: S.rows, cursors: S.cursors, outbox: S.outbox })));
-      if (S.priv) jobs.push(kv.set('priv.' + uid, JSON.stringify(S.priv)));
+    try {
+      var uid = me();
+      var jobs = [kv.set('session', JSON.stringify(S.session))];
+      if (uid && S.loaded) {
+        jobs.push(kv.set('shared.' + uid, JSON.stringify({ couple: S.couple, members: S.members, rows: S.rows, cursors: S.cursors, outbox: S.outbox, deadLetters: S.deadLetters })));
+        if (S.priv) jobs.push(kv.set('priv.' + uid, JSON.stringify(S.priv)));
+        jobs.push(kv.set('errlog.' + uid, JSON.stringify(S.errLog)));
+      }
+      await Promise.all(jobs);
+      if (S.persistError) { S.persistError = null; emit(); }
+    } catch (e) {
+      console.error('cycle persist failed:', e);
+      if (!S.persistError) { S.persistError = 'Not saved'; emit(); }
+      throw e;
     }
-    return Promise.all(jobs);
   }
 
   // Me nudges live here, never in Supabase: `nudges` shaped like the shared table, `nudge_sends` like
   // nudge_sends (recipient = me) so the UI treats both tiers with one code path.
-  function emptyPriv() { return { fights: [], nudges: [], nudge_sends: [], prefs: {}, queued: [] }; }
+  function emptyPriv() { return { fights: [], nudges: [], nudge_sends: [], prefs: {}, queued: [], drafts: {} }; }
 
   // ---- HTTP ------------------------------------------------------------------
   function authHeaders(extra) {
@@ -121,8 +139,14 @@ var CycleStore = (function () {
   function setSession(j) {
     S.session = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Math.floor(Date.now() / 1000) + (j.expires_in || 3600), user: { id: j.user.id, email: j.user.email } };
   }
+  // fetch that tags a network failure (a TypeError from fetch itself) as err.offline, so sync can tell "no connection" from a
+  // TypeError thrown by a bug in our own code, which must stay loud.
+  async function netFetch(url, opts) {
+    try { return await fetch(url, opts); }
+    catch (e) { if (e instanceof TypeError) e.offline = true; throw e; }
+  }
   async function gotrue(path, body) {
-    var r = await fetch(cfg.supabaseUrl + '/auth/v1' + path, { method: 'POST', headers: { apikey: cfg.supabaseAnonKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    var r = await netFetch(cfg.supabaseUrl + '/auth/v1' + path, { method: 'POST', headers: { apikey: cfg.supabaseAnonKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     var j = await r.json();
     if (!r.ok) {
       var err = new Error(j.msg || j.error_description || j.message || 'auth failed ' + r.status);
@@ -154,25 +178,43 @@ var CycleStore = (function () {
     }
     setSession(j); await persistNow();
   }
-  async function api(method, path, body, extra) {
+  // One PostgREST call. Returns {status, data}. Only a real PostgREST answer counts: a 2xx with a body must be JSON,
+  // because a captive portal or proxy answers 200 text/html and the caller would otherwise treat the write as delivered.
+  async function apiRaw(method, path, body, extra) {
     await ensureFresh();
-    var r = await fetch(cfg.supabaseUrl + '/rest/v1/' + path, { method: method, headers: authHeaders(extra), body: body === undefined ? undefined : JSON.stringify(body) });
+    var r = await netFetch(cfg.supabaseUrl + '/rest/v1/' + path, { method: method, headers: authHeaders(extra), body: body === undefined ? undefined : JSON.stringify(body) });
+    var text = await r.text();
     if (!r.ok) {
-      var text = await r.text(), err = new Error(method + ' ' + path.split('?')[0] + ' ' + r.status + ' ' + text);
-      err.status = r.status; err.body = text; throw err;
+      var err = new Error(method + ' ' + path.split('?')[0] + ' ' + r.status + ' ' + text);
+      err.status = r.status; err.body = text; err.where = method + ' ' + path.split('?')[0]; throw err;
     }
-    return r.status === 204 ? null : r.json().catch(function () { return null; });
+    if (!text) return { status: r.status, data: null };
+    if (!/json/i.test(r.headers.get('content-type') || '')) {
+      var bad = new Error('Unexpected reply (' + r.status + ') from ' + path.split('?')[0]);
+      bad.status = r.status; bad.badReply = true; bad.where = method + ' ' + path.split('?')[0]; throw bad;
+    }
+    return { status: r.status, data: JSON.parse(text) };
   }
+  async function api(method, path, body, extra) { return (await apiRaw(method, path, body, extra)).data; }
 
   // ---- auth --------------------------------------------------------------------
   async function loadUserData(uid) {
     var sh = JSON.parse((await kv.get('shared.' + uid)) || 'null');
-    if (sh) { S.couple = sh.couple; S.members = sh.members; S.rows = sh.rows; S.cursors = sh.cursors; S.outbox = sh.outbox; }
-    else { S.couple = null; S.members = []; SHARED.forEach(function (t) { S.rows[t] = {}; }); S.cursors = {}; S.outbox = []; }
+    if (sh) {
+      S.couple = sh.couple; S.members = sh.members; S.rows = sh.rows; S.cursors = sh.cursors; S.outbox = sh.outbox; S.deadLetters = sh.deadLetters || [];
+      // inflight only means something within one run; a kill mid-send leaves it stale and edits must fold again.
+      S.outbox.forEach(function (o) { delete o.inflight; });
+    }
+    else { S.couple = null; S.members = []; SHARED.forEach(function (t) { S.rows[t] = {}; }); S.cursors = {}; S.outbox = []; S.deadLetters = []; }
     // A cache written before a table existed lacks it; the first pull fills it.
     SHARED.forEach(function (t) { if (!S.rows[t]) S.rows[t] = {}; });
     S.priv = JSON.parse((await kv.get('priv.' + uid)) || 'null') || emptyPriv();
+    S.errLog = JSON.parse((await kv.get('errlog.' + uid)) || 'null') || [];
     migrateAffirmations();
+    S.loaded = true;
+    // Owning-ups the partner finished that I opened (private, on-device). `since` is when this install first ran: rows
+    // finished before it (the acknowledgments the migration turned into to dos) are history and never raise a card.
+    if (!S.priv.ownupSeen) { S.priv.ownupSeen = []; S.priv.ownupSince = Date.now(); persist(); }
   }
   // One-time: the self-set affirmations become Me nudges (oldest first, so they keep their order), then
   // the field is deleted so this never runs twice.
@@ -180,6 +222,7 @@ var CycleStore = (function () {
     var p = S.priv;
     if (!p.nudges) { p.nudges = []; p.nudge_sends = []; }
     if (!p.queued) p.queued = []; // asks for a partner who has not joined yet
+    if (!p.drafts) p.drafts = {}; // unsent text per compose surface (see Drafts in cycle-ui.js)
     if (!p.affirmations) return;
     p.affirmations.forEach(function (a, i) {
       var body = typeof a === 'string' ? a : a.text || a.body;
@@ -198,7 +241,10 @@ var CycleStore = (function () {
     setSession(j); await creds.set(email, password); await loadUserData(j.user.id); await persistNow(); await sync(); emit();
   }
   async function signOut() {
+    // Persist first: edits typed in the last 50ms sit in the debounce timer, and clearing state below would lose them.
+    await persistNow();
     cancelAllNotifications(); backupAllowed = null; pushRegistered = null;
+    S.loaded = false; S.deadLetters = [];
     S.session = null; S.couple = null; S.members = []; S.outbox = []; S.priv = null;
     SHARED.forEach(function (t) { S.rows[t] = {}; }); S.cursors = {};
     await kv.set('session', null); await creds.clear(); emit();
@@ -226,19 +272,23 @@ var CycleStore = (function () {
   async function pullTable(t) {
     var cur = CURSOR[t], since = cur && S.cursors[t];
     var q = t + '?select=*' + (since ? '&' + cur + '=gte.' + encodeURIComponent(since) : '') + '&order=' + (cur || ORDER[t] || 'at') + '.asc';
-    var max = since || null, from = 0;
+    var max = since || null, from = 0, seen = {};
     for (;;) { // PostgREST caps a response at 1000 rows: page with Range until a short page
       var page = await api('GET', q, undefined, { Range: from + '-' + (from + 999), 'Range-Unit': 'items' });
       page.forEach(function (row) {
         var pend = S.outbox.filter(function (o) { return o.table === t && o.id === row.id; });
         // A local edit not yet pushed wins over the server copy (last write wins).
         pend.forEach(function (o) { if (o.op === 'patch') for (var k in o.patch) row[k] = o.patch[k]; });
-        S.rows[t][row.id] = row;
+        S.rows[t][row.id] = row; seen[row.id] = true;
         if (cur && (!max || row[cur] > max)) max = row[cur];
       });
       if (page.length < 1000) break;
       from += 1000;
     }
+    // A table with no cursor is pulled whole, so a row the server no longer has was deleted there. Rows still waiting to push stay.
+    if (!cur) Object.keys(S.rows[t]).forEach(function (id) {
+      if (!seen[id] && !S.outbox.some(function (o) { return o.table === t && o.id === id; })) delete S.rows[t][id];
+    });
     if (cur) S.cursors[t] = max;
   }
   async function pull() {
@@ -248,42 +298,116 @@ var CycleStore = (function () {
     if (!S.couple) return;
     for (var i = 0; i < SHARED.length; i++) await pullTable(SHARED[i]);
   }
-  async function push() {
-    while (S.outbox.length) {
-      var o = S.outbox[0];
+  // A write the server will never accept (bad data, RLS refusal) as opposed to one worth retrying (auth, timeout, throttle, 5xx, offline).
+  // Exception: PostgREST answers 404/400 PGRST204/PGRST205 ("column/table not in the schema cache") and Postgres 42703/42P01 (column
+  // or relation does not exist) while a migration is not applied yet or the schema cache has not reloaded. The row is fine and
+  // the server will accept it later, so dead-lettering it would strand a good write; it stays queued and retries with backoff.
+  function permanent(e) {
+    if (!(e.status >= 400 && e.status < 500) || [401, 408, 429].indexOf(e.status) >= 0) return false;
+    return !/PGRST20[45]|42703|42P01|schema cache/.test(e.body || '');
+  }
+  function deadLetter(o, why, status) {
+    var entry = Object.assign({}, o); delete entry.inflight;
+    S.deadLetters.push({ id: uuid(), at: nowIso(), error: why, status: status || null, entry: entry });
+  }
+  // Sends one outbox entry; returns normally only when the server confirmed it. Throws otherwise (see push for the classes).
+  async function sendEntry(o) {
+    if (o.op === 'insert') {
       try {
-        if (o.op === 'insert') await api('POST', o.table, o.row, { Prefer: 'return=minimal' });
-        else await api('PATCH', o.table + '?id=eq.' + o.id, o.patch, { Prefer: 'return=minimal' });
-      } catch (e) {
-        // 409 on insert = this id already reached the server (response lost, retried): applied.
-        if (!(o.op === 'insert' && e.status === 409)) throw e;
+        var r = await apiRaw('POST', o.table, o.row, { Prefer: 'return=minimal' });
+        if (r.status !== 201) { var e = new Error('Unexpected reply (' + r.status + ') from ' + o.table); e.status = r.status; e.badReply = true; throw e; }
+      } catch (e2) {
+        // 409 = a row with this id may already be there (response lost, retried). Only a row that really exists counts as applied.
+        if (e2.status !== 409) throw e2;
+        var g = await apiRaw('GET', o.table + '?select=id&id=eq.' + encodeURIComponent(o.id));
+        if (!Array.isArray(g.data) || !g.data.length) { e2.noRow = true; throw e2; }
       }
-      S.outbox.shift();
+    } else {
+      // return=representation so "matched zero rows" (RLS hides the row: PostgREST answers 204) is distinguishable from applied.
+      var p = await apiRaw('PATCH', o.table + '?id=eq.' + encodeURIComponent(o.id), o.patch, { Prefer: 'return=representation' });
+      if (p.status === 204 || (Array.isArray(p.data) && !p.data.length)) { var e4 = new Error('PATCH ' + o.table + ' matched no row'); e4.status = 404; e4.noRow = true; throw e4; }
+      if (p.status !== 200 || !Array.isArray(p.data)) { var e3 = new Error('Unexpected reply (' + p.status + ') from ' + o.table); e3.status = p.status; e3.badReply = true; throw e3; }
     }
   }
-  // Push local writes first so the pull that follows returns their server-stamped rows.
+  async function push() {
+    // Backing off after a retryable failure: skip the network but keep reporting that failure, so sync() does not read
+    // "no error" and clear the error bar while the write is still stuck in the outbox.
+    if (Date.now() < S.pushNextAt) { if (S.pushErr) throw S.pushErr; return; }
+    while (S.outbox.length) {
+      var o = S.outbox[0];
+      o.inflight = true; // patch()/insert() must not fold into an entry whose body is already on the wire
+      try {
+        await sendEntry(o);
+      } catch (e) {
+        o.inflight = false;
+        if (!(permanent(e) || e.noRow)) {
+          // Worth retrying: stop here (order matters), back off so a dead link is not hammered every poll.
+          // Capped at 30 s (was 300 s): after the server recovers a person must not wait minutes for a queued write.
+          // A foreground, going online, or any new write also resets the wait (retryPush).
+          S.pushFails++; S.pushNextAt = Date.now() + Math.min(2000 * Math.pow(2, S.pushFails - 1), 30000); S.pushErr = e;
+          throw e;
+        }
+        console.error('cycle write refused, kept as not sent:', e);
+        deadLetter(o, e.message, e.status);
+        var di = S.outbox.indexOf(o); if (di >= 0) S.outbox.splice(di, 1);
+        persist(); emit();
+        continue;
+      }
+      S.pushFails = 0; S.pushNextAt = 0; S.pushErr = null;
+      var i = S.outbox.indexOf(o); if (i >= 0) S.outbox.splice(i, 1);
+    }
+  }
+  // Push local writes first so the pull that follows returns their server-stamped rows. A failed push never
+  // skips the pull: a head row the server cannot take must not freeze everything the partner sends.
   async function sync() {
     if (!S.session || S.syncing) { syncAgain = !!S.session; return; }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     S.syncing = true;
     try {
-      if (S.couple) await push();
-      await pull();
-      S.syncError = null;
-    } catch (e) {
-      if (e instanceof TypeError) { /* fetch rejected: offline, retried on the next trigger */ }
-      else { S.syncError = e.message; console.error('cycle sync failed:', e); }
+      var pushErr = null, pullErr = null;
+      try { if (S.couple) await push(); } catch (e) { pushErr = e; }
+      try { await pull(); } catch (e) { pullErr = e; }
+      var err = pushErr || pullErr;
+      // Only fetch's own network failure is "offline"; a TypeError from our code is a bug and shows.
+      if (!err || err.offline) { S.syncError = null; S.syncErrorStatus = null; }
+      else { S.syncError = err.message; S.syncErrorStatus = err.status || null; console.error('cycle sync failed:', err); logErr('sync', err); }
     } finally {
       S.syncing = false; persist(); emit(); reschedule();
       if (S.couple) registerPush();
       if (syncAgain) { syncAgain = false; scheduleSync(); }
     }
   }
+  // Ends any backoff so the next push tries now: called on foreground and on every local write.
+  function retryPush() { S.pushNextAt = 0; }
+  // True when the server permanently refused this row's insert: it still sits in S.rows with its text, but was never sent.
+  function notSent(t, id) { return S.deadLetters.some(function (d) { return d.entry.table === t && d.entry.id === id && d.entry.op === 'insert'; }); }
+  // Everything on disk exactly as stored (no JSON.parse), so a blob that will not load can still be taken off the phone.
+  async function rawExport() {
+    var keys = await kv.keys(''), out = {};
+    for (var i = 0; i < keys.length; i++) out[keys[i]] = await kv.get(keys[i]);
+    return JSON.stringify(out, null, 1);
+  }
+  // Last 20 failures kept on the device so the cause survives the 5s error bar. Never the request body or the row: only
+  // when (UTC), where (verb + table, never the filter), the HTTP status, and PostgREST's own `message` (its `details`
+  // can echo row values, so it is dropped). A non-HTTP error contributes only the first 120 chars of its own message.
+  function logErr(kind, e) {
+    var msg = String((e && e.message) || e), body = null;
+    if (e && e.status && e.body) { try { body = JSON.parse(e.body); } catch (x) { body = null; } }
+    msg = body && body.message ? String(body.message) : e && e.status ? 'HTTP ' + e.status : msg;
+    S.errLog.push({ t: nowIso(), kind: kind, where: (e && e.where) || null, status: (e && e.status) || null, msg: msg.slice(0, 120) });
+    if (S.errLog.length > 20) S.errLog.splice(0, S.errLog.length - 20);
+    persist();
+  }
+  function errLogText() {
+    return S.errLog.slice().reverse().map(function (r) { return [r.t, r.kind, r.status || '-', r.where || '-', r.msg].join(' | '); }).join('\n');
+  }
+  function deadLetterText() { return JSON.stringify(S.deadLetters, null, 2); }
 
   // ---- writes -------------------------------------------------------------------------
   function insert(t, row) {
     S.rows[t][row.id] = row;
     S.outbox.push({ op: 'insert', table: t, id: row.id, row: Object.assign({}, row) });
+    retryPush();
     persist(); emit(); scheduleSync(); reschedule();
     return row;
   }
@@ -296,9 +420,12 @@ var CycleStore = (function () {
     Object.assign(row, cols);
     if ('updated_at' in row) row.updated_at = nowIso();
     var last = S.outbox.filter(function (o) { return o.table === t && o.id === id; }).pop();
-    if (last && last.op === 'insert') Object.assign(last.row, cols);
+    // An in-flight entry already left with its old body, and push() will drop it on success: folding into it would lose this edit.
+    if (last && last.inflight) S.outbox.push({ op: 'patch', table: t, id: id, patch: cols });
+    else if (last && last.op === 'insert') Object.assign(last.row, cols);
     else if (last && last.op === 'patch' && last === S.outbox[S.outbox.length - 1]) Object.assign(last.patch, cols);
     else S.outbox.push({ op: 'patch', table: t, id: id, patch: cols });
+    retryPush();
     persist(); emit(); scheduleSync(); reschedule();
   }
 
@@ -314,24 +441,36 @@ var CycleStore = (function () {
   // for nothing. Hence a cheap GET /backup first: 200 = this user is the owner (PUT allowed for
   // the session), 403 = never PUT again this session. Anything else is loud and retried next save.
   var backupAllowed = null;
+  // A priv holding nothing at all: every field null or an empty array/object (emptyPriv() qualifies).
+  function privEmpty(p) {
+    return !p || Object.keys(p).every(function (k) { var v = p[k]; return v == null || (typeof v === 'object' && !Object.keys(v).length); });
+  }
+  // Fresh-install guard: a reinstalled or wiped device starts with an empty priv, and without this its first save
+  // would PUT that emptiness over the one good backup on the box (which keeps only the latest main file plus daily
+  // copies of whatever was last PUT). So while local priv is empty, GET the box copy and refuse to overwrite a
+  // non-empty one. Load-bearing: removing it silently destroys the backup the next time the app is reinstalled.
   async function backup() {
     if (!cfg.boxUrl || !S.session || backupAllowed === false || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
     try {
       await ensureFresh();
       var auth = { Authorization: 'Bearer ' + S.session.access_token };
-      if (backupAllowed === null) {
+      var remote = null;
+      if (backupAllowed === null || privEmpty(S.priv)) {
         var g = await fetch(cfg.boxUrl + '/backup', { method: 'GET', headers: auth });
         if (g.status === 403) { backupAllowed = false; return; }
-        if (!g.ok) { console.error('cycle backup probe failed: HTTP ' + g.status); return; }
+        // 404 = the owner has no backup yet, so the first PUT is safe.
+        if (!g.ok && g.status !== 404) { console.error('cycle backup probe failed: HTTP ' + g.status); return; }
         backupAllowed = true;
+        if (g.ok && privEmpty(S.priv)) remote = JSON.parse(await g.text());
       }
+      if (privEmpty(S.priv) && remote && !privEmpty(remote)) { console.error('cycle backup skipped: this device is empty but the box backup is not'); return; }
       var r = await fetch(cfg.boxUrl + '/backup', { method: 'PUT', headers: Object.assign({ 'Content-Type': 'application/json' }, auth), body: JSON.stringify(S.priv) });
       if (!r.ok) console.error('cycle backup failed: HTTP ' + r.status);
     } catch (e) { if (!(e instanceof TypeError)) console.error('cycle backup failed:', e); }
   }
   // ---- remote push ---------------------------------------------------------------------------
   // Native hands over the APNs token (cycleNative.pushToken); the box stores it for this account so the
-  // partner's new to dos / acknowledgments reach this phone while the app is closed. Registered once per
+  // partner's new to dos reach this phone while the app is closed. Registered once per
   // token + account per launch, only after sync shows a couple (the box rejects non-members).
   var pushRegistered = null;
   function setPushToken(t) { S.pushToken = t; if (S.couple) registerPush(); }
@@ -357,9 +496,9 @@ var CycleStore = (function () {
     if (!m || !S.couple) return out;
     list('items').forEach(function (i) {
       if (i.sender_id === me() && i.status === 'held' && !i.deleted_at)
-        out.push({ id: 'held-' + i.id, at: Math.max(C.ms(i.held_until), now + 1000), title: 'Still send?', body: i.kind.charAt(0).toUpperCase() + i.kind.slice(1), route: 'held/' + i.id });
+        out.push({ id: 'held-' + i.id, at: Math.max(C.ms(i.held_until), now + 1000), title: i.origin === 'issue' ? 'Do you still want to send this?' : 'Still send?', body: i.origin === 'issue' ? i.body : i.kind.charAt(0).toUpperCase() + i.kind.slice(1), route: 'held/' + i.id });
     });
-    // A to do I scheduled for myself appears for me at T. One my partner scheduled (or an ack either way) reaches
+    // A to do I scheduled for myself appears for me at T. One my partner scheduled reaches
     // me as a remote push from the box at T, so a local notification here would be a duplicate.
     list('todos').forEach(function (t) {
       if (t.owner_id === me() && t.created_by === me() && !t.deleted_at && !t.done_at && C.isScheduled(t, now))
@@ -370,16 +509,29 @@ var CycleStore = (function () {
     // the real 8 am alert for a partner nudge is remote push, phase 2.)
     list('nudge_sends').forEach(function (n) {
       if (n.recipient_id === me() && !n.opened_at && !n.deleted_at && C.ms(n.deliver_at) > now)
-        out.push({ id: 'nudge-' + n.id, at: C.ms(n.deliver_at), title: 'Nudge', body: n.body, route: 'nudge/' + n.id });
+        out.push({ id: 'nudge-' + n.id, at: C.ms(n.deliver_at), title: 'Reminder', body: n.body, route: 'nudge/' + n.id });
     });
     (S.priv ? S.priv.nudge_sends : []).forEach(function (n) {
       if (!n.opened_at && !n.deleted_at && C.ms(n.deliver_at) > now)
-        out.push({ id: 'nudge-' + n.id, at: C.ms(n.deliver_at), title: 'Nudge', body: n.body, route: 'nudge/' + n.id });
+        out.push({ id: 'nudge-' + n.id, at: C.ms(n.deliver_at), title: 'Reminder', body: n.body, route: 'nudge/' + n.id });
     });
     (S.priv ? S.priv.fights : []).forEach(function (f) {
       var at = f.at + 24 * 3600000;
       var mk = S.rows.fight_markers[f.id];
-      if (at > now && !f.followed && !(mk && mk.repaired_at)) out.push({ id: 'fu-' + f.id, at: at, title: 'Follow up', body: '', route: 'log-followup' });
+      if (mk && !mk.deleted_at && at > now && !f.followed && !mk.repaired_at) out.push({ id: 'fu-' + f.id, at: at, title: 'Follow up', body: '', route: 'log-followup' });
+    });
+    // A fight I logged with no note from me yet: ask 30 min after logging, then every 2 hours until there is one, skipping 22:00-08:00.
+    // iOS can't repeat on its own, so the next 6 are scheduled and each change or launch tops them up. Fights logged before this have no logged_at.
+    var hourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: m.tz || S.couple.tz, hourCycle: 'h23', hour: '2-digit' });
+    (S.priv ? S.priv.fights : []).forEach(function (f) {
+      var mk2 = S.rows.fight_markers[f.id];
+      if (!f.logged_at || !mk2 || mk2.deleted_at || list('fight_notes').some(function (n) { return n.fight_marker_id === f.id && n.author_id === me(); })) return;
+      for (var k = 0, n = 0; n < 6; k++) {
+        var at = f.logged_at + 30 * 60000 + k * 2 * 3600000, h = +hourFmt.format(at);
+        if (at <= now || h >= 22 || h < 8) continue;
+        out.push({ id: 'fnote-' + f.id + '-' + k, at: at, title: 'Log fight', body: 'What happened?', route: 'fight/' + f.id });
+        n++;
+      }
     });
     // An unaccepted challenge for me: a 09:00 reminder (my timezone) on each of the next 7 days until I accept.
     var tz = m.tz || S.couple.tz;
@@ -398,7 +550,10 @@ var CycleStore = (function () {
     if (!hasNative || !S.session) return;
     var w = wanted(), ids = w.map(function (x) { return x.id; });
     for (var i = 0; i < scheduledIds.length; i++) if (ids.indexOf(scheduledIds[i]) < 0) await native.cancel(scheduledIds[i]);
-    for (var j = 0; j < w.length; j++) await native.schedule(w[j]);
+    for (var j = 0; j < w.length; j++) {
+      // A time that slipped into the past between wanted() and the bridge call is simply not scheduled; any other rejection is real.
+      try { await native.schedule(w[j]); } catch (e) { if (!/not in the future/.test(String(e && e.message || e))) throw e; }
+    }
     scheduledIds = ids;
   }
   function cancelAllNotifications() { scheduledIds.forEach(native.cancel); scheduledIds = []; }
@@ -407,7 +562,11 @@ var CycleStore = (function () {
   async function boot() {
     var s = JSON.parse((await kv.get('session')) || 'null');
     if (s) { S.session = s; await loadUserData(s.user.id); }
-    window.addEventListener('online', sync);
+    window.addEventListener('online', function () { retryPush(); sync(); });
+    // iOS can kill a backgrounded page without any later event: flush the 50ms debounce the moment the page leaves the screen.
+    function flush() { if (S.session) persistNow().catch(function () {}); }
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flush(); });
     if (S.session) { native.permission(); sync(); }
   }
 
@@ -415,6 +574,6 @@ var CycleStore = (function () {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
     kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
-    api: api, persistNow: persistNow, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
+    api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
   };
 })();

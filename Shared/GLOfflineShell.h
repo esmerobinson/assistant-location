@@ -123,9 +123,12 @@ typedef NS_ENUM(NSInteger, GLOfflineShellRefreshResult) {
 // -loadLiveRequest: (and the shell's own) are tracked; others are ignored.
 - (void)webView:(WKWebView *)webView didCommitNavigation:(WKNavigation *)navigation;
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation;
-- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation;
-/// Returns YES when the loader consumed the failure (the host must then do
-/// nothing); NO when it was not a navigation this loader started.
+/// Both failure callbacks return YES when the loader consumed the failure (the
+/// host must then do nothing). A cancelled navigation (NSURLErrorCancelled, -999)
+/// is always consumed, whoever started it: another navigation replaced it, so
+/// nothing failed and the page stays usable.
+- (BOOL)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error;
+/// Also NO when it was not a navigation this loader started.
 - (BOOL)webView:(WKWebView *)webView
     didFailProvisionalNavigation:(WKNavigation *)navigation
                        withError:(NSError *)error;

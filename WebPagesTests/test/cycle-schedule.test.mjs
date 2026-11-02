@@ -1,4 +1,4 @@
-// Scheduled to dos / acks: written at once, stamped with their future time T, invisible to both partners until T.
+// Scheduled to dos: written at once, stamped with their future time T, invisible to both partners until T.
 // Core logic is pure (vm-loaded); the screens, the save flow, Cancel and wanted() run in WebKit
 // (set GL_WEBKIT_PW/GL_WEBKIT_EXEC, see ~/.claude/bin/cycle-webkit.sh); skipped without it.
 import { describe, test, before, after } from 'node:test';
@@ -33,8 +33,9 @@ describe('core', () => {
     const todo = C.askToTodo(item, 't1', C.ms(item.delivered_at));
     assert.equal(todo.created_at, iso(T));
     assert.equal(todo.owner_id, HER);
-    const ack = C.askToAck(C.buildItem({ id: 'i2', couple, me: ME, to: HER, kind: 'ask', body: 'Sorry', ask_type: 'ack', now: NOW, at }), 'a1', T);
-    assert.equal(ack.created_at, iso(T));
+    const ownup = C.askToTodo(C.buildItem({ id: 'i2', couple, me: ME, to: HER, kind: 'ask', body: 'Sorry', ask_type: 'ownup', now: NOW, at }), 'a1', T);
+    assert.equal(ownup.created_at, iso(T));
+    assert.equal(ownup.type, 'ownup');
     const early = C.scheduleAt(couple, 'ask', NOW + 10 * 60000, NOW);
     assert.equal(early, NOW + 60 * 60000);
     assert.equal(C.buildItem({ id: 'i3', couple, me: ME, to: HER, kind: 'ask', body: 'x', now: NOW }).status, 'held');
@@ -52,9 +53,9 @@ describe('core', () => {
     assert.notEqual(JSON.stringify(run([todo], T + 1000)), JSON.stringify(run([], T + 1000)));
   });
 
-  test('needsYou hides a scheduled ack until T', () => {
-    const ack = { id: 'a1', author_id: HER, requested_by: ME, status: 'requested', title: 'x', deleted_at: null, created_at: iso(T) };
-    const s = (now) => ({ me: HER, now, items: [], redemptions: [], nudge_sends: [], nudge_replies: [], fight_markers: [], fight_notes: [], acks: [ack] });
+  test('needsYou hides a scheduled finished owning-up until T', () => {
+    const ownup = { id: 'a1', type: 'ownup', owner_id: ME, title: 'x', deleted_at: null, created_at: iso(T), done_at: iso(T) };
+    const s = (now) => ({ me: HER, now, items: [], redemptions: [], nudge_sends: [], nudge_replies: [], fight_markers: [], fight_notes: [], todos: [ownup], seen: [], since: 0 });
     const before = JSON.stringify(C.needsYou(s(NOW)));
     const after = JSON.stringify(C.needsYou(s(T + 1)));
     assert.notEqual(before, after);
@@ -69,7 +70,6 @@ const pw = haveWebkit ? await import(process.env.GL_WEBKIT_PW) : null;
 
 const base = { couple_id: 'c1', updated_at: iso(NOW - 864e5), deleted_at: null };
 const td = (id, o) => ({ ...base, id, owner_id: ME, created_by: ME, item_id: null, fight_marker_id: null, title: id, description: null, type: 'task', due_date: null, target: null, period: null, points_earn: null, points_miss: null, needs_note: false, edited_at: null, tally: 0, done_at: null, created_at: iso(NOW - 864e5), ...o });
-const ack = (id, o) => ({ ...base, id, author_id: ME, requested_by: null, item_id: null, title: id, description: null, status: 'done', done_at: iso(T), read_at: null, created_at: iso(T), ...o });
 const item = (id, o) => ({ ...base, id, sender_id: ME, recipient_id: HER, kind: 'ask', body: id, ask_type: 'task', description: null, due_date: null, target: null, period: null, points_earn: null, points_miss: null, needs_note: false, origin: null, response_type: null, fight_marker_id: null, held_until: null, status: 'delivered', delivered_at: iso(T), opened_at: null, kept: null, created_at: iso(NOW - 6e4), ...o });
 const byId = (rs) => Object.fromEntries(rs.map((r) => [r.id, r]));
 
@@ -84,7 +84,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     const sd = {
       session: { access_token: 't', refresh_token: 'r', expires_at: 4102444800, user: { id: uid, email: 'x@x.test' } },
       ['shared.' + uid]: { couple, members: [{ user_id: ME, name: 'Me', checkin_time: '21:00', hits_self: false }, { user_id: HER, name: 'Her', checkin_time: '21:00', hits_self: true }],
-        rows: { items: byId(rows.items || []), todos: byId(rows.todos || []), todo_events: {}, checkins: {}, fight_markers: {}, rewards: {}, redemptions: {}, acks: byId(rows.acks || []), nudges: {}, nudge_sends: {}, nudge_replies: {}, nudge_awards: {}, fight_notes: {}, challenges: {} }, cursors: {}, outbox: [] },
+        rows: { items: byId(rows.items || []), todos: byId(rows.todos || []), todo_events: {}, checkins: {}, fight_markers: {}, rewards: {}, redemptions: {}, nudges: {}, nudge_sends: {}, nudge_replies: {}, nudge_awards: {}, fight_notes: {}, challenges: {} }, cursors: {}, outbox: [] },
       ['priv.' + uid]: { fights: [], affirmations: [], prefs: {}, queued: [], nudges: [], nudge_sends: [] },
     };
     await context.addInitScript(([sd, boxUrl]) => {
@@ -111,7 +111,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     page.on('pageerror', (e) => console.error('PAGEERROR', String(e)));
     await context.route('**/cycle.css', (r) => r.fulfill({ contentType: 'text/css', body: CSS }));
     await page.goto(URL_, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('[data-a="row:fight"]', { timeout: 8000 });
+    await page.waitForSelector('[data-a="go:fight"]', { timeout: 8000 });
     return { context, page };
   }
   const act = (page, a) => page.evaluate((a) => { const m = document.querySelector('main'); m.insertAdjacentHTML('beforeend', `<span id="nv" data-a="${a}">x</span>`); const el = document.getElementById('nv'); el.click(); el.remove(); }, a);
@@ -147,19 +147,6 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await me.context.close();
   });
 
-  test('an ack I scheduled is hidden from my partner until T', async () => {
-    const rows = { acks: [ack('I went quiet')] };
-    const her = await open({ uid: HER, rows });
-    await act(her.page, 'acks');
-    assert.ok(!(await text(her.page)).includes('I went quiet'));
-    await act(her.page, 'tab:home');
-    assert.ok(!(await text(her.page)).includes('I went quiet'));
-    await clockTo(her.context, her.page, T + 1000);
-    await act(her.page, 'acks');
-    assert.ok((await text(her.page)).includes('I went quiet'));
-    await her.context.close();
-  });
-
   test('saving a to do for her with Later: delivered item (never held) + todo stamped T; early picks clamp to now + hold', async () => {
     const { context, page } = await open({});
     const setWhen = (d, t) => page.evaluate(([d, t]) => { for (const [k, v] of [['schD', d], ['schT', t]]) { const i = document.querySelector(`[data-d=${k}]`); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); } }, [d, t]);
@@ -183,15 +170,14 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await context.close();
   });
 
-  test('wanted(): only my own scheduled to do notifies locally; the partner\'s to dos and any ack come as remote push', async () => {
-    const rows = { todos: [td('My own later', { created_at: iso(T) }), td('From her', { created_by: HER, created_at: iso(T) }), td('Gone', { created_at: iso(T), deleted_at: iso(NOW) })],
-      acks: [ack('Asked of me', { author_id: ME, requested_by: HER, status: 'requested', done_at: null }), ack('Written to me', { author_id: HER }), ack('My own ack', { author_id: ME })] };
+  test('wanted(): only my own scheduled to do notifies locally; the partner\'s to dos come as remote push', async () => {
+    const rows = { todos: [td('My own later', { created_at: iso(T) }), td('From her', { created_by: HER, created_at: iso(T) }), td('Gone', { created_at: iso(T), deleted_at: iso(NOW) })] };
     const { context, page } = await open({ uid: ME, rows });
     await page.waitForTimeout(800);
     const all = await page.evaluate(() => window.__calls.filter((x) => x.cmd.indexOf('notify') === 0).map((x) => ({ cmd: x.cmd, args: x.args })));
     const sched = JSON.stringify(all);
     assert.ok(sched.includes('My own later'), 'own scheduled to do missing in ' + sched);
-    for (const b of ['From her', 'Asked of me', 'Written to me', 'Gone', 'My own ack']) assert.ok(!sched.includes(b), b + ' present in ' + sched);
+    for (const b of ['From her', 'Gone']) assert.ok(!sched.includes(b), b + ' present in ' + sched);
     await context.close();
   });
 
@@ -211,22 +197,15 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await context.close();
   });
 
-  test('Cancel soft-deletes the todo and its item and an own scheduled ack; a request to her has no Cancel', async () => {
-    const rows = { items: [item('i1')], todos: [td('Take bins', { owner_id: HER, item_id: 'i1', created_at: iso(T) })],
-      acks: [ack('Mine later'), ack('Ask her', { author_id: HER, requested_by: ME, status: 'requested', done_at: null })] };
+  test('Cancel soft-deletes the todo and its item', async () => {
+    const rows = { items: [item('i1')], todos: [td('Take bins', { owner_id: HER, item_id: 'i1', created_at: iso(T) })] };
     const { context, page } = await open({ rows });
-    await act(page, 'acks');
-    const links = await page.$$eval('[data-a^="sched"]', (e) => e.map((x) => x.getAttribute('data-a')));
-    assert.deepEqual(links, ['schedackcancel:Mine later']);
-    await page.click('[data-a="schedackcancel:Mine later"]');
-    assert.ok(!(await text(page)).includes('Mine later'));
     await act(page, 'tab:todo');
     await page.click('[data-a="schedcancel:Take bins"]');
     assert.ok(!(await text(page)).includes('Take bins'));
     const ob = await outbox(page);
     const patched = (table, id) => ob.some((o) => JSON.stringify(o).includes(table) && JSON.stringify(o).includes(id) && JSON.stringify(o).includes('deleted_at'));
-    assert.ok(patched('acks', 'Mine later') && patched('todos', 'Take bins') && patched('items', 'i1'), JSON.stringify(ob));
-    assert.ok(!JSON.stringify(ob).includes('Ask her'));
+    assert.ok(patched('todos', 'Take bins') && patched('items', 'i1'), JSON.stringify(ob));
     await context.close();
   });
 });

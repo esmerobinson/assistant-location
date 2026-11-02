@@ -77,25 +77,24 @@ describe('webkit', { skip: !haveWebkit }, () => {
     page.on('pageerror', (e) => { throw e; });
     await page.goto(URL_, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.rows .row');
-    await page.click('[data-a="tab:todo"]');
+    await page.click('[data-a="tab:progress"]');
     return { context, page, sent };
   }
   // A card's name and big status, as the phone shows them ("No hitting Day 5").
   const cardText = (page, sel = '.ach[data-a^="challenge:"]') => page.$eval(sel, (e) => [e.querySelector('.nm').textContent, e.querySelector('.big').textContent].join(' '));
   const shot = (page, name) => SHOTS && page.screenshot({ path: path.join(SHOTS, name + '.png') });
 
-  test('Us is the points hub: summary opens Points, Shop row opens Shop, back returns to Us', async () => {
+  test('Progress is the points hub: summary opens Points, Shop row opens Shop, back returns to Us', async () => {
     const { context, page } = await open();
-    await page.click('[data-a="tab:us"]');
-    assert.equal(await page.textContent('.hd h2'), 'Us');
+    assert.equal(await page.textContent('.hd h2'), 'Progress');
     assert.deepEqual(await page.$$eval('.ur .sum .lab', (e) => e.map((x) => x.textContent)), ['Balance', 'This week']);
     await shot(page, 'us');
     for (const [sel, title] of [['.ur .sum', 'Points'], ['.ur [data-a="go:shop"]', 'Shop']]) {
       await page.click(sel);
       assert.equal(await page.textContent('.hd h2'), title);
-      assert.equal((await page.textContent('.hd .back')).trim(), 'Us');
+      assert.equal((await page.textContent('.hd .back')).trim(), 'Progress');
       await page.click('.hd .back');
-      assert.equal(await page.textContent('.hd h2'), 'Us');
+      assert.equal(await page.textContent('.hd h2'), 'Progress');
     }
     await context.close();
   });
@@ -104,7 +103,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     const mk = (id, name, price, art) => ({ id, couple_id: 'c1', name, price, archived: false, art, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z' });
     const { context, page } = await open((sd) => { sd.rows.rewards = { a: mk('a', 'Breast implants', 10000, 'upgrading'), b: mk('b', 'Plain', 5, null), c: mk('c', 'Shopping', 6, 'shopper'), d: mk('d', 'Cupid', 7, 'cupid'), e: mk('e', 'Upgrade', 8, 'upgrading') }; });
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.click('[data-a="tab:us"]'); await page.click('[data-a="go:shop"]');
+    await page.click('[data-a="go:shop"]');
     const tile = (id) => page.$eval(`[data-a="reward:${id}"] .rthumb`, (e) => { const r = e.getBoundingClientRect(), v = e.querySelector('svg').getBoundingClientRect(), cs = getComputedStyle(e); return { w: r.width, h: r.height, bg: cs.backgroundColor, rad: cs.borderTopLeftRadius, sv: Math.max(v.width, v.height) / r.width, svg: e.innerHTML }; });
     for (const id of ['a', 'b', 'c', 'd', 'e']) {
       const t = await tile(id);
@@ -146,7 +145,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await context.close();
   });
 
-  test('Actions shows a card per challenge; tapping it opens the detail with stats and calendar', async () => {
+  test('Progress shows a card per challenge; tapping it opens the detail with stats and calendar', async () => {
     const { context, page } = await open();
     assert.equal(await cardText(page), 'No hitting Day 5');
     await shot(page, 'actions');
@@ -236,11 +235,10 @@ describe('webkit', { skip: !haveWebkit }, () => {
 
   test('Add > Challenge opens the form; it defaults to Her + Tap, blank name cannot save, Save inserts and opens the detail as Not started', async () => {
     const { context, page, sent } = await open();
-    await page.click('.hd [data-a="addpick"]');
-    await page.click('.bs [data-a="newch"]');
+    await page.click('[data-a="newch"]');
     assert.equal(await page.textContent('.hd h2'), 'New');
-    assert.equal((await page.textContent('.hd .back')).trim(), 'Actions');
-    assert.equal(await page.$eval('.tabbar .tab.on b', (e) => e.textContent), 'Actions');
+    assert.equal((await page.textContent('.hd .back')).trim(), 'Progress');
+    assert.equal(await page.$eval('.tabbar .tab.on b', (e) => e.textContent), 'Progress');
     assert.deepEqual(await page.$$eval('.tile', (e) => e.map((x) => [x.textContent, x.classList.contains('on')])), [['HHer', true], ['MMe', false]]);
     assert.deepEqual(await page.$$eval('.orow', (e) => e.map((x) => [x.textContent, x.classList.contains('on')])), [['Hit', false], ['Tap', true]]);
     assert.equal(await page.$eval('#chnew', (e) => e.classList.contains('dis')), true);
@@ -256,8 +254,8 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await page.click('.orow:nth-child(2)');
     await page.click('#chnew');
     assert.equal(await page.textContent('.hd h2'), 'No yelling');
-    assert.equal((await page.textContent('.hd .back')).trim(), 'Actions', 'back skips the form');
-    assert.equal(await page.$eval('.tabbar .tab.on b', (e) => e.textContent), 'Actions');
+    assert.equal((await page.textContent('.hd .back')).trim(), 'Progress', 'back skips the form');
+    assert.equal(await page.$eval('.tabbar .tab.on b', (e) => e.textContent), 'Progress');
     assert.equal(await page.$('.four'), null);
     assert.equal(await page.textContent('.pts main .lab'), 'Waiting for Her');
     for (let i = 0; i < 50 && !sent.length; i++) await page.waitForTimeout(100);
@@ -266,21 +264,21 @@ describe('webkit', { skip: !haveWebkit }, () => {
     assert.match(sent[0].url, /\/rest\/v1\/challenges$/);
     assert.deepEqual([b.name, b.for_user, b.breaks_on, b.start, b.accepted_at], ['No yelling', PID, 'tap', today, null]);
     assert.ok(b.id && b.id !== 'no-hit');
-    // Both cards show on Actions, the new one as Not started.
+    // Both cards show on Progress, the new one as Not started.
     await page.click('.hd .back');
-    assert.equal(await page.textContent('.hd h2'), 'Actions');
+    assert.equal(await page.textContent('.hd h2'), 'Progress');
     assert.deepEqual(await page.$$eval('.ach', (e) => e.map((x) => x.querySelector('.nm').textContent + ' ' + x.querySelector('.big').textContent)), ['No hitting Day 5', 'No yelling Not started']);
     await context.close();
   });
 
   test('New screen back returns to where it was opened from, and a blank Save sends nothing', async () => {
     const { context, page, sent } = await open();
-    await page.click('.hd [data-a="addpick"]'); await page.click('.bs [data-a="newch"]');
-    assert.equal((await page.textContent('.hd .back')).trim(), 'Actions');
+    await page.click('[data-a="newch"]');
+    assert.equal((await page.textContent('.hd .back')).trim(), 'Progress');
     await page.click('#chnew', { force: true });
     assert.equal(await page.textContent('.hd h2'), 'New');
     await page.click('.hd .back');
-    assert.equal(await page.textContent('.hd h2'), 'Actions');
+    assert.equal(await page.textContent('.hd h2'), 'Progress');
     await page.waitForTimeout(300);
     assert.equal(sent.length, 0);
     await context.close();
@@ -395,7 +393,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     assert.equal(await page.$('[data-a="chlog"]'), null, 'hidden once logged today');
     assert.equal(await page.$eval('.four > div .big', (e) => e.textContent), '1/10');
     assert.match(await page.textContent('.pts main'), /read a paper on DBT/);
-    assert.equal(await chipOf(page).catch(() => null), null, 'card is on Actions, not the detail');
+    assert.equal(await chipOf(page).catch(() => null), null, 'card is on Progress, not the detail');
     await page.click('.hd .back');
     assert.equal(await chipOf(page), 'BPD research 1/10');
     for (let i = 0; i < 50 && !sent.some((x) => /challenge_days/.test(x.url)); i++) await page.waitForTimeout(100);
@@ -451,42 +449,41 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await context.close();
   });
 
-  test('no challenge rows: Actions has no Challenges section, and Add still offers Challenge', async () => {
+  test('no challenge rows: Progress has no Challenges section, and still offers New challenge', async () => {
     const { context, page } = await open((sh) => { sh.rows.challenges = {}; });
     assert.equal(await page.$('.deck'), null);
-    assert.ok(!(await page.$$eval('.td .list .lab', (e) => e.map((x) => x.textContent))).includes('Challenges'));
-    await page.click('.hd [data-a="addpick"]');
-    assert.equal(await page.$$eval('.bs [data-a="newch"]', (e) => e.length), 1);
+    assert.equal(await page.$$eval('.td .empty', (e) => e.length), 1, 'Challenges section shows None');
+    assert.equal(await page.$$eval('[data-a="newch"]', (e) => e.length), 1);
     await context.close();
   });
 
-  test('challenges are gone from Us and Points: no chips, no Challenges label, no New chip', async () => {
+  test('challenges are gone from Points and To-dos: no chips, no Challenges label, no New chip', async () => {
     const { context, page } = await open();
-    assert.equal(await page.$$eval('.ach', (e) => e.length), 1, 'sanity: the challenge exists and shows on Actions');
-    await page.click('[data-a="tab:us"]');
-    assert.equal(await page.$$eval('[data-a^="challenge:"], [data-a="newch"], .chip, .ent', (e) => e.length), 0);
-    assert.ok(!(await page.textContent('main')).includes('Challenges'));
+    assert.equal(await page.$$eval('.ach', (e) => e.length), 1, 'sanity: the challenge exists and shows on Progress');
     await page.click('.ur .sum');
     assert.equal(await page.textContent('.hd h2'), 'Points');
     assert.equal(await page.$$eval('[data-a^="challenge:"], [data-a="newch"], .chip, .ent', (e) => e.length), 0);
     assert.ok(!(await page.textContent('main')).includes('Challenges'));
+    await page.click('.hd .back');
+    await page.click('.tabbar [data-a="tab:todo"]');
+    assert.equal(await page.$$eval('[data-a^="challenge:"], [data-a="newch"]', (e) => e.length), 0);
     await context.close();
   });
 
-  test('challenge detail belongs to Actions: tab bar, Back label and Back target, also when opened from a notification route', async () => {
+  test('challenge detail belongs to Progress: tab bar, Back label and Back target, also when opened from a notification route', async () => {
     const { context, page } = await open();
     await page.click('.ach[data-a^="challenge:"]');
     assert.equal(await page.textContent('.hd h2'), 'No hitting');
-    assert.equal((await page.textContent('.hd .back')).trim(), 'Actions');
-    assert.equal(await page.$eval('.tabbar .tab.on b', (e) => e.textContent), 'Actions');
+    assert.equal((await page.textContent('.hd .back')).trim(), 'Progress');
+    assert.equal(await page.$eval('.tabbar .tab.on b', (e) => e.textContent), 'Progress');
     await page.click('.hd .back');
-    assert.equal(await page.textContent('.hd h2'), 'Actions');
+    assert.equal(await page.textContent('.hd h2'), 'Progress');
     await page.evaluate(() => window.cycleNative.route('challenge/no-hit'));
     assert.equal(await page.textContent('.hd h2'), 'No hitting');
-    assert.equal(await page.$eval('.tabbar .tab.on b', (e) => e.textContent), 'Actions');
-    assert.equal((await page.textContent('.hd .back')).trim(), 'Actions');
+    assert.equal(await page.$eval('.tabbar .tab.on b', (e) => e.textContent), 'Progress');
+    assert.equal((await page.textContent('.hd .back')).trim(), 'Progress');
     await page.click('.hd .back');
-    assert.equal(await page.textContent('.hd h2'), 'Actions');
+    assert.equal(await page.textContent('.hd h2'), 'Progress');
     await context.close();
   });
 

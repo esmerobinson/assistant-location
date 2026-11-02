@@ -34,3 +34,38 @@ test('200 from GET /backup: probes once, then PUTs on every backup', async () =>
   await st.backup(); await st.backup();
   assert.deepEqual(calls, ['GET https://box.test/backup', 'PUT https://box.test/backup', 'PUT https://box.test/backup']);
 });
+
+// Fresh-install guard: an empty device must not overwrite a non-empty box backup.
+function loadStoreWithBody(status, body, priv) {
+  const calls = [];
+  const { st } = loadStore(200);
+  globalThis.fetch = async (url, o) => {
+    calls.push(o.method + ' ' + url);
+    if (o.method === 'GET') return { status, ok: status === 200, text: async () => JSON.stringify(body) };
+    return { status: 200, ok: true };
+  };
+  st.S.priv = priv;
+  return { st, calls };
+}
+const EMPTY = { fights: [], nudges: [], nudge_sends: [], prefs: {}, queued: [], drafts: {} };
+
+test('empty device + non-empty box backup: GET only, never PUT', async () => {
+  const { st, calls } = loadStoreWithBody(200, { ...EMPTY, fights: [{ at: 1, intensity: 3 }] }, { ...EMPTY });
+  await st.backup(); await st.backup();
+  assert.deepEqual(calls, ['GET https://box.test/backup', 'GET https://box.test/backup']);
+});
+
+test('empty device + empty or missing box backup: PUT goes through', async () => {
+  let r = loadStoreWithBody(200, EMPTY, { ...EMPTY });
+  await r.st.backup();
+  assert.deepEqual(r.calls, ['GET https://box.test/backup', 'PUT https://box.test/backup']);
+  r = loadStoreWithBody(404, {}, { ...EMPTY });
+  await r.st.backup();
+  assert.deepEqual(r.calls, ['GET https://box.test/backup', 'PUT https://box.test/backup']);
+});
+
+test('non-empty device always PUTs over an existing backup', async () => {
+  const { st, calls } = loadStoreWithBody(200, { ...EMPTY, fights: [{ at: 1 }] }, { ...EMPTY, fights: [{ at: 2 }] });
+  await st.backup();
+  assert.deepEqual(calls, ['GET https://box.test/backup', 'PUT https://box.test/backup']);
+});

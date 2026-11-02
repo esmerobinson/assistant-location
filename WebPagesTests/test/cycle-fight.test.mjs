@@ -58,7 +58,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     page.on('pageerror', (e) => { throw e; });
     await page.goto(URL_, { waitUntil: 'domcontentloaded' });
     if (fight) {
-      await page.click('[data-a="row:fight"]');
+      await page.click('[data-a="go:fight"]');
       await page.waitForSelector('[data-a="fightsave"]');
     }
     return { context, page };
@@ -83,12 +83,13 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     return markers;
   }
   async function pointsText(page) {
-    await page.click('[data-a="go:points"]');
+    await page.click('[data-a="tab:progress"]'); await page.click('[data-a="go:points"]');
     await page.waitForSelector('.ledger', { state: 'attached' });
     return page.$$eval('.ledger .ln', (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
   }
   async function history(page) {
-    await page.click('[data-a="tab:us"]');
+    await page.click('[data-a="tab:home"]'); // Home carries the gear; Points/other screens do not
+    await page.click('[data-a="go:more"]');
     await page.click('[data-a="go:cycle"]');
     await page.waitForSelector('.rcs', { state: 'attached' });
     return page.$$eval('.rcs .rc', (els) => els.map((e) => e.textContent.trim()));
@@ -236,6 +237,8 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
       sh.rows.fight_markers.fp = { id: 'fp', couple_id: 'c1', logged_by: pid, at: new Date(Date.now() - 36e5).toISOString(), repaired_at: null, hit_self: true, hit_related: false };
       localStorage.setItem(k, JSON.stringify(sh));
     }, [PID]);
+    // pagehide now flushes the page's own state over storage; stop that so the seeded row survives the reload.
+    await page.evaluate(() => { CycleStore.S.loaded = false; });
     await page.reload({ waitUntil: 'domcontentloaded' });
     assert.ok((await pointsText(page)).includes('\u22125Fight · Hit herself, not related to Her'), 'Points Fight line');
     await context.close();
@@ -269,7 +272,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     assert.ok(sh.outbox.some((o) => o.table === 'fight_notes' && o.op === 'insert' && o.row.body === 'Line one\nLine two'), 'queued in the outbox');
     assert.ok(sh.outbox.findIndex((o) => o.table === 'fight_markers') < sh.outbox.findIndex((o) => o.table === 'fight_notes'), 'marker is sent before its note');
     const priv = await page.evaluate(() => JSON.parse(localStorage.getItem('cycle:priv.u-me')).fights[0]);
-    assert.deepEqual(Object.keys(priv).sort(), ['at', 'id', 'intensity']);
+    assert.deepEqual(Object.keys(priv).sort(), ['at', 'id', 'intensity', 'logged_at']);
     assert.equal(priv.intensity, 4);
     assert.equal(Object.keys(sh.rows.items).length, 0, 'no truth/rewrite item');
     await context.close();
@@ -357,7 +360,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
       sh.rows.fight_notes.n0 = { ...sh.rows.fight_notes.n1, id: 'n0', author_id: UID, body: 'Mine, earlier', created_at: new Date(Date.now() - 3 * HOUR).toISOString() };
     } });
     // reachable from the Points Fight line
-    await page.click('[data-a="go:points"]');
+    await page.click('[data-a="tab:progress"]'); await page.click('[data-a="go:points"]');
     await page.click('.ln[data-a="openfight:fp"]');
     await page.waitForSelector('.fn');
     const t = await notesText(page);
@@ -378,7 +381,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
 
   test('Add more with a picked time files the note at that time, in order', async () => {
     const { context, page } = await open({ fight: false, tweak: partnerFight });
-    await page.click('[data-a="go:points"]');
+    await page.click('[data-a="tab:progress"]'); await page.click('[data-a="go:points"]');
     await page.click('.ln[data-a="openfight:fp"]');
     await page.waitForSelector('.fn');
     await page.fill('textarea[data-d="more"]', 'Before hers');
@@ -405,9 +408,10 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
       const k = 'cycle:priv.u-me', p = JSON.parse(localStorage.getItem(k));
       p.fights.push({ id: 'fm', at: Date.now() - 36e5, intensity: 3, about: 'Old private about', vent: '', rewritten: '', shared: false });
       localStorage.setItem(k, JSON.stringify(p));
+      CycleStore.S.loaded = false; // pagehide flush must not overwrite the seeded private fight
     });
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.click('[data-a="tab:us"]');
+    await page.click('[data-a="go:more"]');
     await page.click('[data-a="go:cycle"]');
     await page.click('.rf[data-a="openfight:fm"]');
     await page.waitForSelector('.fn');
@@ -417,7 +421,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
 
   test('partner view: Points Fight line opens her version; "Add your version" saves my note', async () => {
     const { context, page } = await open({ fight: false, tweak: partnerFight });
-    await page.click('[data-a="go:points"]');
+    await page.click('[data-a="tab:progress"]'); await page.click('[data-a="go:points"]');
     await page.click('.ln[data-a="openfight:fp"]');
     await page.waitForSelector('.fn');
     assert.equal((await page.textContent('main section:last-of-type .lab')).trim(), 'Add your version');
@@ -451,7 +455,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
       sh.rows.todos.rt = { id: 'rt', couple_id: 'c1', owner_id: UID, created_by: PID, item_id: null, fight_marker_id: 'fp', title: 'Apologize', type: 'response', due_date: null, target: null, tally: 0, done_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null };
     } });
     assert.ok(await page.$('.nd .nc[data-a="openfight:fp"]'));
-    await page.click('[data-a="row:todo"]');
+    await page.click('[data-a="tab:todo"]');
     await page.click('[data-a="done:rt"]');
     await page.waitForFunction(() => JSON.parse(localStorage.getItem('cycle:shared.u-me')).rows.fight_markers.fp.repaired_at);
     await page.click('[data-a="tab:home"]');
@@ -507,7 +511,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await typeNote(page);
     await page.evaluate(() => { document.querySelector('.scr').scrollTop = 0; });
     await tap(page, 'back');
-    await page.waitForSelector('[data-a="row:fight"]');
+    await page.waitForSelector('[data-a="go:fight"]');
     await context.close();
   });
 });

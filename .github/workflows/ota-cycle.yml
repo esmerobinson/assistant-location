@@ -84,6 +84,30 @@ jobs:
           echo "IPA_PATH=${IPAS[0]}" >> "$GITHUB_ENV"
           echo "Found ${IPAS[0]}"
 
+      # A missing or mis-signed extension would still build a working app that just never reports
+      # delivery, so the ipa is opened and checked here rather than trusted.
+      - name: Verify the ipa embeds a correctly signed CycleNSE
+        run: |
+          set -eo pipefail
+          D="$(mktemp -d)"
+          unzip -q "$IPA_PATH" -d "$D"
+          APPEX="$(ls -d "$D"/Payload/*.app/PlugIns/CycleNSE.appex)"
+          echo "appex: $APPEX"
+          BID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist")"
+          test "$BID" = "com.oliverullman.cycle.nse" || { echo "appex bundle id is $BID"; exit 1; }
+          security cms -D -i "$APPEX/embedded.mobileprovision" > "$D/nse-profile.plist"
+          PROFILE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$D/nse-profile.plist")"
+          PROFILE_APPID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$D/nse-profile.plist")"
+          echo "profile: $PROFILE_NAME / $PROFILE_APPID"
+          test "$PROFILE_APPID" = "J66WVM2DTX.$BID" || { echo "profile app id does not match the appex bundle id"; exit 1; }
+          /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$D/nse-profile.plist" > /dev/null || { echo "not an ad-hoc profile"; exit 1; }
+          codesign -d --entitlements :- "$APPEX" > "$D/nse-ents.plist" 2>/dev/null
+          SIGNED_APPID="$(/usr/libexec/PlistBuddy -c 'Print :application-identifier' "$D/nse-ents.plist")"
+          echo "signed entitlements application-identifier: $SIGNED_APPID"
+          test "$SIGNED_APPID" = "$PROFILE_APPID" || { echo "signed entitlements do not match the profile"; exit 1; }
+          codesign --verify --strict "$APPEX"
+          echo "CycleNSE.appex OK"
+
       - uses: actions/upload-artifact@v4
         with:
           name: ota-cycle-ipa

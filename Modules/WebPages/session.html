@@ -241,16 +241,25 @@
   .gl-icon-btn svg { width: 18px; height: 18px; display: block; }
   .gl-icon-btn:disabled { opacity: 0.5; }
   #session-record-btn.recording { background: var(--gl-danger); color: #fff; }
-  #session-record-btn { position: relative; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
-  /* Hold targets: pop out below the mic after a long press while recording.
+  /* All three mics (launcher, reply row, clarify row) share the hold gesture, so they share
+     the touch rules that keep iOS from selecting/calling-out on a long press. */
+  #session-record-btn, #detail-record-btn, #session-clarify-record-btn { position: relative; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
+  /* Hold targets: pop out after a long press while recording.
      Dragging the thumb onto Insert and releasing stops the recording and
      INSERTS the transcript into the composer (a plain tap stops and
      auto-sends); onto Cancel stops it and throws the audio away. */
-  #session-hold-targets {
-    position: absolute; right: 0; top: calc(100% + 10px);
-    display: flex; gap: 10px; z-index: 5;
-  }
-  #session-hold-targets[hidden] { display: none; }
+  .gl-hold-targets { position: absolute; display: flex; gap: 10px; z-index: 5; }
+  .gl-hold-targets[hidden] { display: none; }
+  /* Launcher mic sits at the top of the screen: targets pop BELOW it, right-aligned. */
+  #session-hold-targets { right: 0; top: calc(100% + 10px); }
+  /* Reply mic sits at the bottom of the screen, on the left of the row: targets pop ABOVE the row, left-aligned (both 96px targets + gap = 202px, well inside a 390px screen). */
+  #detail-hold-targets { left: 0; bottom: calc(100% + 10px); }
+  #detail-composer .gl-reply-row { position: relative; }
+  /* Clarify mic is laid out like the reply mic (left of the row), so its targets pop the same way, over the card above. */
+  #session-clarify-hold-targets { left: 0; bottom: calc(100% + 10px); }
+  #session-clarify .gl-reply-row { position: relative; }
+  #session-clarify .gl-icon-btn { flex: 0 0 auto; }
+  #session-clarify-record-btn.recording { background: var(--gl-danger); color: #fff; }
   .gl-hold-target {
     min-width: 96px; height: 52px; padding: 0 16px; border-radius: 26px;
     background: var(--gl-accent); color: #fff; font-weight: 600; font-size: 15px;
@@ -258,8 +267,8 @@
     box-shadow: 0 4px 14px rgba(0,0,0,0.35);
     white-space: nowrap; -webkit-user-select: none; user-select: none; pointer-events: none;
   }
-  #session-cancel-target { background: var(--gl-surface); color: var(--gl-text); border: 1px solid rgba(127, 127, 127, 0.3); }
-  .gl-hold-target.armed, #session-cancel-target.armed { transform: scale(1.12); background: var(--gl-danger); color: #fff; }
+  #session-cancel-target, #detail-cancel-target, #session-clarify-cancel-target { background: var(--gl-surface); color: var(--gl-text); border: 1px solid rgba(127, 127, 127, 0.3); }
+  .gl-hold-target.armed, #session-cancel-target.armed, #detail-cancel-target.armed, #session-clarify-cancel-target.armed { transform: scale(1.12); background: var(--gl-danger); color: #fff; }
   /* Recording/transcribing status text -- right-aligned under the composer
      so it reads as attached to the mic icon above it without needing its
      own full-width row (the old .gl-record-row this replaces). */
@@ -426,6 +435,24 @@
     background: rgba(127, 127, 127, 0.16); font-size: 12.5px; line-height: 1.4;
     white-space: pre; display: block;
   }
+  .gl-md-p { margin: 0 0 10px 0; }
+  .gl-md-p:last-child { margin-bottom: 0; }
+  .gl-md-h { font-weight: 700; margin: 14px 0 6px 0; }
+  .gl-md-h:first-child { margin-top: 0; }
+  .gl-md-h1 { font-size: 20px; }
+  .gl-md-h2 { font-size: 18px; }
+  .gl-md-h3 { font-size: 16px; }
+  .gl-md-li { display: flex; gap: 8px; margin-bottom: 4px; }
+  .gl-md-li > span:first-child { flex: 0 0 auto; color: var(--gl-text-dim); }
+  .gl-md-li > span:last-child { flex: 1 1 auto; min-width: 0; }
+  .gl-msg-text hr { border: 0; border-top: 1px solid rgba(127, 127, 127, 0.3); margin: 12px 0; }
+  .gl-md-table { overflow-x: auto; margin: 8px 0; }
+  .gl-md-table table { border-collapse: collapse; font-size: 13px; line-height: 1.35; }
+  .gl-md-table th, .gl-md-table td {
+    border: 1px solid rgba(127, 127, 127, 0.3); padding: 5px 8px;
+    text-align: left; vertical-align: top; min-width: 56px;
+  }
+  .gl-md-table th { font-weight: 700; background: rgba(127, 127, 127, 0.12); }
   .gl-tool-line {
     font-size: 12px; color: var(--gl-text-dim); margin: 3px 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -601,7 +628,7 @@
       <button id="session-record-btn" class="gl-icon-btn" type="button" aria-label="Dictate" aria-pressed="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
       </button>
-      <div id="session-hold-targets" hidden aria-hidden="true">
+      <div id="session-hold-targets" class="gl-hold-targets" hidden aria-hidden="true">
         <div id="session-cancel-target" class="gl-hold-target">Cancel ✕</div>
         <div id="session-insert-target" class="gl-hold-target">Insert ↵</div>
       </div>
@@ -623,6 +650,13 @@
     <div id="session-ask-skill" class="gl-hidden"></div>
     <div id="session-clarify" class="gl-hidden">
       <div class="gl-reply-row">
+        <button id="session-clarify-record-btn" class="gl-icon-btn" type="button" aria-label="Dictate" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+        <div id="session-clarify-hold-targets" class="gl-hold-targets" hidden aria-hidden="true">
+          <div id="session-clarify-cancel-target" class="gl-hold-target">Cancel ✕</div>
+          <div id="session-clarify-insert-target" class="gl-hold-target">Insert ↵</div>
+        </div>
         <textarea id="session-clarify-text" rows="1" placeholder="Add a clarification…"></textarea>
         <button id="session-clarify-send" class="gl-btn" type="button">Send</button>
       </div>
@@ -665,6 +699,10 @@
       <button id="detail-record-btn" class="gl-icon-btn" type="button" aria-label="Dictate" aria-pressed="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
       </button>
+      <div id="detail-hold-targets" class="gl-hold-targets" hidden aria-hidden="true">
+        <div id="detail-cancel-target" class="gl-hold-target">Cancel ✕</div>
+        <div id="detail-insert-target" class="gl-hold-target">Insert ↵</div>
+      </div>
       <textarea id="detail-reply" rows="1" placeholder="Reply…"></textarea>
       <button id="detail-send" class="gl-btn" type="button">Send</button>
     </div>
@@ -724,6 +762,7 @@
   var clarifyEl = document.getElementById('session-clarify');
   var clarifyTextEl = document.getElementById('session-clarify-text');
   var clarifySendBtn = document.getElementById('session-clarify-send');
+  var clarifyRecordBtn = document.getElementById('session-clarify-record-btn');
   var clarifyStatusEl = document.getElementById('session-clarify-status');
   var askSkillEl = document.getElementById('session-ask-skill');
   // Idempotency key of the Start the card describes; a clarification is
@@ -1353,16 +1392,24 @@
     scheduleSuggest();
   }
 
-  // Which composer owns the current recording: 'launcher' (the prompt) or
-  // 'reply' (the open session detail's reply box, `voiceDetail`).
+  // Which composer owns the current recording: 'launcher' (the prompt),
+  // 'reply' (the open session detail's reply box, `voiceDetail`) or 'clarify'
+  // (the card's clarification box, for the Start `voiceClarifyKey`).
   var voiceTarget = 'launcher';
   var voiceDetail = null;
+  // Captured when the recording starts: the card can move on to a newer Start
+  // mid-recording, and the words belong to the Start they were dictated for.
+  var voiceClarifyKey = null;
   // Queued (offline) voice id -> the detail that dictated it, so a late
   // transcript lands in that reply box if it is still open.
   var voiceReplyDetails = {};
+  // Same, for a clarify-box Insert: queued voice id -> the Start it was dictated for.
+  var voiceClarifyKeys = {};
 
-  function setVoiceStatus(text, toReply) {
-    if (toReply) {
+  function setVoiceStatus(text, target) {
+    if (target === 'clarify') {
+      showClarifyStatus(text || '');
+    } else if (target === 'reply') {
       detailRecordStatusEl.textContent = text || '';
       detailRecordStatusEl.classList.toggle('gl-hidden', !text);
     } else {
@@ -1373,17 +1420,26 @@
   function setRecordingUI(isRecording, statusText) {
     recording = isRecording;
     var toReply = voiceTarget === 'reply';
-    recordBtn.classList.toggle('recording', isRecording && !toReply);
-    recordBtn.setAttribute('aria-pressed', String(isRecording && !toReply));
+    var toLauncher = voiceTarget === 'launcher';
+    var toClarify = voiceTarget === 'clarify';
+    recordBtn.classList.toggle('recording', isRecording && toLauncher);
+    recordBtn.setAttribute('aria-pressed', String(isRecording && toLauncher));
+    clarifyRecordBtn.classList.toggle('recording', isRecording && toClarify);
+    clarifyRecordBtn.setAttribute('aria-pressed', String(isRecording && toClarify));
+    // A recording owned by another composer blocks this mic, like the reply mic in updateComposer.
+    clarifyRecordBtn.disabled = isRecording && !toClarify;
     detailRecordBtn.classList.toggle('recording', isRecording && toReply);
     detailRecordBtn.setAttribute('aria-pressed', String(isRecording && toReply));
-    setVoiceStatus(statusText, toReply);
+    setVoiceStatus(statusText, voiceTarget);
     if (detail) updateComposer();
   }
 
-  /** Inserts a transcript into the reply box of the detail that dictated it, else the launcher prompt. */
-  function insertVoiceText(text, targetDetail) {
-    if (targetDetail && detail === targetDetail) {
+  /** Inserts a transcript into the box that dictated it if that box is still showing the same thing, else the launcher prompt. */
+  function insertVoiceText(text, targetDetail, targetClarifyKey) {
+    if (targetClarifyKey && targetClarifyKey === clarifyStartKey) {
+      var clarifySep = clarifyTextEl.value && !/\s$/.test(clarifyTextEl.value) ? ' ' : '';
+      clarifyTextEl.value = clarifyTextEl.value + clarifySep + text;
+    } else if (targetDetail && detail === targetDetail) {
       var sep = replyEl.value && !/\s$/.test(replyEl.value) ? ' ' : '';
       replyEl.value = replyEl.value + sep + text;
       replyEl.dispatchEvent(new Event('input'));
@@ -1409,8 +1465,9 @@
 
   function startVoiceCapture(target) {
     if (recording || starting) return;
-    voiceTarget = target === 'reply' ? 'reply' : 'launcher';
+    voiceTarget = target === 'reply' || target === 'clarify' ? target : 'launcher';
     voiceDetail = voiceTarget === 'reply' ? detail : null;
+    voiceClarifyKey = voiceTarget === 'clarify' ? clarifyStartKey : null;
     if (!GLBridge.isAvailable()) {
       showError('Voice capture needs the app bridge, which is unavailable here.');
       return;
@@ -1418,7 +1475,7 @@
     clearError();
     // Not red until native has actually started the recorder (its reply).
     starting = true;
-    setVoiceStatus('Starting mic…', voiceTarget === 'reply');
+    setVoiceStatus('Starting mic…', voiceTarget);
     GLBridge.call('voiceStart', {}, { timeoutMs: VOICE_START_TIMEOUT_MS }).then(function () {
       starting = false;
       setRecordingUI(true, 'Speak now');
@@ -1519,25 +1576,281 @@
     try { localStorage.removeItem(LEGACY_AUTOSEND_KEY); } catch (e) {}
   }
 
-  // autoSend (optional) = {project, prefix, attachmentIds}: the transcript is
-  // appended to `prefix` and the session started as soon as it arrives, with
-  // the composer already free for the next draft.
-  function stopVoiceCapture(autoSend, launchId) {
+  // Reply launches: the reply-row mic's equivalent of a voice launch. Tapping
+  // stop empties the reply box at once, so the typed text, the screenshots
+  // and WHICH SESSION dictated it must outlive the page until the transcript
+  // arrives (it can be minutes late when the box is unreachable, and the
+  // detail may be closed or the page reloaded meanwhile). Kept in localStorage
+  // under its own key (launcher launches render as Recent rows; these do not),
+  // matched to native's recording by launchId, or by voiceId on an older native.
+  // Record: {localId, sessionId, voiceId, prefix, model, shots:[{localId,
+  // fileName}], status: transcribing | waiting | delivered | failed, error, at}.
+  // `delivered` = the reply is already in PENDING_REPLIES_KEY (which sends by
+  // sessionId, needing no open detail) and we are only waiting to ack native's
+  // recording, so a late poll cannot treat it as a loose dictation.
+  var REPLY_LAUNCHES_KEY = 'gl-session-voice-reply-launches-v1';
+  var replyLaunches = launchStore(REPLY_LAUNCHES_KEY);
+  var readReplyLaunches = replyLaunches.read;
+  var writeReplyLaunches = replyLaunches.write;
+  var updateReplyLaunch = replyLaunches.update;
+  var removeReplyLaunch = replyLaunches.remove;
+  var replyLaunchForVoice = replyLaunches.forVoice;
+
+  /** A localStorage map of voice sends waiting on a transcript: the reply and clarify mics each own one. */
+  function launchStore(key) {
+    function read() {
+      try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) { return {}; }
+    }
+    function write(all) {
+      try {
+        if (Object.keys(all).length) localStorage.setItem(key, JSON.stringify(all));
+        else localStorage.removeItem(key);
+        return true;
+      } catch (e) { return false; }
+    }
+    return {
+      read: read,
+      write: write,
+      update: function (localId, patch) {
+        var all = read();
+        if (!all[localId]) return;
+        Object.keys(patch).forEach(function (k) { all[localId][k] = patch[k]; });
+        write(all);
+      },
+      remove: function (localId) {
+        var all = read();
+        delete all[localId];
+        write(all);
+      },
+      // By launchId, or by voiceId on an older native that cannot echo launchId back.
+      forVoice: function (r) {
+        var all = read();
+        return all[r.launchId] || Object.keys(all).map(function (k) { return all[k]; }).filter(function (l) { return l.voiceId === r.id; })[0] || null;
+      }
+    };
+  }
+
+  // Clarify launches: the clarify-row mic's equivalent, for the same reason:
+  // the box empties on the stop tap, and the transcript can arrive long after
+  // the card has moved on or the page has reloaded. Record: {localId, startKey,
+  // voiceId, prefix, status: transcribing | waiting | delivered, error, at}.
+  var clarifyLaunches = launchStore('gl-session-voice-clarify-launches-v1');
+
+  /** The clarify-row mic's stop tap: commit at once (box emptied), send when the transcript arrives. */
+  function stopAndSendClarification() {
+    var key = voiceClarifyKey;
+    var live = clarifyStartKey === key; // the box holds this Start's text only while the card still shows it
+    var rec = { localId: randomIdempotencyKey(), startKey: key, voiceId: null, prefix: live ? clarifyTextEl.value.trim() : '', status: 'transcribing', error: null, at: Date.now() };
+    // Durable FIRST: nothing is cleared until the record that can restore it is on disk.
+    var all = clarifyLaunches.read();
+    all[rec.localId] = rec;
+    if (!clarifyLaunches.write(all)) {
+      showError("Couldn't save the clarification on this device, so nothing was sent or cleared.", 'clarify');
+      return;
+    }
+    if (live) clarifyTextEl.value = '';
+    stopVoiceCapture(null, rec.localId, {
+      localId: rec.localId,
+      store: clarifyLaunches,
+      deliver: deliverClarifyLaunch,
+      fail: failClarifyLaunch
+    });
+  }
+
+  /** The transcript exists: "typed + transcript" joins the clarification queue, which waits for that Start and retries offline. */
+  function deliverClarifyLaunch(localId, transcript, voiceId) {
+    var rec = clarifyLaunches.read()[localId];
+    if (!rec) return;
+    if (rec.status === 'delivered') { // already queued in an earlier page life; only the ack is missing
+      ackVoice(voiceId).then(function () { clarifyLaunches.remove(localId); }, function () {});
+      return;
+    }
+    var text = [rec.prefix, transcript].filter(Boolean).join(' ');
+    // The record's id is the queue key, so a delivery repeated after a crash here is still one clarification to the box.
+    if (!enqueue(PENDING_CLARIFY_KEY, { key: rec.localId, startKey: rec.startKey, text: text })) {
+      failClarifyLaunch(localId, "Couldn't save the clarification on this device, so it was not sent.", voiceId);
+      return;
+    }
+    clarifyLaunches.update(localId, { status: 'delivered', voiceId: voiceId });
+    if (rec.startKey === clarifyStartKey) showClarifyStatus('Sending clarification…');
+    rerenderRecent();
+    flushClarifications();
+    // The clarification is durable now, so native may drop the recording; the record goes with it.
+    ackVoice(voiceId).then(function () { clarifyLaunches.remove(localId); }, function () {});
+  }
+
+  /** Transcription failed: the typed part goes back in the box if the card still shows that Start, else into the error so it is not lost. */
+  function failClarifyLaunch(localId, msg, voiceId) {
+    var rec = clarifyLaunches.read()[localId];
+    if (!rec) return;
+    clarifyLaunches.remove(localId);
+    if (voiceId || rec.voiceId) ackVoice(voiceId || rec.voiceId).catch(function () {});
+    if (rec.startKey === clarifyStartKey) {
+      clarifyTextEl.value = [rec.prefix, clarifyTextEl.value.trim()].filter(Boolean).join(' ');
+      showClarifyStatus('');
+      showError(msg + (rec.prefix ? ' Your clarification is back in the box.' : ''), 'clarify');
+    } else {
+      showError(msg + (rec.prefix ? ' Clarification not sent: ' + rec.prefix : ''), 'clarify');
+    }
+  }
+
+  function openDetailFor(sessionId) { return detail && detail.sessionId === sessionId ? detail : null; }
+
+  /** The optimistic bubble for a reply launch in an open detail (made if missing, e.g. after the detail was reopened). */
+  function replyLaunchBubble(d, rec) {
+    var entry = d.local.filter(function (l) { return l.key === rec.localId; })[0];
+    if (!entry) {
+      entry = { text: '', draft: '', status: 'pending', key: rec.localId, baseline: 0, model: rec.model, pending: rec.shots.map(function (a) { return { localId: a.localId, id: null }; }) };
+      d.local.push(entry);
+    }
+    if (!entry.text) entry.text = rec.prefix ? rec.prefix + ' …' : 'Transcribing…'; // placeholder until the transcript exists
+    return entry;
+  }
+
+  /** The reply-row mic's stop tap: commit at once (box emptied, pending bubble), send when the transcript arrives. */
+  function stopAndSendReply() {
+    var d = voiceDetail; // the detail that dictated this, even if the user has since moved on
+    // The composer holds this detail's draft only while that detail is the open one.
+    var live = detail === d;
+    var shots = live ? d.attachments.slice() : [];
+    var rec = {
+      localId: randomIdempotencyKey(), sessionId: d.sessionId, voiceId: null,
+      prefix: live ? replyEl.value.trim() : '', model: live ? replyModelEl.value : '',
+      shots: shots.map(function (a) { return { localId: a.localId, fileName: a.fileName }; }),
+      status: 'transcribing', error: null, at: Date.now()
+    };
+    // Durable FIRST: nothing is cleared until the record that can restore it is on disk.
+    var all = readReplyLaunches();
+    all[rec.localId] = rec;
+    if (!writeReplyLaunches(all)) {
+      showError("Couldn't save the reply on this device, so nothing was sent or cleared.", 'reply');
+      return;
+    }
+    if (live) {
+      replyEl.value = '';
+      replyEl.dispatchEvent(new Event('input')); // drops the saved draft: the record owns the text now
+      replyModelEl.value = '';
+      d.attachments = []; // blobs stay in IndexedDB: the record points at them
+      shots.forEach(function (a) { if (a.objectUrl) { try { URL.revokeObjectURL(a.objectUrl); } catch (e) { /* ignore */ } } });
+      renderReplyThumbs();
+      replyLaunchBubble(d, rec);
+      renderDetail(true);
+    }
+    // rec.localId is what lets pollVoice match the recording after a reload, before voiceStop has answered with a voice id.
+    stopVoiceCapture(null, rec.localId, {
+      localId: rec.localId,
+      store: replyLaunches,
+      deliver: deliverReplyLaunch,
+      fail: failReplyLaunch
+    });
+  }
+
+  /** The transcript exists: queue "typed + transcript" (+ screenshots) as a reply to the dictating session. */
+  function deliverReplyLaunch(localId, transcript, voiceId) {
+    var rec = readReplyLaunches()[localId];
+    if (!rec) return;
+    if (rec.status === 'delivered') { // already queued in an earlier page life; only the ack is missing
+      ackVoice(voiceId).then(function () { removeReplyLaunch(localId); }, function () {});
+      return;
+    }
+    var text = [rec.prefix, transcript].filter(Boolean).join(' ');
+    // The screenshot blobs must be on disk before the queued reply can refer to them (none pending after a reload: already written).
+    Promise.all(rec.shots.map(function (a) { return storedWrites[a.localId]; })).then(function () {
+      var pending = rec.shots.map(function (a) { return { localId: a.localId, id: null }; });
+      var d = openDetailFor(rec.sessionId);
+      if (!d) {
+        // No bubble to retry from: leave the text as that session's reply draft too, like queueReply, so a send the box refuses is recoverable.
+        try { localStorage.setItem(REPLY_DRAFT_PREFIX + rec.sessionId, text); } catch (e) { /* storage unavailable */ }
+      }
+      if (!enqueue(PENDING_REPLIES_KEY, { sessionId: rec.sessionId, text: text, key: rec.localId, model: rec.model, pending: pending })) {
+        failReplyLaunch(localId, "Couldn't save the reply on this device, so it was not sent.", voiceId);
+        return;
+      }
+      updateReplyLaunch(localId, { status: 'delivered', voiceId: voiceId });
+      if (d) {
+        var entry = replyLaunchBubble(d, rec);
+        entry.text = text;
+        entry.draft = text;
+        entry.baseline = d.messages.filter(function (m) { return m.role === 'user' && m.text === text; }).length;
+        renderDetail(true);
+      }
+      flushReplies();
+      // The reply is durable now, so native may drop the recording; the record goes with it.
+      ackVoice(voiceId).then(function () { removeReplyLaunch(localId); }, function () {});
+    }, function () {
+      failReplyLaunch(localId, "Couldn't keep the screenshot on this device, so the reply was not sent.", voiceId);
+    });
+  }
+
+  /** Transcription failed: the typed text and screenshots go back to that reply box (now, or when the session is next opened). */
+  function failReplyLaunch(localId, msg, voiceId) {
+    var rec = readReplyLaunches()[localId];
+    if (!rec) return;
+    updateReplyLaunch(localId, { status: 'failed', error: msg });
+    // The audio cannot be re-attached to a reply, and the text is being restored: native can drop the recording.
+    if (voiceId || rec.voiceId) ackVoice(voiceId || rec.voiceId).catch(function () {});
+    var d = openDetailFor(rec.sessionId);
+    if (d) restoreFailedReplyLaunches(d);
+    else showError(msg + ' Your reply text is back in that session\'s reply box.');
+  }
+
+  /** Puts failed reply launches of an open detail back in its box (prefix, screenshots) and says why. */
+  function restoreFailedReplyLaunches(d) {
+    var all = readReplyLaunches();
+    Object.keys(all).forEach(function (k) {
+      var rec = all[k];
+      if (rec.sessionId !== d.sessionId || rec.status !== 'failed') return;
+      d.local = d.local.filter(function (l) { return l.key !== rec.localId; });
+      replyEl.value = [rec.prefix, replyEl.value.trim()].filter(Boolean).join(' ');
+      replyEl.dispatchEvent(new Event('input'));
+      rec.shots.forEach(function (a) { d.attachments.push({ localId: a.localId, fileName: a.fileName, objectUrl: null }); });
+      if (rec.model) replyModelEl.value = rec.model;
+      removeReplyLaunch(rec.localId);
+      renderReplyThumbs();
+      renderDetail(true);
+      showError(rec.error + ' Your reply is back in the box.', 'reply');
+    });
+  }
+
+  /** Reopening a session: bring back what its voice replies in flight left behind (pending bubbles, failures). */
+  function reconcileReplyLaunches(d) {
+    var all = readReplyLaunches();
+    Object.keys(all).forEach(function (k) {
+      var rec = all[k];
+      if (rec.sessionId === d.sessionId && (rec.status === 'transcribing' || rec.status === 'waiting')) replyLaunchBubble(d, rec);
+    });
+    restoreFailedReplyLaunches(d);
+  }
+
+  // Two ways to "send" a stopped recording, both of which free the composer at
+  // once and finish later (however late the transcript is):
+  //   autoSend (+ launchId) = {project, prefix, attachmentIds}: launcher mic; the
+  //     transcript is appended to `prefix` and a session is started.
+  //   sink = {localId, store, deliver, fail} for a launch owned by the reply-row
+  //     mic (stopAndSendReply) or the clarify-row mic (stopAndSendClarification);
+  //     launchId is its localId. The transcript is appended to its typed prefix
+  //     and sent through that composer's durable queue.
+  // With neither, the transcript is inserted into the composer (hold + Insert,
+  // or a recording left running after its detail was closed).
+  function stopVoiceCapture(autoSend, launchId, sink) {
     if (!recording) return;
-    var toReply = voiceTarget === 'reply';
-    var targetDetail = toReply ? voiceDetail : null;
-    setRecordingUI(false, autoSend ? '' : 'Transcribing…');
+    var target = voiceTarget;
+    var targetDetail = target === 'reply' ? voiceDetail : null;
+    var targetClarifyKey = target === 'clarify' ? voiceClarifyKey : null;
+    setRecordingUI(false, autoSend ? '' : sink ? 'Transcribing, then sending…' : 'Transcribing…');
     if (autoSend) {
       // The launch id becomes the Start's key, so a clarification typed now waits for that Start.
       setConfirmation('Starting', 'Transcribing, then starting the session…', false, launchId);
     }
     // A send that went wrong stays in Recent as a Failed row (with the clip, when native has it) -- never back in the composer, never a toast.
     function failLaunch(msg, voiceId) {
+      // A reply's or clarification's failure puts its typed text back in that box instead.
+      if (sink) { sink.fail(sink.localId, msg, voiceId); return; }
       confirmationEl.classList.add('gl-hidden');
       updateVoiceLaunch(launchId, { status: 'failed', error: msg, voiceId: voiceId || null });
     }
     GLBridge.call('voiceStop', { launchId: launchId }, { timeoutMs: VOICE_STOP_TIMEOUT_MS }).then(function (res) {
-      setVoiceStatus('', toReply);
+      setVoiceStatus('', target);
       var text = res && res.text;
       var code = res && res.code;
       // mic_denied is NOT expected here -- voiceStop only ever runs after a
@@ -1551,7 +1864,7 @@
       // voiceStopWithReply:).
       if (code === 'empty_transcript' || code === 'failed') {
         var why = code === 'failed' ? res.error : "Didn't catch anything";
-        if (autoSend) { failLaunch(why, res.id); return; }
+        if (autoSend || sink) { failLaunch(why, res.id); return; }
         showError(why + (code === 'failed' ? '' : ' — try again.'));
         if (res.id) ackVoice(res.id).catch(function () {});
         return;
@@ -1564,31 +1877,39 @@
           updateVoiceLaunch(launchId, { voiceId: res.id, status: 'waiting' });
           confirmationEl.classList.add('gl-hidden');
         }
+        // Same for a reply or clarification: its record waits on disk for the transcript.
+        if (sink) sink.store.update(sink.localId, { voiceId: res.id, status: 'waiting' });
         // The box was unreachable. Native saved the recording and retries it
         // by itself; pollVoice() delivers the transcript once it exists.
-        if (targetDetail && res.id) voiceReplyDetails[res.id] = targetDetail;
+        if (targetDetail && res.id && !sink) voiceReplyDetails[res.id] = targetDetail;
+        if (targetClarifyKey && res.id && !sink) voiceClarifyKeys[res.id] = targetClarifyKey;
         pollVoice();
         return;
       }
       if (!text) {
-        if (autoSend) failLaunch('Transcription failed', res.id); else showError('Transcription failed.');
+        if (autoSend || sink) failLaunch('Transcription failed', res.id); else showError('Transcription failed.');
         return;
       }
       // A concurrent pollVoice may already have started this one.
       if (handledVoice[res.id]) return;
       handledVoice[res.id] = true;
-      if (autoSend) {
+      if (sink) {
+        sink.deliver(sink.localId, text, res.id);
+      } else if (autoSend) {
         // The recording stays until this Start is confirmed (flushStarts acks it).
         startSessionWith(autoSend.project, [autoSend.prefix, text].filter(Boolean).join(' '), autoSend.attachmentIds, false, autoSend.pendingIds, autoSend.autoSkill, res.id, launchId);
       } else {
-        insertVoiceText(text, targetDetail);
+        insertVoiceText(text, targetDetail, targetClarifyKey);
         ackVoice(res.id).catch(function () {});
       }
     }).catch(function (err) {
-      setVoiceStatus('', toReply);
-      if (!autoSend) { showError('Transcription failed: ' + err.message); return; }
+      setVoiceStatus('', target);
+      if (!autoSend && !sink) { showError('Transcription failed: ' + err.message); return; }
       // A timeout leaves native still working on the recording; pollVoice picks it up by launchId. Any other error means native has nothing to retry.
-      if (err.message === 'timeout') { updateVoiceLaunch(launchId, { status: 'waiting' }); pollVoice(); } else failLaunch('Transcription failed: ' + err.message);
+      if (err.message === 'timeout') {
+        if (sink) sink.store.update(sink.localId, { status: 'waiting' }); else updateVoiceLaunch(launchId, { status: 'waiting' });
+        pollVoice();
+      } else failLaunch('Transcription failed: ' + err.message);
     });
   }
 
@@ -1611,6 +1932,10 @@
       (res.pending || []).forEach(function (r) {
         var launch = launchForVoice(r);
         if (launch && (launch.voiceId !== r.id || launch.status !== 'waiting')) updateVoiceLaunch(launch.localId, { voiceId: r.id, status: 'waiting', error: null });
+        var rl = replyLaunchForVoice(r);
+        if (rl && (rl.status === 'transcribing' || rl.status === 'waiting') && (rl.voiceId !== r.id || rl.status !== 'waiting')) updateReplyLaunch(rl.localId, { voiceId: r.id, status: 'waiting' });
+        var cl = clarifyLaunches.forVoice(r);
+        if (cl && (cl.status === 'transcribing' || cl.status === 'waiting') && (cl.voiceId !== r.id || cl.status !== 'waiting')) clarifyLaunches.update(cl.localId, { voiceId: r.id, status: 'waiting' });
       });
       res.ready.forEach(function (r) {
         if (handledVoice[r.id] || voiceOwnedByStart(r.id)) return;
@@ -1619,13 +1944,30 @@
         if (launch) {
           var snap = launch.snap;
           startSessionWith(snap.project, [snap.prefix, r.text].filter(Boolean).join(' '), snap.attachmentIds, false, snap.pendingIds, snap.autoSkill, r.id, launch.localId);
+        } else if (replyLaunchForVoice(r)) {
+          // Dictated for a reply: goes to that session, never to the launcher prompt.
+          deliverReplyLaunch(replyLaunchForVoice(r).localId, r.text, r.id);
+        } else if (clarifyLaunches.forVoice(r)) {
+          // Dictated for a clarification: goes to that Start, never to the launcher prompt.
+          deliverClarifyLaunch(clarifyLaunches.forVoice(r).localId, r.text, r.id);
         } else {
-          insertVoiceText(r.text, voiceReplyDetails[r.id]);
+          insertVoiceText(r.text, voiceReplyDetails[r.id], voiceClarifyKeys[r.id]);
           delete voiceReplyDetails[r.id];
+          delete voiceClarifyKeys[r.id];
           ackVoice(r.id).catch(function () {});
         }
       });
       res.failed.forEach(function (r) {
+        var cl = clarifyLaunches.forVoice(r);
+        if (cl) {
+          if (cl.status === 'transcribing' || cl.status === 'waiting') failClarifyLaunch(cl.localId, 'Transcription failed: ' + r.error, r.id);
+          return;
+        }
+        var rl = replyLaunchForVoice(r);
+        if (rl) {
+          if (rl.status === 'transcribing' || rl.status === 'waiting') failReplyLaunch(rl.localId, 'Transcription failed: ' + r.error, r.id);
+          return;
+        }
         var launch = launchForVoice(r);
         if (launch) {
           if (launch.status !== 'failed' || launch.error !== r.error) updateVoiceLaunch(launch.localId, { voiceId: r.id, status: 'failed', error: r.error });
@@ -1642,6 +1984,16 @@
         var l = all[k];
         if (nativeKnowsLaunches && l.status === 'transcribing' && !l.voiceId && l.at < pageStartedAt) updateVoiceLaunch(k, { status: 'failed', error: 'The recording was not saved before the app closed' });
       });
+      var allReplies = readReplyLaunches();
+      Object.keys(allReplies).forEach(function (k) {
+        var l = allReplies[k];
+        if (nativeKnowsLaunches && l.status === 'transcribing' && !l.voiceId && l.at < pageStartedAt) failReplyLaunch(k, 'The recording was not saved before the app closed.');
+      });
+      var allClarify = clarifyLaunches.read();
+      Object.keys(allClarify).forEach(function (k) {
+        var l = allClarify[k];
+        if (nativeKnowsLaunches && l.status === 'transcribing' && !l.voiceId && l.at < pageStartedAt) failClarifyLaunch(k, 'The recording was not saved before the app closed.');
+      });
       if (res.waiting > 0 && !recording) {
         recordStatusEl.textContent = 'Voice note saved. It transcribes when the box is reachable.';
         voiceWaitingShown = true;
@@ -1657,33 +2009,18 @@
     });
   }
 
-  // Tap = send, hold-drag = insert. While recording, a plain tap stops and
-  // auto-sends (see stopVoiceCapture's autoSend; falls back to inserting when
-  // no project is chosen or an upload is in flight). Holding the mic ~450ms
-  // pops an Insert target out below it; releasing over the target stops the
-  // recording and just inserts the transcript into the composer; releasing
-  // over Cancel beside it stops and discards the audio. Releasing anywhere
-  // else dismisses the targets and keeps recording.
-  var holdTargetsEl = document.getElementById('session-hold-targets');
-  var insertTargetEl = document.getElementById('session-insert-target');
-  var cancelTargetEl = document.getElementById('session-cancel-target');
+  // All three mics share this gesture: a tap toggles (start; while recording, stop
+  // and SEND -- see stopVoiceCapture's autoSend / sink); holding the mic
+  // ~450ms while recording pops Insert and Cancel targets out; releasing over
+  // Insert stops the recording and just inserts the transcript into the
+  // composer, over Cancel stops and discards the audio, anywhere else
+  // dismisses the targets and keeps recording.
   var LONG_PRESS_MS = 450;
-  var holdTimer = null;
-  var holdActive = false;     // the hold targets are showing for the current press
-  var suppressNextClick = false;
 
   function overTarget(el, x, y) {
     var r = el.getBoundingClientRect();
     // Forgiving, a thumb is not a pixel; sideways only up to half the 10px gap between the two targets.
     return x >= r.left - 5 && x <= r.right + 5 && y >= r.top - 14 && y <= r.bottom + 14;
-  }
-  function endHold() {
-    clearTimeout(holdTimer);
-    holdTimer = null;
-    holdActive = false;
-    holdTargetsEl.hidden = true;
-    insertTargetEl.classList.remove('armed');
-    cancelTargetEl.classList.remove('armed');
   }
 
   function cancelVoiceCapture() {
@@ -1691,6 +2028,59 @@
     setRecordingUI(false, '');
     GLBridge.call('voiceCancel', {}).catch(function (err) {
       showError('Could not cancel the recording: ' + err.message);
+    });
+  }
+
+  /**
+   * Wires the tap + hold-drag gesture onto a mic button. Hold state is per
+   * mic (closure), so the mics cannot cross-arm each other's targets.
+   * opts: targetsEl/insertEl/cancelEl (the popped-out targets), canHold()
+   * (is there a recording this mic may hold-control), onTap() (a plain tap).
+   */
+  function attachMicHold(btn, opts) {
+    var holdTimer = null;
+    var holdActive = false;     // the hold targets are showing for the current press
+    var suppressNextClick = false;
+    function endHold() {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+      holdActive = false;
+      opts.targetsEl.hidden = true;
+      opts.insertEl.classList.remove('armed');
+      opts.cancelEl.classList.remove('armed');
+    }
+    btn.addEventListener('pointerdown', function (e) {
+      if (!opts.canHold()) return;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(function () {
+        holdTimer = null;
+        if (!opts.canHold()) return;
+        holdActive = true;
+        opts.targetsEl.hidden = false;
+        if (navigator.vibrate) { try { navigator.vibrate(10); } catch (err) { /* ignore */ } }
+      }, LONG_PRESS_MS);
+      try { btn.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    });
+    btn.addEventListener('pointermove', function (e) {
+      if (!holdActive) return;
+      opts.insertEl.classList.toggle('armed', overTarget(opts.insertEl, e.clientX, e.clientY));
+      opts.cancelEl.classList.toggle('armed', overTarget(opts.cancelEl, e.clientX, e.clientY));
+    });
+    btn.addEventListener('pointerup', function (e) {
+      var wasHold = holdActive;
+      var insert = holdActive && overTarget(opts.insertEl, e.clientX, e.clientY);
+      var cancel = holdActive && overTarget(opts.cancelEl, e.clientX, e.clientY);
+      endHold();
+      if (!wasHold) return; // short press: the click handler below owns it
+      suppressNextClick = true; // a long press must not also fire the toggle
+      if (insert) stopVoiceCapture();
+      else if (cancel) cancelVoiceCapture();
+    });
+    btn.addEventListener('pointercancel', endHold);
+    btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    btn.addEventListener('click', function () {
+      if (suppressNextClick) { suppressNextClick = false; return; }
+      opts.onTap();
     });
   }
 
@@ -1713,44 +2103,32 @@
     stopVoiceCapture(snapshot, launchId);
   }
 
-  recordBtn.addEventListener('pointerdown', function (e) {
-    if (!recording) return;
-    clearTimeout(holdTimer);
-    holdTimer = setTimeout(function () {
-      holdTimer = null;
-      if (!recording) return;
-      holdActive = true;
-      holdTargetsEl.hidden = false;
-      if (navigator.vibrate) { try { navigator.vibrate(10); } catch (err) { /* ignore */ } }
-    }, LONG_PRESS_MS);
-    try { recordBtn.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  attachMicHold(recordBtn, {
+    targetsEl: document.getElementById('session-hold-targets'),
+    insertEl: document.getElementById('session-insert-target'),
+    cancelEl: document.getElementById('session-cancel-target'),
+    canHold: function () { return recording; },
+    onTap: function () {
+      // A reply- or clarify-box recording whose box has gone (detail closed, card
+      // moved on): stop it (its transcript goes to the prompt, see insertVoiceText),
+      // never auto-send. This is the only way left to stop one.
+      if (recording && voiceTarget !== 'launcher') { stopVoiceCapture(); return; }
+      if (!recording) startVoiceCapture();
+      else if (selectedProject === null) stopVoiceCapture();
+      else stopAndSend();
+    }
   });
-  recordBtn.addEventListener('pointermove', function (e) {
-    if (!holdActive) return;
-    insertTargetEl.classList.toggle('armed', overTarget(insertTargetEl, e.clientX, e.clientY));
-    cancelTargetEl.classList.toggle('armed', overTarget(cancelTargetEl, e.clientX, e.clientY));
-  });
-  recordBtn.addEventListener('pointerup', function (e) {
-    var wasHold = holdActive;
-    var insert = holdActive && overTarget(insertTargetEl, e.clientX, e.clientY);
-    var cancel = holdActive && overTarget(cancelTargetEl, e.clientX, e.clientY);
-    endHold();
-    if (!wasHold) return; // short press: the click handler below owns it
-    suppressNextClick = true; // a long press must not also fire the toggle
-    if (insert) stopVoiceCapture();
-    else if (cancel) cancelVoiceCapture();
-  });
-  recordBtn.addEventListener('pointercancel', endHold);
-  recordBtn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
-  recordBtn.addEventListener('click', function () {
-    if (suppressNextClick) { suppressNextClick = false; return; }
-    // A reply-box recording left running when the detail was closed: stop it
-    // (its transcript goes to the prompt, see insertVoiceText), never auto-send.
-    if (recording && voiceTarget === 'reply') { stopVoiceCapture(); return; }
-    if (!recording) startVoiceCapture();
-    else if (selectedProject === null) stopVoiceCapture();
-    else stopAndSend();
+  // Same gesture again: tap-tap sends the clarification, hold + Insert inserts, hold + Cancel discards.
+  attachMicHold(clarifyRecordBtn, {
+    targetsEl: document.getElementById('session-clarify-hold-targets'),
+    insertEl: document.getElementById('session-clarify-insert-target'),
+    cancelEl: document.getElementById('session-clarify-cancel-target'),
+    canHold: function () { return recording && voiceTarget === 'clarify'; },
+    onTap: function () {
+      if (!recording) startVoiceCapture('clarify');
+      else if (voiceTarget === 'clarify') stopAndSendClarification();
+    }
   });
 
   // Exposed for native to call via GLWebModuleViewController's
@@ -2472,6 +2850,11 @@
     var clarifications = readQueue(PENDING_CLARIFY_KEY);
     clarifications.forEach(function (c) { if (c.startKey === oldKey) c.startKey = newKey; });
     writeQueue(PENDING_CLARIFY_KEY, clarifications);
+    // Clarifications still being transcribed follow the Start too, or they would be sent to a key the box has dismissed.
+    var inFlight = clarifyLaunches.read();
+    Object.keys(inFlight).forEach(function (k) { if (inFlight[k].startKey === oldKey) inFlight[k].startKey = newKey; });
+    clarifyLaunches.write(inFlight);
+    if (voiceClarifyKey === oldKey) voiceClarifyKey = newKey;
     if (clarifyStartKey === oldKey) clarifyStartKey = newKey;
     rerenderRecent();
     postJson('/sessions/submissions/' + encodeURIComponent(oldKey) + '/dismiss', {}).then(loadRecent, function () {});
@@ -2684,6 +3067,7 @@
     }
     clarifyTextEl.value = '';
     showClarifyStatus('Sending clarification…');
+    rerenderRecent();
     flushClarifications();
   }
 
@@ -2752,6 +3136,8 @@
       var failed = l.status === 'failed';
       var actions = [];
       if (l.voiceId && nativeKnowsLaunches) actions.push({ label: '▶ Play', run: function () { playVoice(l.voiceId); } });
+      var name = (l.snap.prefix || '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Voice note';
+      if (!failed) actions.push(clarifyAction(l.localId, name));
       if (failed && l.voiceId && nativeKnowsLaunches) actions.push({ label: 'Retry', run: function () { retryVoiceLaunch(l); } });
       actions.push({ label: 'Discard', run: function () { discardVoiceLaunch(l); } });
       return {
@@ -2759,8 +3145,8 @@
         state: failed ? 'failed' : 'sending',
         failed: failed,
         key: l.localId,
-        name: (l.snap.prefix || '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Voice note',
-        summary: (failed ? 'Failed: ' + l.error : l.status === 'waiting' ? 'Waiting for box — transcribes automatically' : 'Transcribing…') + ' · ' + l.localId.slice(0, 8),
+        name: name,
+        summary: (failed ? 'Failed: ' + l.error : l.status === 'waiting' ? 'Waiting for box — transcribes automatically' : 'Transcribing…') + ' · ' + l.localId.slice(0, 8) + clarificationsWaiting(l.localId),
         activityAt: l.at,
         actions: actions,
       };
@@ -2769,6 +3155,8 @@
       var prompt = (e.body.prompt || '').replace(/\s+/g, ' ').trim();
       var actions = [];
       if (e.voiceId && nativeKnowsLaunches) actions.push({ label: '▶ Play', run: function () { playVoice(e.voiceId); } });
+      var name = prompt.slice(0, 80) || (e.body.project ? '/' + e.body.project : 'Screenshot only');
+      if (!e.failed) actions.push(clarifyAction(e.key, name));
       if (e.failed) {
         actions.push({ label: 'Retry', run: function () { retryFailedStart(e); } });
         if (!e.voiceId) actions.push({ label: 'Edit', run: function () { editFailedStart(e); } });
@@ -2779,12 +3167,26 @@
         state: e.failed ? 'failed' : 'sending',
         failed: !!e.failed,
         key: e.key,
-        name: prompt.slice(0, 80) || (e.body.project ? '/' + e.body.project : 'Screenshot only'),
-        summary: (e.failed ? "Couldn't start: " + e.failed : startsOffline ? 'Waiting for connection — will send automatically' : 'Saved on this phone — sending…') + ' · ' + e.key.slice(0, 8),
+        name: name,
+        summary: (e.failed ? "Couldn't start: " + e.failed : startsOffline ? 'Waiting for connection — will send automatically' : 'Saved on this phone — sending…') + ' · ' + e.key.slice(0, 8) + clarificationsWaiting(e.key),
         activityAt: e.queuedAt || null,
         actions: actions,
       };
     }));
+  }
+
+  /** A Sending row's Clarify chip: points the card's clarification box at that row's Start. */
+  function clarifyAction(startKey, name) {
+    return { label: 'Clarify', run: function () {
+      if (clarifyStartKey !== startKey || confirmationEl.classList.contains('gl-hidden')) setConfirmation('Starting', name, false, startKey);
+      confirmationEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      clarifyTextEl.focus();
+    } };
+  }
+
+  function clarificationsWaiting(startKey) {
+    var n = readQueue(PENDING_CLARIFY_KEY).filter(function (c) { return c.startKey === startKey; }).length;
+    return n ? ' · ' + n + (n === 1 ? ' clarification' : ' clarifications') + ' waiting' : '';
   }
 
   /** Plays a queued recording: native hands back its bytes. */
@@ -2807,6 +3209,7 @@
   function discardVoiceLaunch(launch) {
     (launch.snap.pendingIds || []).forEach(function (id) { idbLoud(idbDelete(id)); });
     writeQueue(PENDING_CLARIFY_KEY, readQueue(PENDING_CLARIFY_KEY).filter(function (c) { return c.startKey !== launch.localId; }));
+    if (clarifyStartKey === launch.localId) { clarifyStartKey = null; confirmationEl.classList.add('gl-hidden'); }
     if (!launch.voiceId) { removeVoiceLaunch(launch.localId); return; }
     ackVoice(launch.voiceId).then(function () { removeVoiceLaunch(launch.localId); })
       .catch(function (err) { showError("Couldn't delete the recording: " + err.message); });
@@ -3020,21 +3423,130 @@
     if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
   }
 
+  // One regex rather than a pass per syntax, so whichever token starts first wins:
+  // `a**b**` stays code and https://x/*y* stays a URL, while **`a`** recurses into
+  // bold + code. No lookbehind: it is a parse error on older WebKit and would
+  // take down the whole page script, so the word-boundary check for *italic*
+  // happens in the loop instead (keeps a*b*c and 2*3*4 literal).
+  // Groups: 1 code, 2 bold, 3 link text, 4 link url, 5 italic. A bare URL matches no group.
+  var INLINE_RE = /`([^`\n]+)`|\*\*(?=\S)([^\n]*?\S)\*\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*(?=[^\s*])([^*\n]*?[^\s*])\*|https?:\/\/[^\s<>"'`)\]]+/g;
   function appendInline(parent, text) {
-    text.split(/(`[^`\n]+`)/).forEach(function (part) {
-      if (!part) return;
-      if (part.length > 2 && part.charAt(0) === '`' && part.charAt(part.length - 1) === '`') {
-        var c = document.createElement('code');
-        appendTextWithLinks(c, part.slice(1, -1));
-        parent.appendChild(c);
-      } else {
-        appendTextWithLinks(parent, part);
+    // A local regex, because the bold/link branches recurse and a shared lastIndex would be clobbered.
+    var re = new RegExp(INLINE_RE.source, 'g');
+    var last = 0, m;
+    while ((m = re.exec(text))) {
+      if (m[5] !== undefined && (/\w/.test(text.charAt(m.index - 1)) || /\w/.test(text.charAt(m.index + m[0].length)))) {
+        re.lastIndex = m.index + 1;
+        continue;
       }
-    });
+      if (m.index > last) appendTextWithLinks(parent, text.slice(last, m.index));
+      var el;
+      if (m[1] !== undefined) {
+        el = document.createElement('code');
+        appendTextWithLinks(el, m[1]);
+      } else if (m[2] !== undefined) {
+        el = document.createElement('strong');
+        appendInline(el, m[2]);
+      } else if (m[3] !== undefined) {
+        el = document.createElement('a');
+        el.href = m[4];
+        el.target = '_blank'; // same reason as appendTextWithLinks: hands the URL to Safari
+        el.rel = 'noopener';
+        appendInline(el, m[3]);
+      } else if (m[5] !== undefined) {
+        el = document.createElement('em');
+        appendInline(el, m[5]);
+      } else {
+        appendTextWithLinks(parent, m[0]);
+        last = m.index + m[0].length;
+        continue;
+      }
+      parent.appendChild(el);
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) appendTextWithLinks(parent, text.slice(last));
   }
 
-  // Light formatting only: ``` fences -> <code block>, `x` -> <code>. Everything
-  // is inserted via textContent/text nodes, never innerHTML.
+  var TABLE_DIVIDER_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+  function tableCells(line) {
+    return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(function (c) { return c.trim(); });
+  }
+
+  // Scrolls sideways inside its own box: Claude's tables are often wider than a
+  // phone, and the transcript column must not scroll horizontally.
+  function renderTable(rows) {
+    var box = document.createElement('div');
+    box.className = 'gl-md-table';
+    var table = document.createElement('table');
+    rows.forEach(function (cells, i) {
+      var tr = document.createElement('tr');
+      cells.forEach(function (cell) {
+        var td = document.createElement(i === 0 ? 'th' : 'td');
+        appendInline(td, cell);
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    });
+    box.appendChild(table);
+    return box;
+  }
+
+  // Line-level markdown for text outside code fences: headings, rules, lists,
+  // tables, paragraphs. Assistant replies are written as markdown, so anything
+  // left out here shows its raw syntax on the phone. Blank lines become paragraph
+  // margins; single line breaks survive via .gl-msg-text's pre-wrap.
+  function appendMarkdown(parent, text) {
+    var lines = text.split('\n');
+    var para = [];
+    function flush() {
+      if (!para.length) return;
+      var p = document.createElement('div');
+      p.className = 'gl-md-p';
+      appendInline(p, para.join('\n'));
+      parent.appendChild(p);
+      para = [];
+    }
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i], m;
+      if (!line.trim()) {
+        flush();
+      } else if ((m = line.match(/^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/))) {
+        flush();
+        var h = document.createElement('div');
+        h.className = 'gl-md-h gl-md-h' + m[1].length;
+        appendInline(h, m[2]);
+        parent.appendChild(h);
+      } else if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(line)) {
+        flush();
+        parent.appendChild(document.createElement('hr'));
+      } else if (line.indexOf('|') !== -1 && i + 1 < lines.length && lines[i + 1].indexOf('-') !== -1 && TABLE_DIVIDER_RE.test(lines[i + 1])) {
+        flush();
+        var rows = [tableCells(line)];
+        i += 2; // past the header and its divider
+        while (i < lines.length && lines[i].indexOf('|') !== -1) rows.push(tableCells(lines[i++]));
+        i--; // the for loop's i++ must land on the first line after the table
+        parent.appendChild(renderTable(rows));
+      } else if ((m = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/))) {
+        flush();
+        var li = document.createElement('div');
+        li.className = 'gl-md-li';
+        li.style.marginLeft = Math.min(Math.floor(m[1].length / 2), 4) * 16 + 'px';
+        var marker = document.createElement('span');
+        marker.textContent = /\d/.test(m[2]) ? m[2] : '•';
+        var body = document.createElement('span');
+        appendInline(body, m[3]);
+        li.appendChild(marker);
+        li.appendChild(body);
+        parent.appendChild(li);
+      } else {
+        para.push(line);
+      }
+    }
+    flush();
+  }
+
+  // ``` fences -> <code block>; everything else goes through appendMarkdown.
+  // Everything is inserted via textContent/text nodes, never innerHTML.
   function renderRichText(text) {
     var wrap = document.createElement('div');
     wrap.className = 'gl-msg-text';
@@ -3048,7 +3560,7 @@
         wrap.appendChild(pre);
       } else if (part) {
         // an unterminated trailing fence renders as plain text, backticks included
-        appendInline(wrap, inFence ? '```' + part : part.replace(/^\n/, '').replace(/\n$/, ''));
+        appendMarkdown(wrap, inFence ? '```' + part : part);
       }
     });
     return wrap;
@@ -3260,6 +3772,7 @@
     try { draft = localStorage.getItem(replyDraftKey()) || ''; } catch (e) { draft = ''; }
     replyEl.value = draft;
     renderReplyThumbs();
+    reconcileReplyLaunches(detail);
     renderDetailHeader();
     var cached = transcriptCache[detail.sessionId];
     if (cached) applyTranscript(detail, cached, 0, false);
@@ -3418,9 +3931,16 @@
       showError('Up to ' + MAX_ATTACHMENTS + ' screenshots — ' + (files.length - toAdd.length) + ' skipped.', 'reply');
     }
   });
-  detailRecordBtn.addEventListener('click', function () {
-    if (!recording) startVoiceCapture('reply');
-    else if (voiceTarget === 'reply') stopVoiceCapture();
+  // Same gesture as the launcher mic: tap-tap sends the reply, hold + Insert inserts, hold + Cancel discards.
+  attachMicHold(detailRecordBtn, {
+    targetsEl: document.getElementById('detail-hold-targets'),
+    insertEl: document.getElementById('detail-insert-target'),
+    cancelEl: document.getElementById('detail-cancel-target'),
+    canHold: function () { return recording && voiceTarget === 'reply'; },
+    onTap: function () {
+      if (!recording) startVoiceCapture('reply');
+      else if (voiceTarget === 'reply') stopAndSendReply();
+    }
   });
   replyEl.addEventListener('input', function () {
     if (!detail) return;
