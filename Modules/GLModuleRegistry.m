@@ -34,13 +34,10 @@
 // INDEX it has today, so SceneDelegate's UITEST_TAB hook, sim-test's
 // TAB_ENTRIES, AutoJournal's -selectJournalTab (which finds itself by index
 // in tabs.viewControllers) and the module view controllers' own structure
-// (Journal wraps itself in a navigation controller, which UIKit's More stack
-// already tolerated) all keep working untouched. A tile "open" goes onto
+// all keep working untouched. A tile "open" goes onto
 // exactly the navigation controller UIKit would have pushed onto anyway.
-// One-line snapshot of the More stack and of every self-wrapped overflow
-// module (Journal), logged as "GLMoreNavState <tag>: ..." so a simulator run
-// can show what UIKit actually did to the wrapper after a back-swipe -- the
-// state the journal-swipe-back UI test is about, and not otherwise visible.
+// One-line snapshot of the More stack, logged as "GLMoreNavState <tag>: ..."
+// so a simulator run (UITEST_STATE_LOG) can show what UIKit did to the stack.
 static NSString *GLDescribeVCs(NSArray<UIViewController *> *vcs) {
     NSMutableArray *names = [NSMutableArray array];
     for (UIViewController *vc in vcs) {
@@ -50,85 +47,20 @@ static NSString *GLDescribeVCs(NSArray<UIViewController *> *vcs) {
 }
 
 static void GLLogMoreNavState(NSString *tag, UINavigationController *moreNav) {
-    UITabBarController *tabs = moreNav.tabBarController;
-    UIViewController *selected = tabs.selectedViewController;
-    NSMutableString *wrappers = [NSMutableString string];
-    for (UIViewController *vc in tabs.viewControllers) {
-        if (![vc isKindOfClass:[UINavigationController class]] || vc == moreNav) continue;
-        [wrappers appendFormat:@" wrapper<%p>.viewControllers=%@", vc,
-            GLDescribeVCs(((UINavigationController *)vc).viewControllers)];
-    }
+    UIViewController *selected = moreNav.tabBarController.selectedViewController;
     [GLModuleRegistry appendTestLog:[NSString stringWithFormat:
-        @"GLMoreNavState %@: selected=%@<%p> moreNav.viewControllers=%@%@", tag,
-        NSStringFromClass(selected.class), selected, GLDescribeVCs(moreNav.viewControllers), wrappers]];
+        @"GLMoreNavState %@: selected=%@<%p> moreNav.viewControllers=%@", tag,
+        NSStringFromClass(selected.class), selected, GLDescribeVCs(moreNav.viewControllers)]];
 }
 
 @interface GLMoreStackCoordinator : NSObject <UINavigationControllerDelegate, UIGestureRecognizerDelegate>
 @property (nonatomic, strong) GLWebModuleViewController *root;
 @property (nonatomic, strong) NSArray<UIViewController *> *overflowModules;
 @property (nonatomic, weak) UINavigationController *moreNav;
-// The screens of each self-wrapped overflow module (Journal), by the
-// wrapper's restorationIdentifier, kept alive here. Selecting such a wrapper
-// makes UIKit MOVE its children onto the More stack and leave the wrapper
-// empty, so a back-swipe that pops them off leaves nothing holding them:
-// they deallocate, and with them whatever the user had typed.
-@property (nonatomic, strong) NSMutableDictionary<NSString *, NSArray<UIViewController *> *> *wrapperContent;
-- (void)rememberContentOfWrapper:(UINavigationController *)wrapper;
-- (void)selectWrapper:(UINavigationController *)wrapper inTabBarController:(UITabBarController *)tabs;
 - (void)takeOverNavigationController:(UINavigationController *)navigationController;
 @end
 
 @implementation GLMoreStackCoordinator
-
-- (void)rememberContentOfWrapper:(UINavigationController *)wrapper {
-    if (wrapper.restorationIdentifier == nil) return;
-    NSArray<UIViewController *> *content = wrapper.viewControllers;
-    // Already moved onto the More stack: the wrapper's screens are whatever
-    // sits above the root (only called while this wrapper is the selected tab).
-    if (content.count == 0 && self.moreNav.viewControllers.count > 1) {
-        NSArray *stack = self.moreNav.viewControllers;
-        content = [stack subarrayWithRange:NSMakeRange(1, stack.count - 1)];
-    }
-    if (content.count == 0) return;
-    if (self.wrapperContent == nil) self.wrapperContent = [NSMutableDictionary dictionary];
-    self.wrapperContent[wrapper.restorationIdentifier] = content;
-}
-
-// Selecting a wrapper that is ALREADY the selected tab is a no-op for UIKit,
-// so after a back-swipe popped its screen off the More stack (leaving the
-// wrapper selected, empty, and not on screen) neither the More tile nor a
-// shortcut could bring it back, and the screen's unsaved text was gone.
-// Detect "selected but not on screen", hand the wrapper its remembered
-// screens back, and make the selection a real change by passing through the
-// More tab first, so UIKit moves the SAME instances onto the stack again.
-// Done here, at the user's request, never from a navigation callback, so it
-// does not mutate the stack mid-transition.
-- (void)selectWrapper:(UINavigationController *)wrapper inTabBarController:(UITabBarController *)tabs {
-    [self rememberContentOfWrapper:wrapper];
-    NSArray<UIViewController *> *content = self.wrapperContent[wrapper.restorationIdentifier];
-    BOOL onScreen = content.count > 0 && [self.moreNav.viewControllers containsObject:content.firstObject];
-    BOOL needsRestore = tabs.selectedViewController == wrapper && content.count > 0 && !onScreen;
-    if (needsRestore) {
-        GLLogMoreNavState(@"reselect-restore", self.moreNav);
-        tabs.selectedViewController = self.moreNav;
-    }
-    tabs.selectedViewController = wrapper;
-    if (needsRestore) {
-        // Selecting the now-empty wrapper leaves the More stack at just its
-        // root (observed: [root] only). UIKit's own select puts the wrapper's
-        // children on the stack, so put the remembered ones there by hand, on
-        // the next run-loop turn rather than inside the selection transition.
-        __weak GLMoreStackCoordinator *weakSelf = self;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            GLMoreStackCoordinator *strongSelf = weakSelf;
-            UINavigationController *nav = strongSelf.moreNav;
-            if (nav == nil || strongSelf.root == nil) return;
-            if ([nav.viewControllers containsObject:content.firstObject]) return;
-            [nav setViewControllers:[@[strongSelf.root] arrayByAddingObjectsFromArray:content] animated:NO];
-            GLLogMoreNavState(@"reselect-restored", nav);
-        });
-    }
-}
 
 - (void)takeOverNavigationController:(UINavigationController *)navigationController {
     self.moreNav = navigationController;
@@ -211,10 +143,6 @@ static void GLLogMoreNavState(NSString *tag, UINavigationController *moreNav) {
                       animated:(BOOL)animated {
     GLLogMoreNavState(@"didShow-before-repair", navigationController);
     [self installRootIfNeeded];
-    UIViewController *selected = navigationController.tabBarController.selectedViewController;
-    if ([selected isKindOfClass:[UINavigationController class]] && selected != navigationController) {
-        [self rememberContentOfWrapper:(UINavigationController *)selected];
-    }
     GLLogMoreNavState(@"didShow-after-repair", navigationController);
 }
 
@@ -653,36 +581,14 @@ static NSMutableArray *GLRegisteredModules(void) {
 // -- which is exactly why the select-vs-push decision lives here as one
 // paragraph instead of being copied into both.
 //
-// A module that wraps itself in its own UINavigationController (Journal
-// does, so it can push its "Recent" screen) must NOT be pushed:
-// -pushViewController: raises NSInvalidArgumentException, "Pushing a
-// navigation controller is not supported". UIKit's own former More list
-// never pushed one either — it SELECTED it, which is also what
-// AutoJournalViewController's -selectJournalTab and SceneDelegate's
-// UITEST_TAB hook do, and the path CI has been screenshotting all along.
+// Every overflow module is a plain view controller pushed on the More stack
+// (a module must never wrap itself in a UINavigationController: UIKit moves a
+// More-overflow nav controller's children onto the More stack and leaves the
+// wrapper empty; scripts/check_module_nav_wrappers.sh enforces this).
 + (BOOL)openModuleViewController:(nullable UIViewController *)module
          ontoNavigationController:(nullable UINavigationController *)navigationController {
     if (module == nil) {
         [GLCrashReporter addBreadcrumb:@"openModuleViewController: module is nil"];
-        return NO;
-    }
-    // Breadcrumb records the branch taken (select vs push) and the module's
-    // actual class -- see GLCrashReporter.h: this is exactly the decision
-    // point the doc comment above says a module wrapping itself in its own
-    // UINavigationController must never be pushed onto, and it's the prime
-    // suspect for the Events-tile crash this instrumentation exists to
-    // pin down.
-    if ([module isKindOfClass:[UINavigationController class]]) {
-        UITabBarController *tabs = navigationController.tabBarController;
-        BOOL found = tabs != nil && [tabs.viewControllers containsObject:module];
-        [GLCrashReporter addBreadcrumb:[NSString stringWithFormat:
-            @"openModuleViewController: select branch, module=%@, foundInTabs=%@",
-            NSStringFromClass(module.class), found ? @"YES" : @"NO"]];
-        if (found) {
-            GLLogMoreNavState(@"select-branch", navigationController);
-            [moreCoordinator selectWrapper:(UINavigationController *)module inTabBarController:tabs];
-            return YES;
-        }
         return NO;
     }
     if (navigationController == nil) {
@@ -754,11 +660,8 @@ static NSMutableArray *GLRegisteredModules(void) {
     // showing. The More page's own tiles always satisfy that, but a deep link
     // (overland://session/...) can arrive while another tab is selected --
     // sim-test run 34772337791 caught Sessions pushed behind the Growth tab.
-    // Self-wrapped (UINavigationController) modules select their own tab in
-    // +openModuleViewController: instead, so leave those alone.
     UITabBarController *tabs = moreCoordinator.moreNav.tabBarController;
-    if (target != nil && ![target isKindOfClass:[UINavigationController class]] &&
-        tabs != nil && tabs.selectedViewController != tabs.moreNavigationController) {
+    if (target != nil && tabs != nil && tabs.selectedViewController != tabs.moreNavigationController) {
         tabs.selectedViewController = tabs.moreNavigationController;
     }
     BOOL opened = [self openModuleViewController:target ontoNavigationController:moreCoordinator.moreNav];
@@ -813,11 +716,14 @@ static NSMutableArray *GLRegisteredModules(void) {
 
 + (BOOL)currentScreenHoldsTabOnResumeInTabBarController:(UITabBarController *)tabs {
     UIViewController *onScreen = tabs.selectedViewController;
-    // More selected: the module is whatever sits on top of the More stack
-    // (Journal's own UINavigationController, or a module pushed directly).
-    // Journal pushing "Recent" inside its own nav controller stays inside it.
+    // More selected: the module is the topmost overflow module on the More
+    // stack. A screen a module pushed itself (Journal's Recent) sits above it
+    // and still belongs to that module.
     if (onScreen == tabs.moreNavigationController) {
-        onScreen = tabs.moreNavigationController.topViewController;
+        onScreen = nil;
+        for (UIViewController *vc in tabs.moreNavigationController.viewControllers.reverseObjectEnumerator) {
+            if ([tabs.viewControllers containsObject:vc]) { onScreen = vc; break; }
+        }
     }
     // Same classes[i]/controllers[i] pairing as +selectDefaultTabInTabBarController:.
     NSArray *classes = [self moduleClasses];

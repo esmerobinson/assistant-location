@@ -10,6 +10,7 @@
 #import "GLTheme.h"
 #import "GLWebModuleViewController.h"
 #import "GLModuleRegistry.h"
+#import "GLCrashReporter.h"
 
 static NSString *const kJournalStartCaptureNotification = @"GLJournalStartCapture";
 static NSString *const kJournalStartTextEntryNotification = @"GLJournalStartTextEntry";
@@ -34,6 +35,7 @@ typedef NS_ENUM(NSInteger, AutoJournalRecordingState) {
 // In-content header (title + Recents entry point) — see -buildHeaderRow's
 // doc comment for why this exists alongside, not instead of, the
 // navigationItem set in -viewDidLoad.
+@property(nonatomic, assign) NSUInteger handoffRetries;
 @property(nonatomic, strong) UILabel *headerTitleLabel;
 @property(nonatomic, strong) UIButton *headerRecentsButton;
 
@@ -225,6 +227,7 @@ typedef NS_ENUM(NSInteger, AutoJournalRecordingState) {
         [self retryLockScreenHandoff:@selector(handleOpenRecentsNotification)];
         return;
     }
+    self.handoffRetries = 0;
     [self selectJournalTab];
     [self recentTapped];
 }
@@ -232,23 +235,17 @@ typedef NS_ENUM(NSInteger, AutoJournalRecordingState) {
 // Journal is registered past the 4-tab visible limit (Modules/
 // GLModuleRegistry.m), so it is opened through the More web page's
 // `openModule` bridge call (Modules/WebBridge/GLWebBridge.m ->
-// +[GLModuleRegistry openOverflowModuleWithIdentifier:]), which selects
-// Journal's own UINavigationController as `tabs.selectedViewController` —
-// an index past the tab bar's visible count, which is exactly the
-// "selectedIndex past the visible tabs" case GLModuleRegistry.m's own
-// comment on GLMoreStackCoordinator describes: UIKit folds the selection
-// into the shared `moreNavigationController` stack, so the bar that would
-// draw `self.navigationItem` ends up being the More stack's bar — and
-// GLMoreStackCoordinator hides that bar on every screen in it, deliberately
-// (the user: "there's an extra header at the top with a back button. That
-// shouldn't happen."). The result: the `rightBarButtonItem` set in
-// -viewDidLoad has nowhere to draw, and the Recent-recordings entry point
-// becomes unreachable.
+// +[GLModuleRegistry openOverflowModuleWithIdentifier:]), which pushes it onto
+// the shared More stack. GLMoreStackCoordinator hides that stack's navigation
+// bar on every screen in it, deliberately (the user: "there's an extra header
+// at the top with a back button. That shouldn't happen."), so the
+// `rightBarButtonItem` set in -viewDidLoad has nowhere to draw and the
+// Recent-recordings entry point would be unreachable.
 //
-// Fixed with an in-content header row instead of a navigation bar. `self.
-// navigationController` still exists and still accepts a push in this
-// configuration (it's the More stack itself) — see -recentTapped, which
-// pushes the Recent-recordings web page onto it.
+// Fixed with an in-content header row instead of a navigation bar.
+// `self.navigationController` is the More stack itself, which accepts the
+// push in -recentTapped. After a back-swipe pops Journal off that stack both
+// navigationController and tabBarController are nil until it is pushed again.
 - (void)buildHeaderRow {
     self.headerTitleLabel = [[UILabel alloc] init];
     self.headerTitleLabel.text = @"Journal";
@@ -667,6 +664,7 @@ typedef NS_ENUM(NSInteger, AutoJournalRecordingState) {
         [self retryLockScreenHandoff:@selector(handleStartCaptureNotification)];
         return;
     }
+    self.handoffRetries = 0;
     [self selectJournalTab];
     self.modeControl.selectedSegmentIndex = 0;
     [self modeChanged:nil];
@@ -684,6 +682,7 @@ typedef NS_ENUM(NSInteger, AutoJournalRecordingState) {
         [self retryLockScreenHandoff:@selector(handleStartTextEntryNotification)];
         return;
     }
+    self.handoffRetries = 0;
     [self selectJournalTab];
     self.modeControl.selectedSegmentIndex = 1;
     [self modeChanged:nil];
@@ -694,9 +693,19 @@ typedef NS_ENUM(NSInteger, AutoJournalRecordingState) {
 
 - (void)retryLockScreenHandoff:(SEL)selector {
     // No tab bar controller also means "swiped back off the More stack", where
-    // nothing else ever puts this instance back, so the retry below would spin
-    // forever. Ask the registry to show Journal again (a no-op before the tab
-    // bar is installed); once it is back on the stack the retry goes through.
+    // nothing else ever puts this instance back. Ask the registry to show
+    // Journal again (a no-op before the tab bar is installed); once it is back
+    // on the stack the retry goes through. Bounded: a handoff that still has no
+    // tab bar after ~10s is a bug, not something to wait on forever.
+    static const NSUInteger kMaxHandoffRetries = 50;
+    if (++self.handoffRetries > kMaxHandoffRetries) {
+        NSString *msg = [NSString stringWithFormat:@"Journal handoff %@ gave up: no tab bar controller after %lu retries",
+                         NSStringFromSelector(selector), (unsigned long)kMaxHandoffRetries];
+        NSLog(@"%@", msg);
+        [GLCrashReporter addBreadcrumb:msg];
+        self.handoffRetries = 0;
+        return;
+    }
     [self selectJournalTab];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         // -performSelector: rather than a direct call, since ARC can't

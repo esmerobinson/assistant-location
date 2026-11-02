@@ -2,6 +2,9 @@
 
 #import "BakedConfig.h"
 #import "GLAppStateReporter.h"
+#import "GLCrashDiagnosticMapping.h"
+
+#import <MetricKit/MetricKit.h>
 
 // Same host as everything else in the app (GLAppStateReporter.m, GLTheme.m,
 // GLWebBridge.m) -- piggybacks on the existing theme/events server rather
@@ -40,6 +43,74 @@ static NSString *_Nullable GLCrashReportFilePath(void) {
     return [dir stringByAppendingPathComponent:@"pending-crash-report.json"];
 }
 
+static NSString *_Nullable GLCrashSupportFile(NSString *name) {
+    NSString *exceptionReport = GLCrashReportFilePath();
+    return exceptionReport ? [[exceptionReport stringByDeletingLastPathComponent] stringByAppendingPathComponent:name] : nil;
+}
+
+// Breadcrumbs survive the process in two files so a crash that is NOT an
+// uncaught exception (signal, watchdog, memory kill: nothing runs at death)
+// still has its trail. "current" is rewritten on every addBreadcrumb; at
+// launch it is rotated to "previous", which is what MetricKit reports use.
+static NSString *_Nullable GLBreadcrumbsCurrentPath(void) { return GLCrashSupportFile(@"breadcrumbs-current.json"); }
+static NSString *_Nullable GLBreadcrumbsPreviousPath(void) { return GLCrashSupportFile(@"breadcrumbs-previous.json"); }
+static NSString *const kGLMetricKitPendingPrefix = @"pending-metrickit-";
+
+@interface GLCrashReporter ()
++ (NSArray<NSString *> *)gl_previousSessionBreadcrumbs;
++ (void)gl_rotateBreadcrumbFiles;
++ (void)gl_persistMetricKitReport:(NSDictionary *)report;
+@end
+
+// MetricKit delivers diagnostics of PAST runs (usually at the next launch).
+// Each one is mapped by GLCrashDiagnosticMapping to the same report shape the
+// exception path writes, persisted to its own file, and sent by
+// +reportPendingCrashIfAny with the same delete-on-2xx rule.
+@interface GLMetricKitSubscriber : NSObject <MXMetricManagerSubscriber>
++ (instancetype)shared;
+@end
+
+@implementation GLMetricKitSubscriber
++ (instancetype)shared {
+    static GLMetricKitSubscriber *s;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ s = [GLMetricKitSubscriber new]; });
+    return s;
+}
+
+- (void)didReceiveDiagnosticPayloads:(NSArray<MXDiagnosticPayload *> *)payloads {
+    NSDictionary *identifying = [GLAppStateReporter currentIdentifyingFields];
+    NSArray<NSString *> *crumbs = [GLCrashReporter gl_previousSessionBreadcrumbs];
+    for (MXDiagnosticPayload *payload in payloads) {
+        for (MXCrashDiagnostic *d in payload.crashDiagnostics) {
+            [GLCrashReporter gl_persistMetricKitReport:
+                [GLCrashDiagnosticMapping reportForKind:GLCrashDiagnosticKindCrash
+                                           exceptionType:d.exceptionType
+                                           exceptionCode:d.exceptionCode
+                                                  signal:d.signal
+                                       terminationReason:d.terminationReason
+                                     hangDurationSeconds:nil
+                                       callStackTreeJSON:[d.callStackTree JSONRepresentation]
+                                             identifying:identifying
+                                             breadcrumbs:crumbs]];
+        }
+        for (MXHangDiagnostic *d in payload.hangDiagnostics) {
+            [GLCrashReporter gl_persistMetricKitReport:
+                [GLCrashDiagnosticMapping reportForKind:GLCrashDiagnosticKindHang
+                                           exceptionType:nil
+                                           exceptionCode:nil
+                                                  signal:nil
+                                       terminationReason:nil
+                                     hangDurationSeconds:@([d.hangDuration doubleValue])
+                                       callStackTreeJSON:[d.callStackTree JSONRepresentation]
+                                             identifying:identifying
+                                             breadcrumbs:crumbs]];
+        }
+    }
+    [GLCrashReporter reportPendingCrashIfAny];
+}
+@end
+
 @implementation GLCrashReporter
 
 #pragma mark - Breadcrumbs
@@ -70,6 +141,36 @@ static NSMutableArray<NSString *> *GLCrashReporterBreadcrumbs(void) {
         while (breadcrumbs.count > kGLCrashReporterMaxBreadcrumbs) {
             [breadcrumbs removeObjectAtIndex:0];
         }
+        // Small (<= 20 short strings); written under the lock so the file is
+        // always a consistent snapshot of the buffer.
+        NSString *path = GLBreadcrumbsCurrentPath();
+        if (path) {
+            NSData *json = [NSJSONSerialization dataWithJSONObject:breadcrumbs options:0 error:nil];
+            [json writeToFile:path atomically:YES];
+        }
+    }
+}
+
++ (NSArray<NSString *> *)gl_previousSessionBreadcrumbs {
+    NSString *path = GLBreadcrumbsPreviousPath();
+    NSData *data = path ? [NSData dataWithContentsOfFile:path] : nil;
+    if (data.length == 0) return @[];
+    id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    return [parsed isKindOfClass:[NSArray class]] ? parsed : @[];
+}
+
+// Launch step: last session's trail becomes "previous", current starts empty.
++ (void)gl_rotateBreadcrumbFiles {
+    NSString *current = GLBreadcrumbsCurrentPath();
+    NSString *previous = GLBreadcrumbsPreviousPath();
+    if (!current || !previous) return;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    [fm removeItemAtPath:previous error:nil];
+    if ([fm fileExistsAtPath:current]) {
+        NSError *error = nil;
+        if (![fm moveItemAtPath:current toPath:previous error:&error]) {
+            NSLog(@"GLCrashReporter: breadcrumb rotation failed: %@", error);
+        }
     }
 }
 
@@ -90,7 +191,9 @@ static NSMutableArray<NSString *> *GLCrashReporterBreadcrumbs(void) {
 static void GLCrashReporterHandleException(NSException *exception);
 
 + (void)installHandler {
+    [self gl_rotateBreadcrumbFiles];
     NSSetUncaughtExceptionHandler(&GLCrashReporterHandleException);
+    [[MXMetricManager sharedManager] addSubscriber:[GLMetricKitSubscriber shared]];
 }
 
 // Runs while the process is already unwinding to a crash -- NSSetUncaught
@@ -136,12 +239,28 @@ static void GLCrashReporterHandleException(NSException *exception) {
 
 #pragma mark - Report on next launch
 
++ (void)gl_persistMetricKitReport:(NSDictionary *)report {
+    NSString *path = GLCrashSupportFile([NSString stringWithFormat:@"%@%@.json",
+                                         kGLMetricKitPendingPrefix, [NSUUID UUID].UUIDString]);
+    NSData *json = [NSJSONSerialization dataWithJSONObject:report options:0 error:nil];
+    NSAssert(path && json, @"could not serialize or place a MetricKit crash report");
+    [json writeToFile:path atomically:YES];
+}
+
 + (void)reportPendingCrashIfAny {
-    NSString *path = GLCrashReportFilePath();
-    if (path == nil) return;
+    NSString *exceptionPath = GLCrashReportFilePath();
+    if (exceptionPath == nil) return;
+    NSMutableArray<NSString *> *paths = [NSMutableArray arrayWithObject:exceptionPath];
+    NSString *dir = [exceptionPath stringByDeletingLastPathComponent];
+    for (NSString *name in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:nil]) {
+        if ([name hasPrefix:kGLMetricKitPendingPrefix]) [paths addObject:[dir stringByAppendingPathComponent:name]];
+    }
+    for (NSString *path in paths) [self gl_sendReportFileAtPath:path];
+}
+
++ (void)gl_sendReportFileAtPath:(NSString *)path {
     NSData *data = [NSData dataWithContentsOfFile:path];
     if (data.length == 0) return;
-
     // Same unbaked-host guard as GLAppStateReporter.m's +report: a
     // simulator/CI build has no server to send to. Returning here (rather
     // than deleting the file) means a build that DOES have a real host
@@ -157,6 +276,14 @@ static void GLCrashReporterHandleException(NSException *exception) {
     NSURL *url = [NSURL URLWithString:urlString];
     if (url == nil) return;
 
+    // One POST per file at a time: the launch call and the MetricKit
+    // callback can overlap.
+    static NSMutableSet<NSString *> *inFlight;
+    @synchronized(self) {
+        if (inFlight == nil) inFlight = [NSMutableSet set];
+        if ([inFlight containsObject:path]) return;
+        [inFlight addObject:path];
+    }
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = @"POST";
     request.HTTPBody = data;
@@ -165,6 +292,7 @@ static void GLCrashReporterHandleException(NSException *exception) {
     [[[NSURLSession sharedSession]
         dataTaskWithRequest:request
           completionHandler:^(NSData *_Nullable respData, NSURLResponse *_Nullable response, NSError *_Nullable error) {
+        @synchronized(self) { [inFlight removeObject:path]; }
         NSInteger status = [response isKindOfClass:[NSHTTPURLResponse class]]
             ? ((NSHTTPURLResponse *)response).statusCode : 0;
         if (error == nil && status >= 200 && status <= 299) {

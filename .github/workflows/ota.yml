@@ -48,6 +48,11 @@ jobs:
       - name: Tab-selection guard
         run: bash scripts/check_tab_selection.sh
 
+      # Modules return a plain view controller; one that wraps itself in a
+      # UINavigationController broke reopening Journal from More.
+      - name: Module navigation-wrapper guard
+        run: bash scripts/check_module_nav_wrappers.sh
+
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:

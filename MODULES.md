@@ -37,6 +37,14 @@ the conformers by `+moduleOrder` then class name, calls `+makeViewController`
 on each, and sets `title` / `tabBarItem` / `restorationIdentifier` on the
 result. **Do not set your own `tabBarItem`** — the registry owns it.
 
+**`+makeViewController` returns a plain view controller, never a
+`UINavigationController`.** Overflow modules (behind More) are pushed onto the
+shared More stack, and a module's own sub-screens are pushed onto
+`self.navigationController` (that same stack). A self-wrapped module made UIKit
+move the wrapper's children onto the More stack and leave the wrapper empty,
+which crashed reopening Journal. `scripts/check_module_nav_wrappers.sh` (run by
+`ota`) fails the build on a wrapper.
+
 (Runtime discovery via `objc_copyClassList` + `class_conformsToProtocol` was
 the original approach, replaced because it realizes every class in the
 process — UIKit, Foundation, everything — just to test each one, which

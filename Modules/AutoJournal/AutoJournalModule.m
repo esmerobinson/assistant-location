@@ -28,11 +28,12 @@
 + (BOOL)moduleHoldsTabOnResume { return YES; }
 
 + (UIViewController *)makeViewController {
-    // Wrapped in a UINavigationController so the Journal tab can push the
-    // "Recent" recordings screen (see AutoJournalViewController's rightBarButtonItem)
-    // — no module here already had a nav bar, so this module owns adding its own.
-    AutoJournalViewController *journal = [[AutoJournalViewController alloc] init];
-    return [[UINavigationController alloc] initWithRootViewController:journal];
+    // Plain view controller, like every other module: Journal is a More
+    // overflow module, so it is pushed onto the shared More stack, and its
+    // "Recent" screen is pushed onto that same stack. Wrapping it in its own
+    // UINavigationController makes UIKit move the wrapper's children onto the
+    // More stack and leave the wrapper empty, which is what crashed reopening.
+    return [[AutoJournalViewController alloc] init];
 }
 
 // Entry point for the lock-screen Controls, replacing the previous

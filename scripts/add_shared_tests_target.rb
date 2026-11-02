@@ -160,6 +160,8 @@ test.add_file_references([outbox_durable_ref])
 # GLMoreStackRepair.m (Modules/, synced group, fresh reference). Pure
 # Foundation: the More-stack root repair behind the Journal-open crash.
 test.add_file_references([group.new_reference("Modules/GLMoreStackRepair.m")])
+# GLCrashDiagnosticMapping.m (Modules/CrashReporter, synced group, fresh reference). Pure: plain values in, dictionary out.
+test.add_file_references([group.new_reference("Modules/CrashReporter/GLCrashDiagnosticMapping.m")])
 
 # GLTabDoubleTap.m (Modules/, synced group, fresh reference). Pure
 # Foundation: which tab bar tap sequences count as a double-tap-to-home.
@@ -208,7 +210,7 @@ test.build_configurations.each do |c|
   # "QuotesModels.h"/"QuotesRuleEngine.h"/"QuotesImportParser.h" flat.
   # "Modules" itself for GLDefaultTabArbiterTests.m's "GLDefaultTabArbiter.h".
   # "Modules/WebBridge" for GLWebBackSwipeTests.m's "GLWebBackSwipe.h".
-  c.build_settings["HEADER_SEARCH_PATHS"] = ["$(inherited)", "$(SRCROOT)/App", "$(SRCROOT)/Shared", "$(SRCROOT)/Modules/Todos", "$(SRCROOT)/Modules/Esme", "$(SRCROOT)/QuotesApp/Sources", "$(SRCROOT)/ListenApp","$(SRCROOT)/Modules", "$(SRCROOT)/Modules/WebBridge", "$(SRCROOT)/Modules/Growth", "$(SRCROOT)/Modules/Clips", "$(SRCROOT)/CycleApp"]
+  c.build_settings["HEADER_SEARCH_PATHS"] = ["$(inherited)", "$(SRCROOT)/App", "$(SRCROOT)/Shared", "$(SRCROOT)/Modules/Todos", "$(SRCROOT)/Modules/Esme", "$(SRCROOT)/QuotesApp/Sources", "$(SRCROOT)/ListenApp","$(SRCROOT)/Modules", "$(SRCROOT)/Modules/WebBridge", "$(SRCROOT)/Modules/CrashReporter", "$(SRCROOT)/Modules/Growth", "$(SRCROOT)/Modules/Clips", "$(SRCROOT)/CycleApp"]
   # Deliberately no TEST_HOST / BUNDLE_LOADER: a standalone "logic test"
   # bundle needs no host app to launch, and no dependency edge onto
   # Overland -- which matters because a dependency edge would make the
