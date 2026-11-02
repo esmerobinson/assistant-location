@@ -536,7 +536,7 @@ function fightRow(mk) {
 }
 SCREEN.fights = function () {
   var all = L('fight_markers').slice().sort(function (a, b) { return C.ms(b.at) - C.ms(a.at); });
-  return phone('p2 fl', '<header class="hd"><div><h2>Fights</h2><p class="dl">' + all.length + '</p></div><span class="fight" data-a="go:fight">Log</span></header>' +
+  return phone('p2 fl', '<header class="hd"><div><h2>Fights</h2><p class="dl">' + all.length + '</p></div><span class="plus" data-a="go:fight" role="button" aria-label="Log fight">' + ic('plus') + '</span></header>' +
     seg([['4w', '4w'], ['8w', '8w'], ['16w', '16w']], ui.frange, 'frange') + '<section class="fchw">' + fightChart(FRANGE[ui.frange]) + '</section>' +
     (all.length ? '<section><div class="list">' + all.map(fightRow).join('') + '</div></section>' : '<p class="empty">None</p>'));
 };

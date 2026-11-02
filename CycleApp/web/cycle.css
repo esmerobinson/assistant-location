@@ -194,8 +194,8 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 /* ---- Nudges (library, row actions, add sheet, thread). Ported from mockup-cycle-reminders.html and scoped under .nd
    so none of it leaks into other P2 screens. Class names rcn/qm avoid the existing global .rc/.q. ---- */
 .nd .hd{display:flex;justify-content:space-between;align-items:flex-start}
-.nd .plus{width:40px;height:40px;border-radius:50%;background:#0a0a0a;display:flex;align-items:center;justify-content:center;transform:translateY(-8px);cursor:pointer}
-.nd .plus .ic{width:22px;height:22px;color:var(--pk)}
+.nd .plus,.fl .plus{width:40px;height:40px;border-radius:50%;background:#0a0a0a;display:flex;align-items:center;justify-content:center;transform:translateY(-8px);cursor:pointer}
+.nd .plus .ic,.fl .plus .ic{width:22px;height:22px;color:var(--pk)}
 .nd .ic{fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .nd .lst{display:flex;flex-direction:column;gap:8px}
 .nd .lst .lab{margin-bottom:0}

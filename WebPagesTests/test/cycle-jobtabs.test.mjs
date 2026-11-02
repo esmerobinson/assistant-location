@@ -422,6 +422,20 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
     for (const t of ['todo', 'fights', 'progress']) assert.deepEqual(seen[t], seen.home, t + ' tab bar differs from Home');
     await context.close();
   });
+  test('D2b the Fights header adds a fight from a styled icon button with no text', async () => {
+    const { context, page } = await open({ offline: true });
+    await ready(page);
+    await page.click('[data-a="tab:fights"]');
+    const btn = page.locator('.fl .hd [data-a="go:fight"]');
+    assert.equal((await btn.textContent()).trim(), '');
+    assert.equal(await btn.locator('use').getAttribute('href'), '#plus');
+    // Size proves the .fl CSS applies: the .plus rule was scoped to .nd, and unstyled the span collapses to a bare glyph.
+    const box = await btn.boundingBox();
+    assert.deepEqual([box.width, box.height], [40, 40]);
+    await btn.click();
+    await page.waitForSelector('[data-a="fightsave"]');
+    await context.close();
+  });
   test('D3 a fight logged with a note shows the same date and time in the detail header and on the note', async () => {
     const { context, page } = await open({ offline: true });
     await ready(page);
