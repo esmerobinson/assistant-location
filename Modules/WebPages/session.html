@@ -2702,6 +2702,7 @@
     }
     clarifyTextEl.value = '';
     showClarifyStatus('Sending clarification…');
+    rerenderRecent();
     flushClarifications();
   }
 
@@ -2770,6 +2771,8 @@
       var failed = l.status === 'failed';
       var actions = [];
       if (l.voiceId && nativeKnowsLaunches) actions.push({ label: '▶ Play', run: function () { playVoice(l.voiceId); } });
+      var name = (l.snap.prefix || '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Voice note';
+      if (!failed) actions.push(clarifyAction(l.localId, name));
       if (failed && l.voiceId && nativeKnowsLaunches) actions.push({ label: 'Retry', run: function () { retryVoiceLaunch(l); } });
       actions.push({ label: 'Discard', run: function () { discardVoiceLaunch(l); } });
       return {
@@ -2777,8 +2780,8 @@
         state: failed ? 'failed' : 'sending',
         failed: failed,
         key: l.localId,
-        name: (l.snap.prefix || '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Voice note',
-        summary: (failed ? 'Failed: ' + l.error : l.status === 'waiting' ? 'Waiting for box — transcribes automatically' : 'Transcribing…') + ' · ' + l.localId.slice(0, 8),
+        name: name,
+        summary: (failed ? 'Failed: ' + l.error : l.status === 'waiting' ? 'Waiting for box — transcribes automatically' : 'Transcribing…') + ' · ' + l.localId.slice(0, 8) + clarificationsWaiting(l.localId),
         activityAt: l.at,
         actions: actions,
       };
@@ -2787,6 +2790,8 @@
       var prompt = (e.body.prompt || '').replace(/\s+/g, ' ').trim();
       var actions = [];
       if (e.voiceId && nativeKnowsLaunches) actions.push({ label: '▶ Play', run: function () { playVoice(e.voiceId); } });
+      var name = prompt.slice(0, 80) || (e.body.project ? '/' + e.body.project : 'Screenshot only');
+      if (!e.failed) actions.push(clarifyAction(e.key, name));
       if (e.failed) {
         actions.push({ label: 'Retry', run: function () { retryFailedStart(e); } });
         if (!e.voiceId) actions.push({ label: 'Edit', run: function () { editFailedStart(e); } });
@@ -2797,12 +2802,26 @@
         state: e.failed ? 'failed' : 'sending',
         failed: !!e.failed,
         key: e.key,
-        name: prompt.slice(0, 80) || (e.body.project ? '/' + e.body.project : 'Screenshot only'),
-        summary: (e.failed ? "Couldn't start: " + e.failed : startsOffline ? 'Waiting for connection — will send automatically' : 'Saved on this phone — sending…') + ' · ' + e.key.slice(0, 8),
+        name: name,
+        summary: (e.failed ? "Couldn't start: " + e.failed : startsOffline ? 'Waiting for connection — will send automatically' : 'Saved on this phone — sending…') + ' · ' + e.key.slice(0, 8) + clarificationsWaiting(e.key),
         activityAt: e.queuedAt || null,
         actions: actions,
       };
     }));
+  }
+
+  /** A Sending row's Clarify chip: points the card's clarification box at that row's Start. */
+  function clarifyAction(startKey, name) {
+    return { label: 'Clarify', run: function () {
+      if (clarifyStartKey !== startKey || confirmationEl.classList.contains('gl-hidden')) setConfirmation('Starting', name, false, startKey);
+      confirmationEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      clarifyTextEl.focus();
+    } };
+  }
+
+  function clarificationsWaiting(startKey) {
+    var n = readQueue(PENDING_CLARIFY_KEY).filter(function (c) { return c.startKey === startKey; }).length;
+    return n ? ' · ' + n + (n === 1 ? ' clarification' : ' clarifications') + ' waiting' : '';
   }
 
   /** Plays a queued recording: native hands back its bytes. */
@@ -2825,6 +2844,7 @@
   function discardVoiceLaunch(launch) {
     (launch.snap.pendingIds || []).forEach(function (id) { idbLoud(idbDelete(id)); });
     writeQueue(PENDING_CLARIFY_KEY, readQueue(PENDING_CLARIFY_KEY).filter(function (c) { return c.startKey !== launch.localId; }));
+    if (clarifyStartKey === launch.localId) { clarifyStartKey = null; confirmationEl.classList.add('gl-hidden'); }
     if (!launch.voiceId) { removeVoiceLaunch(launch.localId); return; }
     ackVoice(launch.voiceId).then(function () { removeVoiceLaunch(launch.localId); })
       .catch(function (err) { showError("Couldn't delete the recording: " + err.message); });

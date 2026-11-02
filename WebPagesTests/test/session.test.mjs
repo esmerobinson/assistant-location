@@ -3271,7 +3271,7 @@ test('an asked Recent row whose answer is queued stays hidden across a reload wh
   assert.equal(queue[0].body.answers, 'askk1');
   await page.reload();
   await page.waitForSelector('#session-recent-list .gl-recent-group');
-  assert.equal(await page.locator('#session-recent-list .gl-ask-chips button').count(), 0, 'the answered question is not repainted');
+  assert.deepEqual(await page.locator('#session-recent-list .gl-ask-chips button').allTextContents(), ['Clarify'], 'the answered question is not repainted; only the queued Start\'s own chip remains');
   await context.close();
 });
 
@@ -3930,5 +3930,67 @@ test('MIGRATE: an in-flight gl-session-voice-autosend-v1 entry from before the u
   assert.equal(await page.evaluate(() => localStorage.getItem('gl-session-voice-autosend-v1')), null, 'legacy key removed once migrated');
   await page.waitForFunction((k) => localStorage.getItem(k) === null, START_QUEUE);
   assert.deepEqual(await callsTo(page, 'voiceAck'), [{ id: 'v7' }]);
+  await context.close();
+});
+
+// --- clarifying a Start from its Sending row, whichever Start the card is showing ---
+
+const sendingRow = (page, text) => page.locator('#session-recent-list .gl-row', { hasText: text });
+
+test('clarify from a Sending row: goes to THAT Start, not the one on the card, waits offline, shows on the row, and is sent after its Start is answered', async () => {
+  let offline = true;
+  const { context, page, calls } = await startPageWithStartRoute((route) => (offline ? route.abort('connectionrefused') : OK_START(route)));
+  const bodies = await routeClarify(context, (route) => OK_JSON(route, 200, { delivered: 'live' }));
+  await pressStart(page, 'older prompt');
+  await pressStart(page, 'newer prompt');
+  await sendingRow(page, 'newer prompt').waitFor();
+  const queue = JSON.parse(await page.evaluate(() => localStorage.getItem('gl-session-pending-starts-v1')));
+  const older = queue.find((e) => e.body.prompt === 'older prompt');
+  const newer = queue.find((e) => e.body.prompt === 'newer prompt');
+
+  await sendingRow(page, 'older prompt').locator('button', { hasText: 'Clarify' }).click();
+  assert.equal(await page.locator('#session-confirmation-body').textContent(), 'older prompt');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'session-clarify-text');
+  await page.fill('#session-clarify-text', 'for the older one');
+  await page.click('#session-clarify-send');
+
+  await sendingRow(page, 'older prompt').locator('.gl-recent-summary', { hasText: '1 clarification waiting' }).waitFor();
+  assert.equal(await sendingRow(page, 'newer prompt').locator('.gl-recent-summary', { hasText: 'clarification' }).count(), 0);
+  const held = JSON.parse(await page.evaluate((k) => localStorage.getItem(k), CLARIFY_QUEUE));
+  assert.deepEqual(held.map((c) => [c.startKey, c.text]), [[older.key, 'for the older one']]);
+  assert.equal(bodies.length, 0, 'no clarify while its Start is unanswered');
+
+  offline = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await waitFor(() => bodies.length === 1, 'the clarification after its Start was answered');
+  assert.equal(bodies[0].startKey, older.key);
+  assert.notEqual(bodies[0].startKey, newer.key);
+  assert.ok(calls.some((c) => c.idempotencyKey === older.key), 'its Start went out under the same key');
+  await drained(page, CLARIFY_QUEUE);
+  await context.close();
+});
+
+test('clarify from a Sending row: a transcribing voice send has the chip, and discarding it closes the box aimed at it', async () => {
+  const { context, page } = await slidePage([]);
+  await page.evaluate(() => window.__glMock.configure({ delays: { voiceStop: 3000 } }));
+  await page.click('#session-record-btn');
+  const row = sendingRow(page, 'typed words');
+  await row.waitFor();
+  await page.evaluate(() => document.getElementById('session-confirmation').classList.add('gl-hidden'));
+  await row.locator('button', { hasText: 'Clarify' }).click();
+  await page.waitForSelector('#session-clarify:not(.gl-hidden)');
+  await row.locator('button', { hasText: 'Discard' }).click();
+  await page.waitForSelector('#session-confirmation.gl-hidden', { state: 'attached' });
+  await context.close();
+});
+
+test('clarify from a Sending row: a Failed row has no Clarify chip', async () => {
+  const { context, page } = await startPageWithStartRoute((route) => OK_JSON(route, 400, { error: 'refused' }));
+  await page.fill('#session-prompt', 'refused prompt');
+  await page.waitForFunction(() => !document.getElementById('session-start-btn').disabled);
+  await page.click('#session-start-btn');
+  const row = page.locator('.gl-row-failed', { hasText: 'refused prompt' });
+  await row.waitFor();
+  assert.deepEqual(await row.locator('button').allTextContents(), ['Retry', 'Edit', 'Discard']);
   await context.close();
 });
