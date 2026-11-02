@@ -798,3 +798,50 @@ test('buildItem: held_until overrides the Ask hold, even when the couple holds a
   const couple = { id: 'c', hold_ask_min: 0 };
   assert.throws(() => C.buildItem({ id: 'i', couple, me: ME, to: YOU, kind: 'ask', body: 'x', held_until: until, at: until, now }), /exclusive/);
 });
+
+// ---- fightActions: per-viewer chips on a fight row ----
+const FA_ME = { user_id: 'u-me', name: 'Alex' }, FA_YOU = { user_id: 'u-you', name: 'Sam' };
+const mk = (o = {}) => ({ id: 'f1', logged_by: 'u-me', repaired_at: null, ...o });
+const note = (author, o = {}) => ({ id: 'n-' + author, fight_marker_id: 'f1', author_id: author, ...o });
+const ftodo = (o) => ({ id: 't1', title: 'Apologize', fight_marker_id: 'f1', owner_id: 'u-me', created_by: 'u-you', done_at: null, deleted_at: null, ...o });
+const fa = (o, who = FA_ME) => C.fightActions({ me: who.user_id, partner: who === FA_ME ? FA_YOU : FA_ME, marker: mk(), notes: [], todos: [], ...o }).map((a) => a.kind + (a.title ? ':' + a.title : '') + (a.name ? ':' + a.name : ''));
+
+test('fightActions: no note from me and unrepaired -> Add your side; once I wrote, gone', () => {
+  assert.deepEqual(fa({ notes: [note('u-you')] }), ['add']);
+  assert.deepEqual(fa({ notes: [note('u-you'), note('u-me')] }), []);
+});
+
+test('fightActions: Waiting on partner when they have no note, suppressed once they wrote', () => {
+  assert.deepEqual(fa({ notes: [note('u-me')] }), ['wait:Sam']);
+  assert.deepEqual(fa({ notes: [note('u-me'), note('u-you')] }), []);
+});
+
+test('fightActions: repaired suppresses Add your side and Waiting for missing notes', () => {
+  assert.deepEqual(fa({ marker: mk({ repaired_at: '2026-10-20T00:00:00Z' }) }), []);
+});
+
+test('fightActions: my open to-do for this fight shows its title; done, deleted, other-fight and partner-owned do not', () => {
+  const notes = [note('u-me'), note('u-you')];
+  assert.deepEqual(fa({ notes, todos: [ftodo({ title: 'Reflect' })] }), ['todo:Reflect']);
+  assert.deepEqual(fa({ notes, todos: [ftodo({ done_at: '2026-10-20T00:00:00Z' })] }), []);
+  assert.deepEqual(fa({ notes, todos: [ftodo({ deleted_at: '2026-10-20T00:00:00Z' })] }), []);
+  assert.deepEqual(fa({ notes, todos: [ftodo({ fight_marker_id: 'other' })] }), []);
+});
+
+test('fightActions: a partner-owned open to-do I created shows Waiting; one she created for herself does not', () => {
+  const notes = [note('u-me'), note('u-you')];
+  assert.deepEqual(fa({ notes, todos: [ftodo({ owner_id: 'u-you', created_by: 'u-me' })] }), ['wait:Sam']);
+  assert.deepEqual(fa({ notes, todos: [ftodo({ owner_id: 'u-you', created_by: 'u-you' })] }), []);
+  assert.deepEqual(fa({ notes, todos: [ftodo({ owner_id: 'u-you', created_by: 'u-me', done_at: '2026-10-20T00:00:00Z' })] }), []);
+});
+
+test('fightActions: Waiting is one chip even when she has no note and owes a to-do I asked for; repaired fight with her to-do still waits', () => {
+  assert.deepEqual(fa({ notes: [note('u-me')], todos: [ftodo({ owner_id: 'u-you', created_by: 'u-me' })] }), ['wait:Sam']);
+  assert.deepEqual(fa({ marker: mk({ repaired_at: 'x' }), notes: [note('u-me')], todos: [ftodo({ owner_id: 'u-you', created_by: 'u-me' })] }), ['wait:Sam']);
+});
+
+test('fightActions: same fight from both phones is symmetric', () => {
+  const o = { notes: [note('u-me')], todos: [ftodo({ owner_id: 'u-you', created_by: 'u-me', title: 'Reflect' })] };
+  assert.deepEqual(fa(o, FA_ME), ['wait:Sam']);
+  assert.deepEqual(fa(o, FA_YOU), ['add', 'todo:Reflect']);
+});

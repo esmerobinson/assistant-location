@@ -507,6 +507,20 @@ var CycleCore = (function () {
     return out;
   }
 
+  // Action chips for one fight, from the viewer's side. o: {me, partner: {user_id, name}, marker, notes, todos}.
+  // -> [{kind: 'add'} | {kind: 'todo', id, title} | {kind: 'wait', name}]. Held asks have no todo yet, so they never show.
+  function fightActions(o) {
+    var out = [], open = function (t) { return t.fight_marker_id === o.marker.id && !t.done_at && !t.deleted_at; };
+    var wrote = function (uid) { return o.notes.some(function (n) { return n.fight_marker_id === o.marker.id && n.author_id === uid; }); };
+    var repaired = !!o.marker.repaired_at;
+    if (!repaired && !wrote(o.me)) out.push({ kind: 'add' });
+    o.todos.filter(function (t) { return open(t) && t.owner_id === o.me; })
+      .forEach(function (t) { out.push({ kind: 'todo', id: t.id, title: t.title }); });
+    var askedHer = o.todos.some(function (t) { return open(t) && t.owner_id === o.partner.user_id && t.created_by === o.me; });
+    if ((!repaired && !wrote(o.partner.user_id)) || askedHer) out.push({ kind: 'wait', name: o.partner.name });
+    return out;
+  }
+
   // Month grid for the Cycle screen: leading blanks (Mon-first) and day strings.
   function monthGrid(year, month) { // month 1-12
     var first = year + '-' + String(month).padStart(2, '0') + '-01';
@@ -523,7 +537,7 @@ var CycleCore = (function () {
     zonedMs: zonedMs, deliverAt: deliverAt, issueHeldUntil: issueHeldUntil, sectionNudges: sectionNudges,
     addMonths: addMonths, splitPayout: splitPayout, awardStatus: awardStatus,
     earnPts: earnPts, missPts: missPts, periodOf: periodOf, habitCount: habitCount, habitMisses: habitMisses, requireNote: requireNote, isEdited: isEdited,
-    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, needsYou: needsYou, calmStats: calmStats, weeklyFights: weeklyFights, inEditWindow: inEditWindow, monthGrid: monthGrid,
+    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, needsYou: needsYou, calmStats: calmStats, weeklyFights: weeklyFights, inEditWindow: inEditWindow, monthGrid: monthGrid, fightActions: fightActions,
     // Only a still-held item may offer Send / Edit / Drop; a stale notification can point at a delivered or dropped one.
     isStillHeld: function (i) { return !!i && i.status === 'held' && !i.deleted_at; }
   };

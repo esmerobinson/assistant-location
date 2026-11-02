@@ -442,7 +442,7 @@ SCREEN.tododetail = function () {
   function dueFact(x) { var d = dueOf(x.due_date), hot = !x.done_at && d.state; return fmtDay(x.due_date) + (hot ? ' <span class="due ' + d.state + '">' + d.text + '</span>' : ''); }
   var facts = fr('For', mineOwn ? 'You' : pnx(nameOf(t.owner_id))) + fr('From', t.created_by === St.me() ? 'You' : pnx(nameOf(t.created_by))) +
     (habit ? fr('Progress', h.hv + (t.period ? ' ' + { day: 'today', week: 'this week', month: 'this month' }[t.period] : '')) : t.due_date ? fr('Due', dueFact(t)) : '') +
-    fr('Earn', C.earnPts(t)) + fr('Lose', C.missPts(t)) + (t.done_at ? fr('Done', fmtDay(C.localDay(C.ms(t.done_at), tz()))) : '');
+    (t.type === 'response' ? '' : fr('Earn', C.earnPts(t)) + fr('Lose', C.missPts(t))) + (t.done_at ? fr('Done', fmtDay(C.localDay(C.ms(t.done_at), tz()))) : '');
   var undo = mineOwn && habit && t.tally > 0 ? '<div class="ghost" data-a="tundo:' + t.id + '">Undo tally</div>' : mineOwn && !habit && t.done_at ? '<div class="ghost" data-a="tundo:' + t.id + '">Undo done</div>' : '';
   var canNudge = !mineOwn && !t.done_at, nudged = nudgedToday(t.id);
   var nudge = canNudge ? '<div class="ghost' + (nudged ? ' dis' : '') + '"' + (nudged ? '' : ' data-a="tnudge:' + t.id + '"') + '>' + (nudged ? 'Pinged' : 'Ping') + '</div>' : '';
@@ -553,6 +553,7 @@ SCREEN.fightdetail = function () {
   var del = me && !mk.delete_requested_at ? '<div class="ghost" data-a="fightdelq">Delete</div>' : '';
   var edit = fightEditable(mk) ? '<span class="fight" data-a="fightedit">Edit</span>' : '';
   return phone('p2 fd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Fight</h2><p class="dl">' + noteStamp(C.ms(mk.at)) + '</p></div>' + edit + '</header>' +
+    (mk.summary ? '<section class="fsum"><p>' + esc(mk.summary) + '</p></section>' : '') +
     (old ? intensityPicker(old.intensity, 'fightint') : '') +
     (chips ? '<section class="meta2"><div class="rcs">' + chips + '</div></section>' : '') +
     (list ? '<section class="fns">' + list + '</section>' : '') +
@@ -574,12 +575,23 @@ function fightChart(weeks) {
       (i % every === 0 ? '<text class="d" x="' + (x + bwid / 2).toFixed(1) + '" y="152" text-anchor="middle">' + fmtShort(w.start) + '</text>' : '');
   }).join('') + '</svg>';
 }
+// The partner's member row, or null while the couple has only one member.
+function partnerMember() { return S.members.filter(function (x) { return x.user_id !== St.me(); })[0] || null; }
+// Per-viewer action chips: to-dos and "Add your side" ask for action (.rc.a), "Waiting" is passive.
+function fightActionChips(mk) {
+  var p = partnerMember();
+  if (!p) return '';
+  return C.fightActions({ me: St.me(), partner: p, marker: mk, notes: fightNotes(mk.id).filter(function (n) { return !n.deleted_at; }), todos: L('todos') }).map(function (a) {
+    return a.kind === 'todo' ? '<span class="rc a" data-a="tview:' + a.id + '">' + esc(a.title) + '</span>'
+      : a.kind === 'add' ? '<span class="rc a">Add your side</span>' : '<span class="rc">Waiting on ' + esc(a.name) + '</span>';
+  }).join('');
+}
 function fightRow(mk) {
   var own = mk.logged_by === St.me(), rec = ownFight(mk), notes = fightNotes(mk.id).filter(function (n) { return !n.deleted_at; }), first = notes[0];
-  var text = own && rec && rec.about ? rec.about : first ? first.body : '', extra = notes.length - (text && first && text === first.body ? 1 : 0);
-  var d = C.localDay(C.ms(mk.at), tz());
+  var text = mk.summary || (own && rec && rec.about ? rec.about : first ? first.body : '');
+  var d = C.localDay(C.ms(mk.at), tz()), chips = fightActionChips(mk);
   return '<div class="rf" data-a="openfight:' + mk.id + '"><div class="meta"><span>' + (own ? 'You' : pnx(nameOf(mk.logged_by))) + ' &middot; ' + dayName(d) + ' ' + (+d.slice(8)) + ' ' + MON[+d.slice(5, 7) - 1] + ' &middot; ' + fmtTime(C.ms(mk.at)) + '</span>' + (rec ? ix(rec.intensity) : '') + ns('fight_markers', mk.id) + '</div>' +
-    (text ? '<p>' + esc(text) + '</p>' : '') + '<div class="rcs">' + fightChips(mk) + (extra > 0 ? '<span class="rc">' + extra + (extra === 1 ? ' note' : ' notes') + '</span>' : '') + '</div></div>';
+    (text ? '<p class="sm">' + esc(text) + '</p>' : '') + (chips ? '<div class="rcs">' + chips + '</div>' : '') + '</div>';
 }
 SCREEN.fights = function () {
   var all = L('fight_markers').slice().sort(function (a, b) { return C.ms(b.at) - C.ms(a.at); });
