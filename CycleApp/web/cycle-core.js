@@ -248,7 +248,11 @@ var CycleCore = (function () {
   function computeLedger(rows, opts) {
     if (!opts || !opts.tz || opts.now == null || !opts.since) throw new Error('computeLedger needs tz, now, since');
     var tz = opts.tz, today = localDay(opts.now, tz);
-    rows = Object.assign({}, rows, { items: rows.items.filter(function (r) { return !isScheduled(r, opts.now); }), todos: rows.todos.filter(function (r) { return !isScheduled(r, opts.now); }) });
+    // An approved-deleted fight, an undone to-do event and an undone tapped break are soft-deleted rows: they leave
+    // every line, streak and chart here, so both phones compute the same points once the delete has synced.
+    rows = Object.assign({}, rows, { items: rows.items.filter(function (r) { return !isScheduled(r, opts.now); }), todos: rows.todos.filter(function (r) { return !isScheduled(r, opts.now); }),
+      fight_markers: rows.fight_markers.filter(function (r) { return !r.deleted_at; }), todo_events: rows.todo_events.filter(function (r) { return !r.deleted_at; }),
+      challenge_breaks: (rows.challenge_breaks || []).filter(function (r) { return !r.deleted_at; }) });
     var nameOf = {};
     rows.members.forEach(function (m) { nameOf[m.user_id] = m.name; });
     var lines = []; // {day, pts, label, who}
@@ -348,9 +352,12 @@ var CycleCore = (function () {
       if (c.breaks_on === 'goal') return goalChallenge(c);
       var tap = c.breaks_on === 'tap', brokenOn = tap ? (tapBreaks[c.id] || {}) : hitsByDay;
       var n = 0, best = 0, earned = 0, days = [], accepted = !!c.accepted_at;
-      if (!accepted) return { id: c.id, name: c.name, for_user: c.for_user, breaks_on: tap ? 'tap' : 'hit', broken_today: false, accepted: false, start: null, day: 0, best: 0, earned: 0, tonight: 0, days: [], next: { week: 7, month: 30 } };
+      if (!accepted) return { id: c.id, name: c.name, archived: !!c.archived_at, for_user: c.for_user, breaks_on: tap ? 'tap' : 'hit', broken_today: false, accepted: false, start: null, day: 0, best: 0, earned: 0, tonight: 0, days: [], next: { week: 7, month: 30 } };
       var start = dayOf(c.accepted_at) > c.start ? dayOf(c.accepted_at) : c.start;
-      for (var d = start; d < today; d = addDays(d, 1)) {
+      // An archived challenge stops accruing on its archive day (points already earned stay); unarchiving clears
+      // archived_at, so the days in between then count again.
+      var endDay = c.archived_at && dayOf(c.archived_at) < today ? dayOf(c.archived_at) : today;
+      for (var d = start; d < endDay; d = addDays(d, 1)) {
         if (brokenOn[d]) { n = 0; days.push({ d: d, n: 0, bonus: false }); continue; }
         n++; best = Math.max(best, n);
         days.push({ d: d, n: n, bonus: n % 7 === 0 || n % 30 === 0 });
@@ -362,14 +369,14 @@ var CycleCore = (function () {
       // next = days from today until the day whose finish pays the bonus (0 = today's finish).
       var day = start > today || brokenOn[today] ? 0 : n + 1;
       // days: start..today, n = streak number that day (0 on a hit day); today's n is the day in progress.
-      if (start <= today) days.push({ d: today, n: day, bonus: false });
+      if (start <= today && endDay === today) days.push({ d: today, n: day, bonus: false });
       var tonight = day ? Math.min(day, 10) + (day % 7 === 0 ? 10 : 0) + (day % 30 === 0 ? 100 : 0) : 0;
-      return { id: c.id, name: c.name, for_user: c.for_user, breaks_on: tap ? 'tap' : 'hit', broken_today: !!brokenOn[today], accepted: true, start: start, day: day, best: best, earned: earned, tonight: tonight, days: days,
+      return { id: c.id, name: c.name, archived: !!c.archived_at, for_user: c.for_user, breaks_on: tap ? 'tap' : 'hit', broken_today: !!brokenOn[today], accepted: true, start: start, day: day, best: best, earned: earned, tonight: tonight, days: days,
         next: { week: Math.max(7, Math.ceil(day / 7) * 7) - day, month: Math.max(30, Math.ceil(day / 30) * 30) - day } };
     });
 
     function goalChallenge(c) {
-      var base = { id: c.id, name: c.name, for_user: c.for_user, breaks_on: 'goal', accepted: !!c.accepted_at, start: null, opens: c.start, deadline: addDays(c.start, c.goal_window_days - 1), count: 0, goal_days: c.goal_days, goal_earn: c.goal_earn, goal_miss: c.goal_miss, rule: c.rule,
+      var base = { id: c.id, name: c.name, archived: !!c.archived_at, for_user: c.for_user, breaks_on: 'goal', accepted: !!c.accepted_at, start: null, opens: c.start, deadline: addDays(c.start, c.goal_window_days - 1), count: 0, goal_days: c.goal_days, goal_earn: c.goal_earn, goal_miss: c.goal_miss, rule: c.rule,
         logged_today: false, status: 'active', broken_today: false, day: 0, best: 0, earned: 0, tonight: 0, days: [], next: { week: 7, month: 30 } };
       if (!c.accepted_at) return base;
       var start = dayOf(c.accepted_at) > c.start ? dayOf(c.accepted_at) : c.start, deadline = base.deadline;
@@ -484,9 +491,13 @@ var CycleCore = (function () {
     // a fight the other person logged that is unrepaired and where I have written nothing yet
     var mine = {};
     s.fight_notes.forEach(function (n) { if (n.author_id === s.me) mine[n.fight_marker_id] = true; });
-    s.fight_markers.filter(function (m) { return m.logged_by !== s.me && !m.repaired_at && !mine[m.id]; })
+    s.fight_markers.filter(function (m) { return m.logged_by !== s.me && !m.repaired_at && !m.deleted_at && !m.delete_requested_at && !mine[m.id]; })
       .sort(function (a, b) { return ms(b.at) - ms(a.at); })
       .forEach(function (m) { out.push({ type: 'fight', marker: m }); });
+    // the other person asked to delete a fight they logged: approve or decline. Carries only the shared marker.
+    s.fight_markers.filter(function (m) { return m.logged_by !== s.me && m.delete_requested_at && !m.deleted_at; })
+      .sort(function (a, b) { return ms(b.delete_requested_at) - ms(a.delete_requested_at); })
+      .forEach(function (m) { out.push({ type: 'fightdel', marker: m }); });
     // An owning-up the other person finished that I have not opened yet. `seen` (ids I opened) is private on-device;
     // `since` is when this install first ran, so rows finished before it (e.g. migrated acknowledgments) never pop up.
     s.todos.filter(function (t) {

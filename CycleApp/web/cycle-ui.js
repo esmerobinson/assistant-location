@@ -30,7 +30,15 @@ var EDIT_WINDOW_MIN = 15;
 // Rows scheduled for a future time are invisible to every reader until then (C.isScheduled). Only these two tables
 // carry scheduled rows; the sender's own view of them goes through scheduledRows().
 var SCHED_TABLES = { items: 1, todos: 1 };
-function L(t) { var r = St.list(t); return SCHED_TABLES[t] ? r.filter(function (x) { return !C.isScheduled(x, now()); }) : r; }
+// Soft-deleted rows of these tables (an approved fight delete, an undone to-do event, an undone tapped break) are
+// invisible everywhere through L(), so no screen, chart or count has to remember to skip them. fight_notes and
+// the comment tables are NOT here: they keep a "Deleted" marker, so their screens read deleted rows on purpose.
+var SOFT_TABLES = { fight_markers: 1, todo_events: 1, challenge_breaks: 1 };
+function L(t) {
+  var r = St.list(t);
+  if (SOFT_TABLES[t]) r = r.filter(function (x) { return !x.deleted_at; });
+  return SCHED_TABLES[t] ? r.filter(function (x) { return !C.isScheduled(x, now()); }) : r;
+}
 var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 var WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 var KIND = { focus: 'Focus', kudos: 'Kudos', truth: 'Truth', ask: 'Ask' };
@@ -276,6 +284,10 @@ SCREEN.home = function () {
     if (n.type === 'fight') {
       return '<div class="nc" data-a="openfight:' + n.marker.id + '"><div class="mid"><p class="s">' + pnx(nameOf(n.marker.logged_by)) + '</p><p class="x">Add your version</p></div>' + ic('chevr', 'chv') + '</div>';
     }
+    if (n.type === 'fightdel') {
+      var fd = C.localDay(C.ms(n.marker.at), tz());
+      return '<div class="nc pk tall" data-a="openfight:' + n.marker.id + '"><div class="mid"><p class="s">' + pnx(nameOf(n.marker.logged_by)) + '</p><p class="x">Delete fight &middot; ' + dayName(fd) + ' ' + (+fd.slice(8)) + ' ' + MON[+fd.slice(5, 7) - 1] + '</p></div><div class="two"><span class="go" data-a="fightdelok:' + n.marker.id + '">Approve</span><span class="go o" data-a="fightdeldecl:' + n.marker.id + '">Decline</span></div></div>';
+    }
     if (n.type === 'ownup') {
       return '<div class="nc" data-a="tview:' + n.todo.id + '"><div class="mid"><p class="s">From ' + pnx(nameOf(n.todo.owner_id)) + '</p><p class="x">' + esc(n.todo.title) + '</p></div>' + ic('chevr', 'chv') + '</div>';
     }
@@ -431,6 +443,7 @@ SCREEN.tododetail = function () {
   var facts = fr('For', mineOwn ? 'You' : pnx(nameOf(t.owner_id))) + fr('From', t.created_by === St.me() ? 'You' : pnx(nameOf(t.created_by))) +
     (habit ? fr('Progress', h.hv + (t.period ? ' ' + { day: 'today', week: 'this week', month: 'this month' }[t.period] : '')) : t.due_date ? fr('Due', dueFact(t)) : '') +
     fr('Earn', C.earnPts(t)) + fr('Lose', C.missPts(t)) + (t.done_at ? fr('Done', fmtDay(C.localDay(C.ms(t.done_at), tz()))) : '');
+  var undo = mineOwn && habit && t.tally > 0 ? '<div class="ghost" data-a="tundo:' + t.id + '">Undo tally</div>' : mineOwn && !habit && t.done_at ? '<div class="ghost" data-a="tundo:' + t.id + '">Undo done</div>' : '';
   var canNudge = !mineOwn && !t.done_at, nudged = nudgedToday(t.id);
   var nudge = canNudge ? '<div class="ghost' + (nudged ? ' dis' : '') + '"' + (nudged ? '' : ' data-a="tnudge:' + t.id + '"') + '>' + (nudged ? 'Pinged' : 'Ping') + '</div>' : '';
   var cm = todoComments(t.id);
@@ -445,7 +458,7 @@ SCREEN.tododetail = function () {
     (t.description ? '<section><p class="tdd">' + esc(t.description) + '</p></section>' : '') +
     '<section class="list">' + facts + (habit ? h.bar : '') + '</section>' +
     (notes.length ? section('Log', notes.map(function (e) { return '<p class="tdd">' + esc(fmtDay(C.localDay(C.ms(e.at), tz()))) + ' &middot; ' + esc(e.note) + '</p>'; }).join('')) : '') +
-    (nudge ? '<section>' + nudge + '</section>' : '') +
+    (nudge ? '<section>' + nudge + '</section>' : '') + (undo ? '<section>' + undo + '</section>' : '') +
     section('Comments', (thread ? '<div class="fns">' + thread + '</div>' : '') + micTa('cmt', 'nt', 'Comment') + '<div class="save" data-a="tcomment:' + t.id + '">Send</div>'),
     { sheet: sh });
 };
@@ -461,20 +474,27 @@ function yn(k) {
   return '<div class="tdc">' + [['yes', 'Yes'], ['no', 'No']].map(function (c) { return '<span class="chip' + (ui.d[k] === c[0] ? ' on' : '') + '" data-a="yn:' + k + ':' + c[0] + '">' + c[1] + '</span>'; }).join('') + '</div>';
 }
 function ynVal(v) { return v === 'yes' ? true : v === 'no' ? false : null; }
-function intensityPicker(i, action) {
-  var arrows = [1, 2, 3, 4, 5].map(function (n) {
-    return '<span' + (n === i ? ' class="sel"' : ' style="color:#5e5e5e"') + ' data-a="' + action + ':' + n + '"><svg><use href="#' + (n === i ? 'arwh' : 'arw') + '"/></svg><b>' + n + '</b></span>';
+function intensityArrows(i, action) {
+  return [1, 2, 3, 4, 5].map(function (n) {
+    return '<span' + (n === i ? ' class="sel"' : ' style="color:#5e5e5e"') + ' data-a="' + (action || 'int') + ':' + n + '"><svg><use href="#' + (n === i ? 'arwh' : 'arw') + '"/></svg><b>' + n + '</b></span>';
   }).join('');
-  return '<section><p class="lab">Intensity</p><div class="arrows">' + arrows + '</div><div class="ends"><span>Low</span><span>High</span></div></section>';
+}
+function intensityPicker(i, action) {
+  return '<section><p class="lab">Intensity</p><div class="arrows">' + intensityArrows(i, action) + '</div><div class="ends"><span>Low</span><span>High</span></div></section>';
+}
+// The shared hit questions, used by Log a fight and by editing one; both read the same ui.d keys (hit, hitN, hitNot).
+// Esme is the one who may hit herself, so her questions are in the first person; the flag lives on her member row.
+function hitFields(d, esme) {
+  return '<p class="lab">' + (esme ? 'Did you hit yourself?' : 'Did she hit herself?') + '</p>' + yn('hit') +
+    (d.hit === 'yes' ? '<div class="frow"><span class="lab0">How many times?</span><div class="stp"><span data-a="hitn:-1"><svg class="ic sm"><path d="M6 12h12"/></svg></span><b>' + (d.hitN === 0.5 ? '.5' : d.hitN || 1) + '</b><span data-a="hitn:1">' + ic('plus', 'sm') + '</span></div></div>' : '') +
+    (d.hit === 'yes' ? '<div class="ck' + (d.hitNot ? ' on' : '') + '" data-a="hitnot"><i></i><span>Click here if it was not related to ' + (esme ? pn() : 'you') + '</span></div>' : '');
 }
 SCREEN.fight = function () {
   var d = ui.d, i = d.int || 3, chips = d.chips || {}, esme = St.myMember().hits_self;
   return phone('p2 s2', '<header class="hd"><div><h2>Log a fight</h2></div><span class="txtbtn" data-a="back">Cancel</span></header>' +
     intensityPicker(i, 'int') +
     // Esme is the one who may hit herself, so her questions are in the first person; the flag lives on her member row.
-    '<section><p class="lab">' + (esme ? 'Did you hit yourself?' : 'Did she hit herself?') + '</p>' + yn('hit') +
-    (d.hit === 'yes' ? '<div class="frow"><span class="lab0">How many times?</span><div class="stp"><span data-a="hitn:-1"><svg class="ic sm"><path d="M6 12h12"/></svg></span><b>' + (d.hitN === 0.5 ? '.5' : d.hitN || 1) + '</b><span data-a="hitn:1">' + ic('plus', 'sm') + '</span></div></div>' : '') +
-    (d.hit === 'yes' ? '<div class="ck' + (d.hitNot ? ' on' : '') + '" data-a="hitnot"><i></i><span>Click here if it was not related to ' + (esme ? pn() : 'you') + '</span></div>' : '') + '</section>' +
+    '<section>' + hitFields(d, esme) + '</section>' +
     '<section><p class="lab">What happened</p>' + micTa('note', 'nt') + whenRow('when') + '</section>' +
     '<section><p class="lab">Ask ' + pn() + ' to</p><div class="tdc">' + [['apologize', 'Apologize'], ['reflect', 'Reflect'], ['custom', 'Custom']].map(function (c) { return '<span class="chip' + (chips[c[0]] ? ' on' : '') + '" data-a="chip:' + c[0] + '">' + c[1] + '</span>'; }).join('') + '</div>' +
     (chips.custom ? '<p class="lab">Title</p>' + inp('customTitle') : '') + '</section>' +
@@ -495,26 +515,49 @@ function fmtStamp(iso) { return new Date(iso).toLocaleString(); }
 // A fight's shared facts as chips: what the logger answered about a hit, and whether it was repaired.
 function fightChips(mk) {
   var hit = C.hitText(mk, mk.logged_by === St.me() ? 'me' : nameOf(mk.logged_by));
-  return (hit ? '<span class="rc">' + esc(hit) + '</span>' : '') + (mk.repaired_at ? '<span class="rc d">Repaired</span>' : '');
+  return (hit ? '<span class="rc">' + esc(hit) + '</span>' : '') + (mk.repaired_at ? '<span class="rc d">Repaired</span>' : '') +
+    (mk.delete_requested_at ? '<span class="rc">Delete requested</span>' : mk.delete_declined_at ? '<span class="rc">Delete declined</span>' : '');
 }
 // Intensity lives only on the logger's own phone (S.priv.fights), so the partner's fight never has one to show.
 function ownFight(mk) { return mk.logged_by === St.me() ? S.priv.fights.filter(function (f) { return f.id === mk.id; })[0] : null; }
+// Edit window start for my own fight: the server's created_at once the marker has synced, else the moment I logged it
+// on this phone. A fight with neither (logged before the window existed) is not editable. The server enforces the same
+// window from created_at, so a stale local clock can only get an edit refused (shown under Not sent), never accepted.
+function fightEditable(mk) {
+  if (mk.logged_by !== St.me() || mk.deleted_at || mk.delete_requested_at) return false;
+  var rec = ownFight(mk), start = mk.created_at ? C.ms(mk.created_at) : rec && rec.logged_at;
+  return !!start && C.inEditWindow(start, now(), EDIT_WINDOW_MIN);
+}
+function hmOf(ms) { return new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz() }); }
 SCREEN.fightdetail = function () {
   var mk = S.rows.fight_markers[ui.fightId];
-  if (!mk) return bounce('fights');
-  var notes = fightNotes(mk.id), mine = notes.some(function (n) { return n.author_id === St.me(); });
+  // An approved delete (possibly from the other phone while this page is open) takes the fight off every screen.
+  if (!mk || mk.deleted_at) return bounce('fights');
+  var me = mk.logged_by === St.me(), notes = fightNotes(mk.id), mine = notes.some(function (n) { return n.author_id === St.me() && !n.deleted_at; });
   var old = ownFight(mk);
   var oldNote = old && old.about ? '<div class="fn"><p class="meta">' + pnx(nameOf(mk.logged_by)) + ' &middot; ' + noteStamp(C.ms(mk.at)) + '</p><p>' + esc(old.about) + '</p></div>' : '';
+  // A deleted note stays as a marker, so a reply under it never reads as answering nothing.
   var list = oldNote + notes.map(function (n) {
-    return '<div class="fn"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + ns('fight_notes', n.id).replace('<span', ' <span') + '</p><p>' + esc(n.body) + '</p></div>';
+    var del = n.author_id === St.me() && !n.deleted_at ? ' <span class="lnk" data-a="notedel:' + n.id + '">Delete</span>' : '';
+    return '<div class="fn' + (n.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + ns('fight_notes', n.id).replace('<span', ' <span') + '</p><p>' + (n.deleted_at ? 'Deleted' : esc(n.body)) + '</p></div>' + (del ? '<p class="meta fna">' + del + '</p>' : '');
   }).join('');
   var chips = fightChips(mk);
-  return phone('p2 fd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Fight</h2><p class="dl">' + noteStamp(C.ms(mk.at)) + '</p></div></header>' +
+  var sh = '';
+  if (ui.sheet && ui.sheet.type === 'fightedit' && fightEditable(mk)) {
+    sh = sheet('t3', '<div class="bsh"><h3>Edit</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Intensity</p><div class="arrows">' + intensityArrows(ui.d.int || 3) + '</div><div class="ends"><span>Low</span><span>High</span></div>' +
+      hitFields(ui.d, St.myMember().hits_self) + whenRow('ew') + '<div class="acts"><div class="save" data-a="fighteditsave">Save</div></div>');
+  } else if (ui.sheet && ui.sheet.type === 'fightdel' && me && !mk.delete_requested_at) {
+    sh = sheet('t3', '<div class="bsh"><h3>Delete?</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="ask">Ask ' + pn() + '</p><div class="acts" style="margin-top:44px"><div class="save" data-a="fightdelreq">Ask</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>');
+  }
+  var pending = mk.delete_requested_at && !me ? '<div class="pair"><span class="save" data-a="fightdelok:' + mk.id + '">Approve</span><span class="ghost" data-a="fightdeldecl:' + mk.id + '">Decline</span></div>' : '';
+  var del = me && !mk.delete_requested_at ? '<div class="ghost" data-a="fightdelq">Delete</div>' : '';
+  var edit = fightEditable(mk) ? '<span class="fight" data-a="fightedit">Edit</span>' : '';
+  return phone('p2 fd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Fight</h2><p class="dl">' + noteStamp(C.ms(mk.at)) + '</p></div>' + edit + '</header>' +
     (old ? intensityPicker(old.intensity, 'fightint') : '') +
     (chips ? '<section class="meta2"><div class="rcs">' + chips + '</div></section>' : '') +
     (list ? '<section class="fns">' + list + '</section>' : '') +
-    '<section><p class="lab">' + (mk.logged_by !== St.me() && !mine ? 'Add your version' : 'Add more') + '</p>' + micTa('more', 'nt') + whenRow('mw') + '</section>' +
-    '<div class="save" data-a="notesave">Save</div>');
+    '<section><p class="lab">' + (!me && !mine ? 'Add your version' : 'Add more') + '</p>' + micTa('more', 'nt') + whenRow('mw') + '</section>' +
+    '<div class="save" data-a="notesave">Save</div>' + pending + del, { sheet: sh });
 };
 
 // ---- Fights tab ---------------------------------------------------------------------------------------------
@@ -532,7 +575,7 @@ function fightChart(weeks) {
   }).join('') + '</svg>';
 }
 function fightRow(mk) {
-  var own = mk.logged_by === St.me(), rec = ownFight(mk), notes = fightNotes(mk.id), first = notes[0];
+  var own = mk.logged_by === St.me(), rec = ownFight(mk), notes = fightNotes(mk.id).filter(function (n) { return !n.deleted_at; }), first = notes[0];
   var text = own && rec && rec.about ? rec.about : first ? first.body : '', extra = notes.length - (text && first && text === first.body ? 1 : 0);
   var d = C.localDay(C.ms(mk.at), tz());
   return '<div class="rf" data-a="openfight:' + mk.id + '"><div class="meta"><span>' + (own ? 'You' : pnx(nameOf(mk.logged_by))) + ' &middot; ' + dayName(d) + ' ' + (+d.slice(8)) + ' ' + MON[+d.slice(5, 7) - 1] + ' &middot; ' + fmtTime(C.ms(mk.at)) + '</span>' + (rec ? ix(rec.intensity) : '') + ns('fight_markers', mk.id) + '</div>' +
@@ -547,14 +590,15 @@ SCREEN.fights = function () {
 
 // ---- Progress tab: points, the shop, challenges and the calm streak ------------------------------------------------
 SCREEN.progress = function () {
-  var led = ledger(), k = calm(), chs = led.challenges;
+  var led = ledger(), k = calm(), chs = led.challenges.filter(function (c) { return !c.archived; }), arch = led.challenges.filter(function (c) { return c.archived; });
   function fr(l, v) { return '<div class="frow"><span class="lab0">' + l + '</span><span>' + v + '</span></div>'; }
   return phone('p2 td s4 ur', '<header class="hd"><div><h2>Progress</h2></div></header>' +
     '<div class="sum" data-a="go:points"><div><p class="lab">Balance</p><p class="big">' + led.balance + '</p></div><div class="r"><p class="lab">This week</p><p class="big">' + sg(led.current.net) + '</p></div>' + ic('chevr', 'chv') + '</div>' +
     '<div class="srow" data-a="go:shop"><span>Shop</span>' + ic('chevr', 'sm') + '</div>' +
     section('Calm streak', fr('Now', k.streak + (k.streak === 1 ? ' day' : ' days')) + fr('Best', k.best + (k.best === 1 ? ' day' : ' days')) + fr('Last 28 days', k.last28 + ' calm'), 'ro2') +
     section('Challenges', chs.length ? '<div class="deck">' + chs.map(chCard).join('') + '</div>' : '<p class="empty">None</p>') +
-    '<div class="srow" data-a="newch"><span>New challenge</span>' + ic('plus', 'sm') + '</div>');
+    '<div class="srow" data-a="newch"><span>New challenge</span>' + ic('plus', 'sm') + '</div>' +
+    (arch.length ? section('Archived', '<div class="deck">' + arch.map(chCard).join('') + '</div>') : ''));
 };
 
 // ---- More: what has no tab ---------------------------------------------------------------------------------------
@@ -639,6 +683,15 @@ SCREEN.newch = function () {
     '<div class="pin"><div class="save' + (val('chname').trim() ? '' : ' dis') + '" id="chnew" data-a="chnew">Save</div></div>');
 };
 
+// A challenge's break row for today, live or (with live=true) only when live and mine. All rows incl. soft-deleted ones
+// are read from S.rows so a deleted one can be revived in place: (challenge, day) is unique on the server.
+function todayBreakRow(chId) {
+  return Object.keys(S.rows.challenge_breaks).map(function (k) { return S.rows.challenge_breaks[k]; }).filter(function (b) { return b.challenge_id === chId && b.day === today(); })[0] || null;
+}
+function todayBreak(chId, mineOnly) {
+  var b = todayBreakRow(chId);
+  return b && !b.deleted_at && (!mineOnly || b.by === St.me()) ? b : null;
+}
 SCREEN.challenge = function () {
   var c = ledger().challenges.filter(function (x) { return x.id === ui.chId; })[0];
   if (!c) return bounce('progress');
@@ -648,7 +701,7 @@ SCREEN.challenge = function () {
     : ui.sheet && ui.sheet.type === 'chlogedit' && logRow ? sheet('t3', '<div class="bsh"><h3>' + fmtShort(logRow.day) + '</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Note</p>' + micField('chlognote', 'What did you do?') + '<div class="acts" style="margin-top:44px"><div class="save" data-a="chlogeditsave">Save</div><div class="tdrop" data-a="chlogdelq">Delete</div></div>')
     : ui.sheet && ui.sheet.type === 'chlogdel' && logRow ? sheet('t3', '<div class="bsh"><h3>Delete ' + fmtShort(logRow.day) + '?</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><div class="acts" style="margin-top:44px"><div class="save" data-a="chlogdel">Delete</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>')
     : ui.sheet && ui.sheet.type === 'broke' ? sheet('t3', '<div class="bsh"><h3>Broke it</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Note</p>' + inp('brnote', 'Optional').replace('class="inp"', 'class="inp fill"') + '<div class="acts" style="margin-top:44px"><div class="save" data-a="brsave">Save</div></div>')
-    : ui.sheet && ui.sheet.type === 'chedit' ? sheet('', '<div class="bsh"><h3>Edit</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Name</p>' + inp('chname').replace('class="inp"', 'class="inp fill"') + '<div class="acts"><div class="save" data-a="chsave">Save</div></div>') : '';
+    : ui.sheet && ui.sheet.type === 'chedit' ? sheet('', '<div class="bsh"><h3>Edit</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Name</p>' + inp('chname').replace('class="inp"', 'class="inp fill"') + '<div class="acts"><div class="save" data-a="chsave">Save</div><div class="tdrop" data-a="charch">' + (c.archived ? 'Unarchive' : 'Archive') + '</div></div>') : '';
   function stat(l, v) { return '<div><p class="lab">' + l + '</p><p class="big">' + v + '</p></div>'; }
   var rules = '<div class="rules"><p class="rule">+1, +2, +3&hellip; up to +10 a day, plus +10 every week and +100 every month!</p>' + (tap ? '' : '<p class="rule">A hit: &minus;10, then &minus;5 for each more that day. A .5 is half.</p>') + '</div>';
   var notes = L('challenge_days').filter(function (x) { return x.challenge_id === c.id && !x.deleted_at; }).sort(function (a, b) { return a.day < b.day ? 1 : -1; });
@@ -658,11 +711,13 @@ SCREEN.challenge = function () {
       (c.for_user === St.me() && c.status === 'active' && !c.logged_today ? '<div class="pin"><div class="save" data-a="chlog">Log today</div></div>' : '')
     : '<div class="four g">' + stat(open ? 'Days' : 'Starts', open ? '0/' + c.goal_days : monDay(c.opens)) + stat('Due', monDay(c.deadline)) + stat('Reward', sg(c.goal_earn)) + stat('Miss', sg(-c.goal_miss)) + '</div>' + (c.accepted ? '' : c.for_user === St.me() ? '<div class="save" data-a="chaccept">Accept</div>' : '<p class="lab">Waiting for ' + esc(nameOf(c.for_user)) + '</p>')); }
   // Ping: only on the partner's challenge, until it is done or failed (not started counts). Pinned with Broke it when both show.
+  // Today's break, if I tapped it: the one a mis-tap can be taken back from.
+  var myBreak = todayBreak(c.id, true);
   var pinged = pingedToday(c.id), canPing = c.for_user !== St.me() && c.status !== 'done' && c.status !== 'failed';
   var pingBtn = canPing ? '<div class="ghost' + (pinged ? ' dis' : '') + '"' + (pinged ? '' : ' data-a="chping:' + c.id + '"') + '>' + (pinged ? 'Pinged' : 'Ping') + '</div>' : '';
   var pinger = pingBtn ? '<div class="pin">' + pingBtn + '</div>' : '';
   var body = goal ? goalBody() + pinger : c.accepted
-    ? '<div class="four">' + stat('Day', c.day) + stat('Tonight', sg(c.tonight)) + stat('Best', c.best) + stat('Earned', c.earned) + '</div>' + challengeCal(c, today()) + rules + (tap && !c.broken_today ? '<div class="pin"><div class="ghost" data-a="broke">Broke it</div>' + pingBtn + '</div>' : pinger)
+    ? '<div class="four">' + stat('Day', c.day) + stat('Tonight', sg(c.tonight)) + stat('Best', c.best) + stat('Earned', c.earned) + '</div>' + challengeCal(c, today()) + rules + (tap && !c.broken_today ? '<div class="pin"><div class="ghost" data-a="broke">Broke it</div>' + pingBtn + '</div>' : tap && myBreak ? '<div class="pin"><div class="ghost" data-a="brundo">Undo break</div>' + pingBtn + '</div>' : pinger)
     : rules + (c.for_user === St.me() ? '<div class="save" data-a="chaccept">Accept</div>' : '<p class="lab">Waiting for ' + esc(nameOf(c.for_user)) + '</p>') + pinger;
   return phone('pts cdet', '<header class="hd"><div>' + ptsBack(backLabel()) + '<h2>' + esc(c.name) + '</h2></div><span class="pillb" data-a="chedit">Edit</span></header>' + body, { sheet: sh });
 };
@@ -679,6 +734,9 @@ SCREEN.shop = function () {
     sh = sheet('', '<div class="bsh"><h3>' + esc(r.name) + '</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div>' + '<div class="rart">' + artSvg(r.art, 'big') + '</div>' + '<p class="ask">Spend ' + r.price + '?</p><p class="to">' + led.balance + ' &rarr; ' + (led.balance - r.price) + '</p><div class="acts"><div class="save" data-a="redeem:' + r.id + '">Ask ' + pn() + '</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>');
   } else if (ui.sheet && ui.sheet.type === 'editreward' && rr && !rr.archived) {
     sh = sheet('', '<div class="bsh"><h3>Edit</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div>' + '<p class="lab">Reward</p>' + inp('rname').replace('class="inp"', 'class="inp fill"') + '<div class="frow"><span class="lab0">Price</span><input class="inp" type="number" inputmode="numeric" min="0" data-d="rprice" value="' + esc(val('rprice')) + '"></div><div class="acts"><div class="save" data-a="savereward">Save</div><div class="tdrop" data-a="rewardarch:' + rr.id + '">Archive</div></div>');
+  } else if (ui.sheet && ui.sheet.type === 'redcancel' && S.rows.redemptions[ui.sheet.id] && S.rows.redemptions[ui.sheet.id].status === 'pending') {
+    var cr = S.rows.rewards[S.rows.redemptions[ui.sheet.id].reward_id];
+    sh = sheet('t3', '<div class="bsh"><h3>' + esc(cr ? cr.name : '') + '</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="ask">Cancel the ask?</p><div class="acts" style="margin-top:44px"><div class="save" data-a="redcancel:' + ui.sheet.id + '">Cancel ask</div><div class="tdrop" data-a="sheet:close">Keep</div></div>');
   } else if (ui.sheet && ui.sheet.type === 'addreward') {
     sh = sheet('', '<div class="bsh"><h3>Add</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div>' + '<p class="lab">Reward</p>' + inp('rname').replace('class="inp"', 'class="inp fill"') + '<div class="frow"><span class="lab0">Price</span><input class="inp" type="number" inputmode="numeric" min="0" data-d="rprice" value="' + esc(val('rprice')) + '"></div><div class="save" data-a="savereward">Save</div>');
   }
@@ -986,7 +1044,9 @@ function ring(ph) {
   return '<svg class="chart" viewBox="2 14 342 248" width="342" height="248">' + out + mk + '<text class="ab" x="173" y="139" font-size="26" fill="#fff" text-anchor="middle">' + mid + '</text>' +
     '<text x="173" y="167" font-size="16" fill="#bdbdbd" text-anchor="middle" letter-spacing="1">' + sub + '</text></svg>';
 }
-function fightRecs() { return S.priv.fights.filter(function (f) { return S.rows.fight_markers[f.id]; }).sort(function (a, b) { return b.at - a.at; }); }
+function fightRecs() {
+  return S.priv.fights.filter(function (f) { var mk = S.rows.fight_markers[f.id]; return mk && !mk.deleted_at; }).sort(function (a, b) { return b.at - a.at; });
+}
 // The logger's own words: the pre-sharing on-device text, else their first shared note.
 function fightText(f) { var n = fightNotes(f.id).filter(function (x) { return x.author_id === St.me(); })[0]; return f.about || (n ? n.body : ''); }
 function chipsFor(f) {
@@ -1358,6 +1418,87 @@ var ACT = {
     St.insert('challenge_nudges', { id: St.uuid(), couple_id: S.couple.id, challenge_id: id, sender_id: St.me(), created_at: n, updated_at: n, deleted_at: null });
     render();
   }),
+  notedel: guard(function (id) {
+    var n = S.rows.fight_notes[id];
+    if (!n || n.author_id !== St.me() || n.deleted_at) throw new Error('Cannot delete');
+    St.patch('fight_notes', id, { deleted_at: nowIso() }); render();
+  }),
+  fightedit: guard(function () {
+    var mk = S.rows.fight_markers[ui.fightId];
+    if (!mk || !fightEditable(mk)) throw new Error('Edit window closed');
+    var rec = ownFight(mk), at = C.ms(mk.at);
+    ui.sheet = { type: 'fightedit' };
+    ui.d = { int: rec ? rec.intensity : 3, hit: mk.hit_self === true ? 'yes' : mk.hit_self === false ? 'no' : null, hitN: mk.hit_count || 1, hitNot: mk.hit_related === false,
+      ewD: C.localDay(at, tz()), ewT: hmOf(at) };
+    render();
+  }),
+  fighteditsave: guard(function () {
+    var mk = S.rows.fight_markers[ui.fightId], d = ui.d;
+    // Re-checked at save: the window may have closed while the sheet was open.
+    if (!mk || !fightEditable(mk)) throw new Error('Edit window closed');
+    var at = whenMs('ew'), f = { hit_self: ynVal(d.hit), hit_related: d.hit === 'yes' && d.hitNot ? false : null, hit_count: d.hit === 'yes' ? d.hitN || 1 : null }, ch = {};
+    Object.keys(f).forEach(function (k) { if ((mk[k] == null ? null : mk[k]) !== f[k]) ch[k] = f[k]; });
+    if (at !== C.ms(mk.at)) ch.at = new Date(at).toISOString();
+    // Shared marker fields only: intensity is private and never leaves this phone, so it is written to S.priv, not the patch.
+    if (Object.keys(ch).length) St.patch('fight_markers', mk.id, ch);
+    var rec = ownFight(mk);
+    if (rec) { rec.intensity = d.int || 3; rec.at = at; St.savePriv(); }
+    draftSent(); ui.sheet = null; ui.d = {}; render();
+  }),
+  fightdelq: function () { ui.sheet = { type: 'fightdel' }; render(); },
+  fightdelreq: guard(function () {
+    var mk = S.rows.fight_markers[ui.fightId];
+    if (!mk || mk.logged_by !== St.me() || mk.deleted_at || mk.delete_requested_at) throw new Error('Cannot ask');
+    // Only the request goes out: no intensity, no private field. A re-ask after a decline clears the declined stamp.
+    St.patch('fight_markers', mk.id, { delete_requested_at: nowIso(), delete_declined_at: null });
+    ui.sheet = null; render();
+  }),
+  fightdelok: guard(function (id) {
+    var mk = S.rows.fight_markers[id];
+    if (!mk || mk.logged_by === St.me() || !mk.delete_requested_at || mk.deleted_at) throw new Error('Nothing to approve');
+    St.patch('fight_markers', id, { deleted_at: nowIso() });
+    if (ui.route === 'fightdetail') back(); else render();
+  }),
+  fightdeldecl: guard(function (id) {
+    var mk = S.rows.fight_markers[id];
+    if (!mk || mk.logged_by === St.me() || !mk.delete_requested_at || mk.deleted_at) throw new Error('Nothing to decline');
+    St.patch('fight_markers', id, { delete_requested_at: null, delete_declined_at: nowIso() });
+    render();
+  }),
+  tundo: guard(function (id) {
+    var t = S.rows.todos[id], habit = t && t.type === 'habit', kind = habit ? 'tally' : 'done';
+    if (!t || t.owner_id !== St.me() || t.deleted_at) throw new Error('Cannot undo');
+    if (habit ? !(t.tally > 0) : !t.done_at) throw new Error('Nothing to undo');
+    // The event is what the points read, so it is undone together with the to-do's own done_at / tally.
+    var ev = L('todo_events').filter(function (e) { return e.todo_id === id && e.user_id === St.me() && e.kind === kind; }).sort(function (a, b) { return C.ms(b.at) - C.ms(a.at); })[0];
+    if (!ev) throw new Error('No ' + kind + ' to undo');
+    St.patch('todo_events', ev.id, { deleted_at: nowIso() });
+    St.patch('todos', id, habit ? { tally: t.tally - 1 } : { done_at: null });
+    if (t.type === 'response') {
+      var mk = t.fight_marker_id && S.rows.fight_markers[t.fight_marker_id];
+      if (mk && mk.repaired_at) St.patch('fight_markers', mk.id, { repaired_at: null });
+      var f = S.priv.fights.filter(function (x) { return x.id === t.fight_marker_id; })[0];
+      if (f && f.followed) { f.followed = false; St.savePriv(); }
+    }
+    render();
+  }),
+  brundo: guard(function () {
+    var b = todayBreak(ui.chId, true);
+    if (!b) throw new Error('Nothing to undo');
+    St.patch('challenge_breaks', b.id, { deleted_at: nowIso() }); render();
+  }),
+  charch: guard(function () {
+    var c = S.rows.challenges[ui.chId];
+    if (!c) throw new Error('Challenge is gone');
+    St.patch('challenges', c.id, { archived_at: c.archived_at ? null : nowIso() });
+    ui.sheet = null; ui.d = {}; render();
+  }),
+  redcancel: guard(function (id) {
+    var r = S.rows.redemptions[id];
+    if (!r || r.requested_by !== St.me() || r.status !== 'pending') throw new Error('Cannot cancel');
+    St.patch('redemptions', id, { status: 'cancelled', decided_by: St.me(), decided_at: nowIso() });
+    ui.sheet = null; render();
+  }),
   cmtdel: guard(function (id) {
     var c = S.rows.todo_comments[id];
     if (!c || c.author_id !== St.me() || c.deleted_at) throw new Error('Cannot delete');
@@ -1472,7 +1613,9 @@ var ACT = {
   reward: function (id) {
     var r = S.rows.rewards[id], led = ledger();
     if (ui.shopEdit) { ui.sheet = { type: 'editreward', id: id }; ui.d = { rname: r.name, rprice: String(r.price) }; render(); return; }
-    if (L('redemptions').some(function (x) { return x.reward_id === id && x.status === 'pending'; })) return;
+    // My own pending ask opens a cancel sheet (approved ones are final). The partner's ask is theirs to decide on Home.
+    var pendR = L('redemptions').filter(function (x) { return x.reward_id === id && x.status === 'pending'; })[0];
+    if (pendR) { if (pendR.requested_by === St.me()) { ui.sheet = { type: 'redcancel', id: pendR.id }; render(); } return; }
     if (r.price > led.balance) { M.play('jiggle', document.querySelector('[data-a="reward:' + id + '"]')); return; }
     ui.sheet = { type: 'redeem', id: id }; render();
   },
@@ -1500,6 +1643,9 @@ var ACT = {
     if (!c) throw new Error('Challenge is gone');
     // Saying nothing here lost the typed note with no explanation (the day was already broken, e.g. from another phone).
     if (c.broken_today) throw new Error('Already logged today');
+    // (challenge_id, day) is unique on the server: a break undone earlier today is revived in place, not inserted again.
+    var oldB = todayBreakRow(ui.chId), bnote = (ui.d.brnote || '').trim() || null;
+    if (oldB) { St.patch('challenge_breaks', oldB.id, { deleted_at: null, note: bnote }); draftSent(); ui.sheet = null; ui.d = {}; render(); return; }
     St.insert('challenge_breaks', { couple_id: S.couple.id, id: St.uuid(), challenge_id: ui.chId, day: today(), note: (ui.d.brnote || '').trim() || null, by: St.me(), created_at: nowIso(), updated_at: nowIso() });
     draftSent(); ui.sheet = null; ui.d = {}; render();
   }),

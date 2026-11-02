@@ -462,7 +462,7 @@ test('no-hitting challenge pays its streak day number; only a hit resets it', ()
   // Start day still in progress: nothing paid yet, today is day 1.
   let l = L(rows(), at('2026-10-26', 20));
   assert.deepEqual(pays(l), []);
-  assert.deepEqual(ch(l), { id: 'no-hit', name: 'No hitting', for_user: 'u1', breaks_on: 'hit', broken_today: false, accepted: true, start: '2026-10-26', day: 1, best: 0, earned: 0, tonight: 1, days: [{ d: '2026-10-26', n: 1, bonus: false }], next: { week: 6, month: 29 } });
+  assert.deepEqual(ch(l), { archived: false, id: 'no-hit', name: 'No hitting', for_user: 'u1', breaks_on: 'hit', broken_today: false, accepted: true, start: '2026-10-26', day: 1, best: 0, earned: 0, tonight: 1, days: [{ d: '2026-10-26', n: 1, bonus: false }], next: { week: 6, month: 29 } });
 
   // Three clean days: +1, +2, +3; a fight without a hit does not reset.
   l = L(rows({ fight_markers: [fm('f1', '2026-10-27')] }), at('2026-10-29', 9));
@@ -472,7 +472,7 @@ test('no-hitting challenge pays its streak day number; only a hit resets it', ()
   // Hit on the 28th: that day pays nothing, the 29th is day 1 again, best stays 2.
   l = L(rows({ fight_markers: [fm('f1', '2026-10-28', true)] }), at('2026-10-30', 9));
   assert.deepEqual(pays(l), [['2026-10-26', 1, 'Day 1'], ['2026-10-27', 2, 'Day 2'], ['2026-10-29', 1, 'Day 1']]);
-  assert.deepEqual(ch(l), { id: 'no-hit', name: 'No hitting', for_user: 'u1', breaks_on: 'hit', broken_today: false, accepted: true, start: '2026-10-26', day: 2, best: 2, earned: 4, tonight: 2, next: { week: 5, month: 28 },
+  assert.deepEqual(ch(l), { archived: false, id: 'no-hit', name: 'No hitting', for_user: 'u1', breaks_on: 'hit', broken_today: false, accepted: true, start: '2026-10-26', day: 2, best: 2, earned: 4, tonight: 2, next: { week: 5, month: 28 },
     days: [['2026-10-26', 1], ['2026-10-27', 2], ['2026-10-28', 0], ['2026-10-29', 1], ['2026-10-30', 2]].map(([d, n]) => ({ d, n, bonus: false })) });
 
   // Hit today: day 0, and hits before the start date never count.
@@ -575,7 +575,7 @@ test('an unaccepted challenge pays nothing; acceptance starts the streak on its 
   const paid = (l) => lines(l, 'No hitting');
   // Unaccepted, days later: no pay, day 0, no days; a hit still costs.
   let l = L(rows({ challenges: [row(null)], fight_markers: [hit('f1', '2026-10-28')] }), at('2026-10-30', 9));
-  assert.deepEqual(ch(l), { id: 'no-hit', name: 'No hitting', for_user: 'u1', breaks_on: 'hit', broken_today: false, accepted: false, start: null, day: 0, best: 0, earned: 0, tonight: 0, days: [], next: { week: 7, month: 30 } });
+  assert.deepEqual(ch(l), { archived: false, id: 'no-hit', name: 'No hitting', for_user: 'u1', breaks_on: 'hit', broken_today: false, accepted: false, start: null, day: 0, best: 0, earned: 0, tonight: 0, days: [], next: { week: 7, month: 30 } });
   assert.equal(paid(l).length, 0);
   assert.deepEqual(lines(l, 'Hit').map((x) => x.pts), [-10]);
   // Accepted today: today is day 1, nothing earlier pays.

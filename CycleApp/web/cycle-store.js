@@ -75,7 +75,7 @@ var CycleStore = (function () {
   // Pull strategy per table: cursor column, or null = re-pull everything each sync.
   // nudge_sends MUST be re-pulled whole: the recipient's RLS hides a send until deliver_at, and when it
   // becomes visible its updated_at is old (it was stamped at insert), so an updated_at cursor would skip it forever.
-  var CURSOR = { items: 'updated_at', todos: 'updated_at', rewards: 'updated_at', redemptions: 'updated_at', todo_events: 'at', fight_markers: null, nudges: 'updated_at', nudge_sends: null, nudge_replies: 'updated_at', nudge_awards: 'updated_at', fight_notes: 'updated_at', challenges: 'updated_at', challenge_breaks: 'updated_at', challenge_days: 'updated_at', todo_comments: 'updated_at', todo_nudges: 'updated_at', challenge_nudges: 'updated_at' };
+  var CURSOR = { items: 'updated_at', todos: 'updated_at', rewards: 'updated_at', redemptions: 'updated_at', todo_events: 'updated_at', fight_markers: null, nudges: 'updated_at', nudge_sends: null, nudge_replies: 'updated_at', nudge_awards: 'updated_at', fight_notes: 'updated_at', challenges: 'updated_at', challenge_breaks: 'updated_at', challenge_days: 'updated_at', todo_comments: 'updated_at', todo_nudges: 'updated_at', challenge_nudges: 'updated_at' };
   // Sort column for tables with no cursor (the default is `at`).
   var ORDER = { nudge_sends: 'created_at' };
   var S = { session: null, couple: null, members: [], rows: {}, cursors: {}, outbox: [], priv: null, syncError: null, syncing: false,
@@ -425,17 +425,29 @@ var CycleStore = (function () {
   // for nothing. Hence a cheap GET /backup first: 200 = this user is the owner (PUT allowed for
   // the session), 403 = never PUT again this session. Anything else is loud and retried next save.
   var backupAllowed = null;
+  // A priv holding nothing at all: every field null or an empty array/object (emptyPriv() qualifies).
+  function privEmpty(p) {
+    return !p || Object.keys(p).every(function (k) { var v = p[k]; return v == null || (typeof v === 'object' && !Object.keys(v).length); });
+  }
+  // Fresh-install guard: a reinstalled or wiped device starts with an empty priv, and without this its first save
+  // would PUT that emptiness over the one good backup on the box (which keeps only the latest main file plus daily
+  // copies of whatever was last PUT). So while local priv is empty, GET the box copy and refuse to overwrite a
+  // non-empty one. Load-bearing: removing it silently destroys the backup the next time the app is reinstalled.
   async function backup() {
     if (!cfg.boxUrl || !S.session || backupAllowed === false || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
     try {
       await ensureFresh();
       var auth = { Authorization: 'Bearer ' + S.session.access_token };
-      if (backupAllowed === null) {
+      var remote = null;
+      if (backupAllowed === null || privEmpty(S.priv)) {
         var g = await fetch(cfg.boxUrl + '/backup', { method: 'GET', headers: auth });
         if (g.status === 403) { backupAllowed = false; return; }
-        if (!g.ok) { console.error('cycle backup probe failed: HTTP ' + g.status); return; }
+        // 404 = the owner has no backup yet, so the first PUT is safe.
+        if (!g.ok && g.status !== 404) { console.error('cycle backup probe failed: HTTP ' + g.status); return; }
         backupAllowed = true;
+        if (g.ok && privEmpty(S.priv)) remote = JSON.parse(await g.text());
       }
+      if (privEmpty(S.priv) && remote && !privEmpty(remote)) { console.error('cycle backup skipped: this device is empty but the box backup is not'); return; }
       var r = await fetch(cfg.boxUrl + '/backup', { method: 'PUT', headers: Object.assign({ 'Content-Type': 'application/json' }, auth), body: JSON.stringify(S.priv) });
       if (!r.ok) console.error('cycle backup failed: HTTP ' + r.status);
     } catch (e) { if (!(e instanceof TypeError)) console.error('cycle backup failed:', e); }
@@ -490,13 +502,14 @@ var CycleStore = (function () {
     (S.priv ? S.priv.fights : []).forEach(function (f) {
       var at = f.at + 24 * 3600000;
       var mk = S.rows.fight_markers[f.id];
-      if (mk && at > now && !f.followed && !mk.repaired_at) out.push({ id: 'fu-' + f.id, at: at, title: 'Follow up', body: '', route: 'log-followup' });
+      if (mk && !mk.deleted_at && at > now && !f.followed && !mk.repaired_at) out.push({ id: 'fu-' + f.id, at: at, title: 'Follow up', body: '', route: 'log-followup' });
     });
     // A fight I logged with no note from me yet: ask 30 min after logging, then every 2 hours until there is one, skipping 22:00-08:00.
     // iOS can't repeat on its own, so the next 6 are scheduled and each change or launch tops them up. Fights logged before this have no logged_at.
     var hourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: m.tz || S.couple.tz, hourCycle: 'h23', hour: '2-digit' });
     (S.priv ? S.priv.fights : []).forEach(function (f) {
-      if (!f.logged_at || !S.rows.fight_markers[f.id] || list('fight_notes').some(function (n) { return n.fight_marker_id === f.id && n.author_id === me(); })) return;
+      var mk2 = S.rows.fight_markers[f.id];
+      if (!f.logged_at || !mk2 || mk2.deleted_at || list('fight_notes').some(function (n) { return n.fight_marker_id === f.id && n.author_id === me(); })) return;
       for (var k = 0, n = 0; n < 6; k++) {
         var at = f.logged_at + 30 * 60000 + k * 2 * 3600000, h = +hourFmt.format(at);
         if (at <= now || h >= 22 || h < 8) continue;

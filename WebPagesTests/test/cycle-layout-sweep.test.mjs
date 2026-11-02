@@ -87,7 +87,7 @@ const SHARED = {
     todo_nudges: { tn1: { ...base, id: 'tn1', todo_id: 't-hers-h', sender_id: ME, created_at: iso(1) } },
     todo_events: { e2: { ...base, id: 'e2', todo_id: 't-ownup-done', user_id: HER, kind: 'done', at: iso(6), note: 'I went quiet because I felt judged, and next time I will say so instead of leaving' }, e1: { ...base, id: 'e1', todo_id: 't-habit', user_id: ME, kind: 'tally', at: iso(2), note: null } },
     checkins: {},
-    fight_markers: { fm1: { ...base, id: 'fm1', logged_by: ME, at: iso(30), repaired_at: null, hit_self: false, hit_related: false, intensity: 3 },
+    fight_markers: { fm4: { ...base, id: 'fm4', logged_by: ME, at: iso(0.1), created_at: iso(0.1), repaired_at: null, hit_self: false, hit_related: false }, fm1: { ...base, id: 'fm1', logged_by: ME, at: iso(30), repaired_at: null, hit_self: false, hit_related: false, intensity: 3 },
       fm2: { ...base, id: 'fm2', logged_by: HER, at: iso(5), repaired_at: null, hit_self: null, hit_related: null, intensity: 2 },
       fm3: { ...base, id: 'fm3', logged_by: HER, at: iso(29), repaired_at: iso(20), hit_self: true, hit_related: false, hit_count: 1, intensity: 4 } },
     // One challenge per card state, with a long partner name and a long title so the card row is swept at its worst.
@@ -103,7 +103,7 @@ const SHARED = {
     ].map((r) => [r.id, r])),
     fight_notes: { fn1: { ...base, id: 'fn1', fight_marker_id: 'fm1', author_id: ME, created_at: iso(30), body: 'I raised my voice about the dishes' } },
     rewards: { r1: { ...base, id: 'r1', name: 'Breakfast in bed', price: 40, archived: false, art: null }, r2: { ...base, id: 'r2', name: 'Pick the next film', price: 120, archived: false, art: null }, r3: { ...base, id: 'r3', name: 'Breast implants', price: 5, archived: false, art: 'upgrading' }, r4: { ...base, id: 'r4', name: 'Breast implants', price: 10000, archived: false, art: 'cupid' }, r5: { ...base, id: 'r5', name: 'Plain', price: 5, archived: false, art: null }, r6: { ...base, id: 'r6', name: 'Shopping', price: 5, archived: false, art: 'shopper' } },
-    redemptions: { rd1: { ...base, id: 'rd1', reward_id: 'r1', requested_by: HER, status: 'pending', price: 40, decided_by: null, decided_at: null } },
+    redemptions: { rd2: { ...base, id: 'rd2', reward_id: 'r2', requested_by: ME, status: 'pending', price: 120, decided_by: null, decided_at: null }, rd1: { ...base, id: 'rd1', reward_id: 'r1', requested_by: HER, status: 'pending', price: 40, decided_by: null, decided_at: null } },
     nudges: { n1: nudge('n1', 'You are doing fine, take a breath'), n2: nudge('n2', 'Done one', { done_at: iso(20) }), n3: nudge('n3', 'Archived reminder about water', { archived_at: iso(40) }) },
     nudge_sends: { s1: { ...base, id: 's1', nudge_id: 'n1', sender_id: HER, recipient_id: ME, body: 'You are doing fine', deliver_at: iso(3), opened_at: null },
       s2: { ...base, id: 's2', nudge_id: 'n1', sender_id: ME, recipient_id: HER, body: 'You are doing fine, take a breath', deliver_at: iso(26), opened_at: iso(25) },
@@ -116,7 +116,7 @@ const SHARED = {
 const seed = (couple) => ({
   session: { access_token: 't', refresh_token: 'r', expires_at: 4102444800, user: { id: ME, email: 'me@x.test' } },
   ['shared.' + ME]: couple ? SHARED : { couple: null, members: [], rows: {}, cursors: {}, outbox: [] },
-  ['priv.' + ME]: { fights: [{ id: 'f1', at: iso(30), intensity: 3 }, { id: 'f2', at: iso(24 * 20), intensity: 2 }], affirmations: [], prefs: {}, ownupSeen: [], ownupSince: 0,
+  ['priv.' + ME]: { fights: [{ id: 'fm4', at: Date.parse(NOW) - 0.1 * 36e5, logged_at: Date.parse(NOW) - 0.1 * 36e5, intensity: 3 }, { id: 'f1', at: iso(30), intensity: 3 }, { id: 'f2', at: iso(24 * 20), intensity: 2 }], affirmations: [], prefs: {}, ownupSeen: [], ownupSince: 0,
     queued: [{ body: 'Pick up milk on the way home' }], nudges: [], nudge_sends: [], kudos: [{ id: 'pk1', body: 'I walked away instead of arguing', created_at: iso(8) }] },
 });
 
@@ -134,7 +134,7 @@ const SCENARIOS = [
   ['todo-detail-from-her', ['tab:todo', 'tview:t-from-her']], ['todo-detail-habit', ['tab:todo', 'tview:t-habit']],
   ['todo-detail-edit', ['tab:todo', 'tview:t-hers', 'etodo:t-hers']],
   ['todo-detail-long-title', ['tab:todo', 'tview:t-late-long']],
-  ['fight', ['go:fight']], ['fight-custom', ['go:fight', 'chip:custom']], ['fight-detail', ['go:fight', 'openfight:fm1']],
+  ['fight', ['go:fight']], ['fight-custom', ['go:fight', 'chip:custom']], ['fight-detail', ['go:fight', 'openfight:fm1']], ['fight-detail-own-editable', ['go:fight', 'openfight:fm4']], ['fight-edit', ['go:fight', 'openfight:fm4', 'fightedit']], ['fight-delete-ask', ['go:fight', 'openfight:fm4', 'fightdelq']], ['shop-cancel-ask', ['go:points', 'go:shop', 'reward:r2']],
   ['more', ['go:more']], ['settings', ['go:more', 'go:settings']], ['points', ['go:points']], ['shop', ['go:points', 'go:shop']],
   ['shop-redeem', ['go:points', 'go:shop', 'reward:r1']], ['shop-redeem-art', ['go:points', 'go:shop', 'reward:r3']], ['shop-redeem-null-art', ['go:points', 'go:shop', 'reward:r5']], ['shop-redeem-shopper', ['go:points', 'go:shop', 'reward:r6']], ['shop-add', ['go:points', 'go:shop', 'addreward']],
   ['week', ['go:week']], ['cycle', ['go:more', 'go:cycle']],
