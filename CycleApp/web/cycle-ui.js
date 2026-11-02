@@ -157,8 +157,9 @@ function guard(fn) {
   };
 }
 // Last line of defence: anything that escapes a guard still reaches the person instead of vanishing into the console.
-window.addEventListener('error', function (e) { showErr(plain(e.error || e.message)); });
-window.addEventListener('unhandledrejection', function (e) { showErr(plain(e.reason)); });
+// Logged too: these had no record at all, so a bar that kept coming back could not be traced from the phone.
+window.addEventListener('error', function (e) { St.logErr('uncaught', e.error || e.message); showErr(plain(e.error || e.message)); });
+window.addEventListener('unhandledrejection', function (e) { St.logErr('uncaught', e.reason); showErr(plain(e.reason)); });
 // Shown when boot or a screen throws. Nothing here touches storage, so the person's data stays exactly as it was.
 // A failed boot (home=false) means the stored data itself may be what will not load, so Retry alone would reload the same
 // blob forever: Export hands the raw stored text out, and Sign out clears only the session (the data stays on disk, a

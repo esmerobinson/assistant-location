@@ -489,7 +489,7 @@ var CycleStore = (function () {
   // Everything the shell must have scheduled is derived from state on every change; ids that
   // were scheduled before but are no longer wanted are cancelled. Native replaces a re-used id.
   // 'checkin' is the id an older build scheduled; it is not wanted, so the first reschedule cancels it.
-  var scheduledIds = ['checkin'], reschedTimer = 0;
+  var scheduledIds = ['checkin'], reschedTimer = 0, scheduleFailed = {};
   function reschedule() { clearTimeout(reschedTimer); reschedTimer = setTimeout(rescheduleNow, 200); }
   function wanted() {
     var out = [], m = myMember(), now = Date.now();
@@ -518,7 +518,7 @@ var CycleStore = (function () {
     (S.priv ? S.priv.fights : []).forEach(function (f) {
       var at = f.at + 24 * 3600000;
       var mk = S.rows.fight_markers[f.id];
-      if (mk && !mk.deleted_at && at > now && !f.followed && !mk.repaired_at) out.push({ id: 'fu-' + f.id, at: at, title: 'Follow up', body: '', route: 'log-followup' });
+      if (mk && !mk.deleted_at && at > now && !f.followed && !mk.repaired_at) out.push({ id: 'fu-' + f.id, at: at, title: 'Follow up', body: 'How is it now?', route: 'log-followup' });
     });
     // A fight I logged with no note from me yet: ask 30 min after logging, then every 2 hours until there is one, skipping 22:00-08:00.
     // iOS can't repeat on its own, so the next 6 are scheduled and each change or launch tops them up. Fights logged before this have no logged_at.
@@ -548,13 +548,25 @@ var CycleStore = (function () {
   }
   async function rescheduleNow() {
     if (!hasNative || !S.session) return;
-    var w = wanted(), ids = w.map(function (x) { return x.id; });
+    var w = wanted(), ids = w.map(function (x) { return x.id; }), fresh = false;
     for (var i = 0; i < scheduledIds.length; i++) if (ids.indexOf(scheduledIds[i]) < 0) await native.cancel(scheduledIds[i]);
     for (var j = 0; j < w.length; j++) {
       // A time that slipped into the past between wanted() and the bridge call is simply not scheduled; any other rejection is real.
-      try { await native.schedule(w[j]); } catch (e) { if (!/not in the future/.test(String(e && e.message || e))) throw e; }
+      // One refused reminder must not cost the others after it, so the loop carries on. This runs after every sync (each 5s):
+      // the empty follow-up body once rejected here on every pass, keeping a generic "Couldn't save" up for 24h with an empty
+      // error log. So each distinct failure is logged and raised once, with a bar that names what failed.
+      try { await native.schedule(w[j]); } catch (e) {
+        var why = String(e && e.message || e);
+        if (/not in the future/.test(why)) continue;
+        var seen = w[j].id + ':' + why;
+        if (scheduleFailed[seen]) continue;
+        scheduleFailed[seen] = true;
+        logErr('notify', e);
+        fresh = true;
+      }
     }
     scheduledIds = ids;
+    if (fresh) throw new Error('Reminder not set');
   }
   function cancelAllNotifications() { scheduledIds.forEach(native.cancel); scheduledIds = []; }
 

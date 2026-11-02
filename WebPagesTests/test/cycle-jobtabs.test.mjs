@@ -64,6 +64,8 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
         else if (cmd === 'lock.get') r = false;
         else if (cmd === 'notify.permission') r = true;
         else if (cmd === 'notify.schedule' && window.__rejectSchedule) err = window.__rejectSchedule;
+        // Same rule as CycleNotifier.m, so an empty title or body fails here the way it fails on the phone.
+        else if (cmd === 'notify.schedule' && (!args.title || !args.body)) err = "notify.schedule: 'body' must be a non-empty string, got ";
         else if (cmd === 'speech.start' || cmd === 'speech.stop') r = true;
         setTimeout(() => window.__cycleReply(id, r, err), 0);
       } } } };
@@ -206,7 +208,16 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
     const b = await open({ sd: sd(), native: { rejectSchedule: 'notify.schedule: UNUserNotificationCenter exploded' }, pageErrors: [], offline: true });
     await ready(b.page); await wait(b.page, 1500);
     assert.equal(await b.page.locator('.errbar').count(), 1, 'a genuine failure is still shown');
+    assert.equal(await b.page.locator('.errbar').textContent(), 'Reminder not set');
     await b.context.close();
+  });
+  test('C6 a logged fight schedules its follow-up with no error bar', async () => {
+    const { context, page } = await open({ sd: fightSeed(), native: {}, pageErrors: [], offline: true });
+    await ready(page); await wait(page, 1500);
+    assert.equal(await page.locator('.errbar').count(), 0);
+    const fu = await page.evaluate(() => window.__calls.filter((c) => c.cmd === 'notify.schedule' && String(c.args.id).startsWith('fu-')).map((c) => c.args.body));
+    assert.ok(fu.length && fu[0], 'follow-up scheduled with a body');
+    await context.close();
   });
   // ---- B: new screen behaviours ----
   const tabTodo = async (page) => { await page.click('[data-a="tab:todo"]'); await page.waitForSelector('[data-a="todoseg:rem"]'); };
