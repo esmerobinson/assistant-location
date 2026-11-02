@@ -31,18 +31,21 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         if live == nil && !HeadlessRunner.active { buildUI() }
     }
 
-    /// dueclone://new from the lock-screen widget or the Control's openURL; on a cold launch this runs after
+    /// dueclone://new from the lock-screen widget or the Control's openURL, or dueclone://new?title=... from another app (the
+    /// todo app's bell), which opens the sheet prefilled; on a cold launch this runs after
     /// didFinishLaunching, when buildUI has already made `live` (or will on activation, hence the pending flag).
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
         guard url.scheme == "dueclone", url.host == "new" else { return false }
-        requestCompose()
+        let title = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "title" }?.value
+        requestCompose(title: title)
         return true
     }
 
     /// No UI yet (background launch): remember it and hand it to the view controller as soon as buildUI creates one.
     private var composePending = false
-    private func requestCompose() {
-        if let vc = live { vc.compose() } else { composePending = true }
+    private var composePendingTitle: String?
+    private func requestCompose(title: String? = nil) {
+        if let vc = live { vc.compose(title: title) } else { composePending = true; composePendingTitle = title }
     }
 
     private func buildUI() {
@@ -52,7 +55,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         w.makeKeyAndVisible()
         window = w
         live = vc
-        if composePending { composePending = false; vc.compose() }
+        if composePending { composePending = false; vc.compose(title: composePendingTitle); composePendingTitle = nil }
     }
 
     // MARK: push token

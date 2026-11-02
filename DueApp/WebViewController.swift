@@ -12,6 +12,7 @@ final class WebViewController: UIViewController {
     private(set) var storeReady = false
     // A compose request that arrived before the page's store was ready (cold launch via the lock-screen button); fired from onReady.
     private var pendingCompose = false
+    private var pendingComposeTitle: String?
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
@@ -22,7 +23,7 @@ final class WebViewController: UIViewController {
         bridge.onReady = { [weak self] in
             DispatchQueue.main.async {
                 self?.storeReady = true
-                if self?.pendingCompose == true { self?.compose() }
+                if self?.pendingCompose == true { self?.compose(title: self?.pendingComposeTitle) }
             }
         }
         webView = WebFactory.make(headless: false, bridge: bridge)
@@ -51,10 +52,12 @@ final class WebViewController: UIViewController {
     /// Open the New Reminder sheet (lock-screen button). Before the store is ready, window.dueCompose may not exist yet, so the
     /// request is held and replayed from onReady. Idempotent: the intent's notification and URL both arrive for one press, and
     /// the page just reopens the same blank sheet.
-    func compose() {
-        guard storeReady else { pendingCompose = true; return }
+    func compose(title: String? = nil) {
+        guard storeReady else { pendingCompose = true; pendingComposeTitle = title; return }
         pendingCompose = false
-        webView.callAsyncJavaScript("if (window.dueCompose) window.dueCompose(); return true;", arguments: [:], in: nil, in: .page) { r in
+        pendingComposeTitle = nil
+        // Passed as an argument, never spliced into the script: the title is arbitrary text from a URL.
+        webView.callAsyncJavaScript("if (window.dueCompose) window.dueCompose(title); return true;", arguments: ["title": title ?? ""], in: nil, in: .page) { r in
             if case .failure(let e) = r { NSLog("due: dueCompose failed: \(e)") }
         }
     }
