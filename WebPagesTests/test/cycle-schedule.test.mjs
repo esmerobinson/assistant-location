@@ -111,7 +111,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     page.on('pageerror', (e) => console.error('PAGEERROR', String(e)));
     await context.route('**/cycle.css', (r) => r.fulfill({ contentType: 'text/css', body: CSS }));
     await page.goto(URL_, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('[data-a="row:fight"]', { timeout: 8000 });
+    await page.waitForSelector('[data-a="go:fight"]', { timeout: 8000 });
     return { context, page };
   }
   const act = (page, a) => page.evaluate((a) => { const m = document.querySelector('main'); m.insertAdjacentHTML('beforeend', `<span id="nv" data-a="${a}">x</span>`); const el = document.getElementById('nv'); el.click(); el.remove(); }, a);

@@ -60,7 +60,7 @@ describe('todo goals (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_WE
     const page = await context.newPage();
     page.on('pageerror', (e) => { throw e; });
     await page.goto(URL_, { waitUntil: 'domcontentloaded' });
-    await page.click('[data-a="row:todo"]');
+    await page.click('[data-a="tab:todo"]');
     await page.waitForSelector('[data-a="addpick"]');
     return { context, page, posts };
   }
@@ -150,13 +150,13 @@ describe('todo goals (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_WE
     await context.close();
   });
 
-  test('the list is split into Open and For <partner>, and a to do she made for me sits under Open', async () => {
+  test('a to do she made for me sits under Open, in the one list', async () => {
     const fromHer = td('h1', { title: 'From her', created_by: HER });
     const { page, context } = await open(seed({ todos: [fromHer], members: MEMBERS }));
     const sections = await page.$$eval('.td .list', (els) => els.map((e) => [e.querySelector('.lab')?.textContent, [...e.querySelectorAll('[data-todo]')].map((r) => r.dataset.todo), !!e.querySelector('.empty')]));
     await shot(page, '5-sections');
-    // The partner has nothing yet: her section still shows, with None.
-    assert.deepEqual(sections, [['Open', ['h1'], false], ['For Her', [], true]]);
+    // One list now: hers sits in Open with a tag saying whose it is; there is no separate partner section.
+    assert.deepEqual(sections, [['Open', ['h1'], false]]);
     await context.close();
   });
 
@@ -213,9 +213,9 @@ describe('todo goals (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_WE
     await page.fill('[data-d="title"]', 'Water the plants');
     await page.click('[data-a="nkind:habit"]'); await page.click('[data-a="nper:day"]'); await page.click('[data-a="stp:pe:1"]');
     await page.click('[data-a="savetodo"]');
-    await page.waitForSelector('.ro2 small');
-    assert.equal(await page.$eval('.ro2 small', (e) => e.textContent), 'Queued');
-    assert.equal(await page.$eval('.ro2 .tx p', (e) => e.textContent), 'Water the plants');
+    await page.waitForSelector('.td-row small:has-text("Queued")');
+    assert.equal(await page.$eval('.td-row small:has-text("Queued")', (e) => e.textContent), 'Queued');
+    assert.equal(await page.$eval('.td-row .tx p', (e) => e.textContent), 'Water the plants');
     let s = await stored(page);
     assert.equal(Object.keys(s.rows.items).length, 0);
     assert.equal(s.outbox.length, 0);
@@ -233,33 +233,28 @@ describe('todo goals (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_WE
     assert.deepEqual([it.kind, it.recipient_id, it.status, it.body, it.ask_type, it.period, it.target, it.points_earn, it.points_miss], ['ask', HER, 'held', 'Water the plants', 'habit', 'day', 3, 2, 0]);
     await queued(page, 0);
     await page.waitForSelector('.held .td-row');
-    assert.equal(await page.$('.ro2 small'), null, 'Queued row is gone');
+    assert.equal(await page.$('.td-row small:has-text("Queued")'), null, 'Queued row is gone');
     await context.close();
   });
 
-  test('the to do count reads "You <mine> · <partner> <theirs + queued>" on the home row and the Actions header, ignoring done and deleted', async () => {
+  test('the to do count reads "You <mine> · <partner> <theirs + queued>" on the To-dos header, ignoring done and deleted', async () => {
     const mem = [MEMBERS[0], { ...MEMBERS[1], name: 'Esme' }];
-    const read = async (page) => {
-      const header = await page.$eval('header.hd .dl', (e) => e.textContent);
-      await page.click('[data-a="tab:home"]');
-      await page.waitForSelector('.row[data-id="todo"] .mt');
-      return [header, await page.$eval('.row[data-id="todo"] .mt', (e) => e.textContent)];
-    };
+    const read = async (page) => page.$eval('header.hd .dl', (e) => e.textContent);
     const hers = [td('h1', { owner_id: HER }), td('h2', { owner_id: HER }), td('h3', { owner_id: HER, done_at: '2026-10-20T12:00:00Z' }), td('h4', { owner_id: HER, deleted_at: '2026-10-20T12:00:00Z' })];
     let o = await open(seed({ todos: hers, members: mem }));
-    assert.deepEqual(await read(o.page), ['You 0 \u00b7 Esme 2', 'You 0 \u00b7 Esme 2']);
+    assert.equal(await read(o.page), 'You 0 \u00b7 Esme 2');
     await o.context.close();
     const mine = [td('m1'), td('m2'), td('m3'), td('m4', { done_at: '2026-10-20T12:00:00Z' }), td('m5', { deleted_at: '2026-10-20T12:00:00Z' })];
     o = await open(seed({ todos: [...mine, ...hers.slice(0, 1)], members: mem }));
-    assert.deepEqual(await read(o.page), ['You 3 \u00b7 Esme 1', 'You 3 \u00b7 Esme 1']);
+    assert.equal(await read(o.page), 'You 3 \u00b7 Esme 1');
     await o.context.close();
     // an ask queued for a partner who has not joined counts toward the partner
     o = await open(seed({ todos: [td('m1')] }));
     await o.page.click('[data-a="addpick"]'); await o.page.click('[data-a="newtodo:task"]');
     await o.page.fill('[data-d="title"]', 'Water the plants');
     await o.page.click('[data-a="savetodo"]');
-    await o.page.waitForSelector('.ro2 small');
-    assert.deepEqual(await read(o.page), ['You 1 \u00b7 Partner 1', 'You 1 \u00b7 Partner 1']);
+    await o.page.waitForSelector('.td-row small:has-text("Queued")');
+    assert.equal(await read(o.page), 'You 1 \u00b7 Partner 1');
     await o.context.close();
   });
 });

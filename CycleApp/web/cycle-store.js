@@ -78,7 +78,9 @@ var CycleStore = (function () {
   var CURSOR = { items: 'updated_at', todos: 'updated_at', rewards: 'updated_at', redemptions: 'updated_at', todo_events: 'at', fight_markers: null, nudges: 'updated_at', nudge_sends: null, nudge_replies: 'updated_at', nudge_awards: 'updated_at', fight_notes: 'updated_at', challenges: 'updated_at', challenge_breaks: 'updated_at', challenge_days: 'updated_at', todo_comments: 'updated_at', todo_nudges: 'updated_at', challenge_nudges: 'updated_at' };
   // Sort column for tables with no cursor (the default is `at`).
   var ORDER = { nudge_sends: 'created_at' };
-  var S = { session: null, couple: null, members: [], rows: {}, cursors: {}, outbox: [], priv: null, syncError: null, syncing: false };
+  var S = { session: null, couple: null, members: [], rows: {}, cursors: {}, outbox: [], priv: null, syncError: null, syncing: false,
+    // Writes the server permanently refused, kept whole (never deleted automatically) so the person can read and export the text.
+    deadLetters: [], persistError: null, loaded: false, pushFails: 0, pushNextAt: 0, pushErr: null };
   SHARED.forEach(function (t) { S.rows[t] = {}; });
   var listeners = [];
   function emit() { listeners.forEach(function (f) { f(); }); }
@@ -96,17 +98,29 @@ var CycleStore = (function () {
   var persistTimer = 0;
   function persist() {
     clearTimeout(persistTimer);
-    persistTimer = setTimeout(persistNow, 50);
+    // persistNow already reported its failure (S.persistError + error bar); the catch only stops a second, unhandled rejection.
+    persistTimer = setTimeout(function () { persistNow().catch(function () {}); }, 50);
   }
-  function persistNow() {
+  // Writes everything that must survive a kill. A failed write is never silent: it sets S.persistError (shown in the
+  // error bar) and still rejects so an awaiting caller (sign-out, token refresh) stops too.
+  // S.loaded guards the shared/priv writes: if loadUserData failed half way, S holds empty rows, and writing them would
+  // overwrite the person's real data with nothing.
+  async function persistNow() {
     clearTimeout(persistTimer);
-    var uid = me();
-    var jobs = [kv.set('session', JSON.stringify(S.session))];
-    if (uid) {
-      jobs.push(kv.set('shared.' + uid, JSON.stringify({ couple: S.couple, members: S.members, rows: S.rows, cursors: S.cursors, outbox: S.outbox })));
-      if (S.priv) jobs.push(kv.set('priv.' + uid, JSON.stringify(S.priv)));
+    try {
+      var uid = me();
+      var jobs = [kv.set('session', JSON.stringify(S.session))];
+      if (uid && S.loaded) {
+        jobs.push(kv.set('shared.' + uid, JSON.stringify({ couple: S.couple, members: S.members, rows: S.rows, cursors: S.cursors, outbox: S.outbox, deadLetters: S.deadLetters })));
+        if (S.priv) jobs.push(kv.set('priv.' + uid, JSON.stringify(S.priv)));
+      }
+      await Promise.all(jobs);
+      if (S.persistError) { S.persistError = null; emit(); }
+    } catch (e) {
+      console.error('cycle persist failed:', e);
+      if (!S.persistError) { S.persistError = 'Not saved'; emit(); }
+      throw e;
     }
-    return Promise.all(jobs);
   }
 
   // Me nudges live here, never in Supabase: `nudges` shaped like the shared table, `nudge_sends` like
@@ -124,8 +138,14 @@ var CycleStore = (function () {
   function setSession(j) {
     S.session = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Math.floor(Date.now() / 1000) + (j.expires_in || 3600), user: { id: j.user.id, email: j.user.email } };
   }
+  // fetch that tags a network failure (a TypeError from fetch itself) as err.offline, so sync can tell "no connection" from a
+  // TypeError thrown by a bug in our own code, which must stay loud.
+  async function netFetch(url, opts) {
+    try { return await fetch(url, opts); }
+    catch (e) { if (e instanceof TypeError) e.offline = true; throw e; }
+  }
   async function gotrue(path, body) {
-    var r = await fetch(cfg.supabaseUrl + '/auth/v1' + path, { method: 'POST', headers: { apikey: cfg.supabaseAnonKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    var r = await netFetch(cfg.supabaseUrl + '/auth/v1' + path, { method: 'POST', headers: { apikey: cfg.supabaseAnonKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     var j = await r.json();
     if (!r.ok) {
       var err = new Error(j.msg || j.error_description || j.message || 'auth failed ' + r.status);
@@ -157,25 +177,39 @@ var CycleStore = (function () {
     }
     setSession(j); await persistNow();
   }
-  async function api(method, path, body, extra) {
+  // One PostgREST call. Returns {status, data}. Only a real PostgREST answer counts: a 2xx with a body must be JSON,
+  // because a captive portal or proxy answers 200 text/html and the caller would otherwise treat the write as delivered.
+  async function apiRaw(method, path, body, extra) {
     await ensureFresh();
-    var r = await fetch(cfg.supabaseUrl + '/rest/v1/' + path, { method: method, headers: authHeaders(extra), body: body === undefined ? undefined : JSON.stringify(body) });
+    var r = await netFetch(cfg.supabaseUrl + '/rest/v1/' + path, { method: method, headers: authHeaders(extra), body: body === undefined ? undefined : JSON.stringify(body) });
+    var text = await r.text();
     if (!r.ok) {
-      var text = await r.text(), err = new Error(method + ' ' + path.split('?')[0] + ' ' + r.status + ' ' + text);
+      var err = new Error(method + ' ' + path.split('?')[0] + ' ' + r.status + ' ' + text);
       err.status = r.status; err.body = text; throw err;
     }
-    return r.status === 204 ? null : r.json().catch(function () { return null; });
+    if (!text) return { status: r.status, data: null };
+    if (!/json/i.test(r.headers.get('content-type') || '')) {
+      var bad = new Error('Unexpected reply (' + r.status + ') from ' + path.split('?')[0]);
+      bad.status = r.status; bad.badReply = true; throw bad;
+    }
+    return { status: r.status, data: JSON.parse(text) };
   }
+  async function api(method, path, body, extra) { return (await apiRaw(method, path, body, extra)).data; }
 
   // ---- auth --------------------------------------------------------------------
   async function loadUserData(uid) {
     var sh = JSON.parse((await kv.get('shared.' + uid)) || 'null');
-    if (sh) { S.couple = sh.couple; S.members = sh.members; S.rows = sh.rows; S.cursors = sh.cursors; S.outbox = sh.outbox; }
-    else { S.couple = null; S.members = []; SHARED.forEach(function (t) { S.rows[t] = {}; }); S.cursors = {}; S.outbox = []; }
+    if (sh) {
+      S.couple = sh.couple; S.members = sh.members; S.rows = sh.rows; S.cursors = sh.cursors; S.outbox = sh.outbox; S.deadLetters = sh.deadLetters || [];
+      // inflight only means something within one run; a kill mid-send leaves it stale and edits must fold again.
+      S.outbox.forEach(function (o) { delete o.inflight; });
+    }
+    else { S.couple = null; S.members = []; SHARED.forEach(function (t) { S.rows[t] = {}; }); S.cursors = {}; S.outbox = []; S.deadLetters = []; }
     // A cache written before a table existed lacks it; the first pull fills it.
     SHARED.forEach(function (t) { if (!S.rows[t]) S.rows[t] = {}; });
     S.priv = JSON.parse((await kv.get('priv.' + uid)) || 'null') || emptyPriv();
     migrateAffirmations();
+    S.loaded = true;
     // Owning-ups the partner finished that I opened (private, on-device). `since` is when this install first ran: rows
     // finished before it (the acknowledgments the migration turned into to dos) are history and never raise a card.
     if (!S.priv.ownupSeen) { S.priv.ownupSeen = []; S.priv.ownupSince = Date.now(); persist(); }
@@ -205,7 +239,10 @@ var CycleStore = (function () {
     setSession(j); await creds.set(email, password); await loadUserData(j.user.id); await persistNow(); await sync(); emit();
   }
   async function signOut() {
+    // Persist first: edits typed in the last 50ms sit in the debounce timer, and clearing state below would lose them.
+    await persistNow();
     cancelAllNotifications(); backupAllowed = null; pushRegistered = null;
+    S.loaded = false; S.deadLetters = [];
     S.session = null; S.couple = null; S.members = []; S.outbox = []; S.priv = null;
     SHARED.forEach(function (t) { S.rows[t] = {}; }); S.cursors = {};
     await kv.set('session', null); await creds.clear(); emit();
@@ -255,42 +292,102 @@ var CycleStore = (function () {
     if (!S.couple) return;
     for (var i = 0; i < SHARED.length; i++) await pullTable(SHARED[i]);
   }
-  async function push() {
-    while (S.outbox.length) {
-      var o = S.outbox[0];
+  // A write the server will never accept (bad data, RLS refusal) as opposed to one worth retrying (auth, timeout, throttle, 5xx, offline).
+  // Exception: PostgREST answers 404/400 PGRST204/PGRST205 ("column/table not in the schema cache") and Postgres 42703/42P01 (column
+  // or relation does not exist) while a migration is not applied yet or the schema cache has not reloaded. The row is fine and
+  // the server will accept it later, so dead-lettering it would strand a good write; it stays queued and retries with backoff.
+  function permanent(e) {
+    if (!(e.status >= 400 && e.status < 500) || [401, 408, 429].indexOf(e.status) >= 0) return false;
+    return !/PGRST20[45]|42703|42P01|schema cache/.test(e.body || '');
+  }
+  function deadLetter(o, why, status) {
+    var entry = Object.assign({}, o); delete entry.inflight;
+    S.deadLetters.push({ id: uuid(), at: nowIso(), error: why, status: status || null, entry: entry });
+  }
+  // Sends one outbox entry; returns normally only when the server confirmed it. Throws otherwise (see push for the classes).
+  async function sendEntry(o) {
+    if (o.op === 'insert') {
       try {
-        if (o.op === 'insert') await api('POST', o.table, o.row, { Prefer: 'return=minimal' });
-        else await api('PATCH', o.table + '?id=eq.' + o.id, o.patch, { Prefer: 'return=minimal' });
-      } catch (e) {
-        // 409 on insert = this id already reached the server (response lost, retried): applied.
-        if (!(o.op === 'insert' && e.status === 409)) throw e;
+        var r = await apiRaw('POST', o.table, o.row, { Prefer: 'return=minimal' });
+        if (r.status !== 201) { var e = new Error('Unexpected reply (' + r.status + ') from ' + o.table); e.status = r.status; e.badReply = true; throw e; }
+      } catch (e2) {
+        // 409 = a row with this id may already be there (response lost, retried). Only a row that really exists counts as applied.
+        if (e2.status !== 409) throw e2;
+        var g = await apiRaw('GET', o.table + '?select=id&id=eq.' + encodeURIComponent(o.id));
+        if (!Array.isArray(g.data) || !g.data.length) { e2.noRow = true; throw e2; }
       }
-      S.outbox.shift();
+    } else {
+      // return=representation so "matched zero rows" (RLS hides the row: PostgREST answers 204) is distinguishable from applied.
+      var p = await apiRaw('PATCH', o.table + '?id=eq.' + encodeURIComponent(o.id), o.patch, { Prefer: 'return=representation' });
+      if (p.status === 204 || (Array.isArray(p.data) && !p.data.length)) { var e4 = new Error('PATCH ' + o.table + ' matched no row'); e4.status = 404; e4.noRow = true; throw e4; }
+      if (p.status !== 200 || !Array.isArray(p.data)) { var e3 = new Error('Unexpected reply (' + p.status + ') from ' + o.table); e3.status = p.status; e3.badReply = true; throw e3; }
     }
   }
-  // Push local writes first so the pull that follows returns their server-stamped rows.
+  async function push() {
+    // Backing off after a retryable failure: skip the network but keep reporting that failure, so sync() does not read
+    // "no error" and clear the error bar while the write is still stuck in the outbox.
+    if (Date.now() < S.pushNextAt) { if (S.pushErr) throw S.pushErr; return; }
+    while (S.outbox.length) {
+      var o = S.outbox[0];
+      o.inflight = true; // patch()/insert() must not fold into an entry whose body is already on the wire
+      try {
+        await sendEntry(o);
+      } catch (e) {
+        o.inflight = false;
+        if (!(permanent(e) || e.noRow)) {
+          // Worth retrying: stop here (order matters), back off so a dead link is not hammered every poll.
+          // Capped at 30 s (was 300 s): after the server recovers a person must not wait minutes for a queued write.
+          // A foreground, going online, or any new write also resets the wait (retryPush).
+          S.pushFails++; S.pushNextAt = Date.now() + Math.min(2000 * Math.pow(2, S.pushFails - 1), 30000); S.pushErr = e;
+          throw e;
+        }
+        console.error('cycle write refused, kept as not sent:', e);
+        deadLetter(o, e.message, e.status);
+        var di = S.outbox.indexOf(o); if (di >= 0) S.outbox.splice(di, 1);
+        persist(); emit();
+        continue;
+      }
+      S.pushFails = 0; S.pushNextAt = 0; S.pushErr = null;
+      var i = S.outbox.indexOf(o); if (i >= 0) S.outbox.splice(i, 1);
+    }
+  }
+  // Push local writes first so the pull that follows returns their server-stamped rows. A failed push never
+  // skips the pull: a head row the server cannot take must not freeze everything the partner sends.
   async function sync() {
     if (!S.session || S.syncing) { syncAgain = !!S.session; return; }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     S.syncing = true;
     try {
-      if (S.couple) await push();
-      await pull();
-      S.syncError = null;
-    } catch (e) {
-      if (e instanceof TypeError) { /* fetch rejected: offline, retried on the next trigger */ }
-      else { S.syncError = e.message; console.error('cycle sync failed:', e); }
+      var pushErr = null, pullErr = null;
+      try { if (S.couple) await push(); } catch (e) { pushErr = e; }
+      try { await pull(); } catch (e) { pullErr = e; }
+      var err = pushErr || pullErr;
+      // Only fetch's own network failure is "offline"; a TypeError from our code is a bug and shows.
+      if (!err || err.offline) { S.syncError = null; S.syncErrorStatus = null; }
+      else { S.syncError = err.message; S.syncErrorStatus = err.status || null; console.error('cycle sync failed:', err); }
     } finally {
       S.syncing = false; persist(); emit(); reschedule();
       if (S.couple) registerPush();
       if (syncAgain) { syncAgain = false; scheduleSync(); }
     }
   }
+  // Ends any backoff so the next push tries now: called on foreground and on every local write.
+  function retryPush() { S.pushNextAt = 0; }
+  // True when the server permanently refused this row's insert: it still sits in S.rows with its text, but was never sent.
+  function notSent(t, id) { return S.deadLetters.some(function (d) { return d.entry.table === t && d.entry.id === id && d.entry.op === 'insert'; }); }
+  // Everything on disk exactly as stored (no JSON.parse), so a blob that will not load can still be taken off the phone.
+  async function rawExport() {
+    var keys = await kv.keys(''), out = {};
+    for (var i = 0; i < keys.length; i++) out[keys[i]] = await kv.get(keys[i]);
+    return JSON.stringify(out, null, 1);
+  }
+  function deadLetterText() { return JSON.stringify(S.deadLetters, null, 2); }
 
   // ---- writes -------------------------------------------------------------------------
   function insert(t, row) {
     S.rows[t][row.id] = row;
     S.outbox.push({ op: 'insert', table: t, id: row.id, row: Object.assign({}, row) });
+    retryPush();
     persist(); emit(); scheduleSync(); reschedule();
     return row;
   }
@@ -303,9 +400,12 @@ var CycleStore = (function () {
     Object.assign(row, cols);
     if ('updated_at' in row) row.updated_at = nowIso();
     var last = S.outbox.filter(function (o) { return o.table === t && o.id === id; }).pop();
-    if (last && last.op === 'insert') Object.assign(last.row, cols);
+    // An in-flight entry already left with its old body, and push() will drop it on success: folding into it would lose this edit.
+    if (last && last.inflight) S.outbox.push({ op: 'patch', table: t, id: id, patch: cols });
+    else if (last && last.op === 'insert') Object.assign(last.row, cols);
     else if (last && last.op === 'patch' && last === S.outbox[S.outbox.length - 1]) Object.assign(last.patch, cols);
     else S.outbox.push({ op: 'patch', table: t, id: id, patch: cols });
+    retryPush();
     persist(); emit(); scheduleSync(); reschedule();
   }
 
@@ -417,7 +517,10 @@ var CycleStore = (function () {
     if (!hasNative || !S.session) return;
     var w = wanted(), ids = w.map(function (x) { return x.id; });
     for (var i = 0; i < scheduledIds.length; i++) if (ids.indexOf(scheduledIds[i]) < 0) await native.cancel(scheduledIds[i]);
-    for (var j = 0; j < w.length; j++) await native.schedule(w[j]);
+    for (var j = 0; j < w.length; j++) {
+      // A time that slipped into the past between wanted() and the bridge call is simply not scheduled; any other rejection is real.
+      try { await native.schedule(w[j]); } catch (e) { if (!/not in the future/.test(String(e && e.message || e))) throw e; }
+    }
     scheduledIds = ids;
   }
   function cancelAllNotifications() { scheduledIds.forEach(native.cancel); scheduledIds = []; }
@@ -426,7 +529,11 @@ var CycleStore = (function () {
   async function boot() {
     var s = JSON.parse((await kv.get('session')) || 'null');
     if (s) { S.session = s; await loadUserData(s.user.id); }
-    window.addEventListener('online', sync);
+    window.addEventListener('online', function () { retryPush(); sync(); });
+    // iOS can kill a backgrounded page without any later event: flush the 50ms debounce the moment the page leaves the screen.
+    function flush() { if (S.session) persistNow().catch(function () {}); }
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flush(); });
     if (S.session) { native.permission(); sync(); }
   }
 
@@ -434,6 +541,6 @@ var CycleStore = (function () {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
     kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
-    api: api, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
+    api: api, deadLetterText: deadLetterText, retryPush: retryPush, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
   };
 })();

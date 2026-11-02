@@ -65,7 +65,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     const page = await context.newPage();
     page.on('pageerror', (e) => { throw e; });
     await page.goto(URL_, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('[data-a="row:issue"]');
+    await page.waitForSelector('[data-a="go:fight"]');
     return { context, page };
   }
   const dump = async (page) => { await page.waitForTimeout(500); return page.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith('cycle:')).map((k) => [k.slice(6), JSON.parse(localStorage.getItem(k))]))); };
@@ -73,8 +73,10 @@ describe('webkit', { skip: !haveWebkit }, () => {
   const issues = async (page, who = ME) => (await rowsOf(page, who, 'items')).filter((i) => i.origin === 'issue');
   const shot = (page, name) => SHOTS && page.screenshot({ path: path.join(SHOTS, name) });
 
+  // Raise issue lives under More now (gear on Home), no longer a Home row.
+  const toIssues = async (page) => { await page.click('[data-a="go:more"]'); await page.click('[data-a="go:issues"]'); };
   async function raise(page, text, type = 'apologize') {
-    if (await page.$('[data-a="row:issue"]')) await page.click('[data-a="row:issue"]'); // else already on the list
+    if (await page.$('[data-a="go:more"]')) await toIssues(page); // else already on the list
     await page.click('[data-a="issuenew"]');
     await page.fill('[data-d="ibody"]', text);
     if (type !== 'apologize') await page.click(`[data-a="itype:${type}"]`);
@@ -86,10 +88,8 @@ describe('webkit', { skip: !haveWebkit }, () => {
 
   test('raising an issue holds it until 08:00 next day even with Ask hold 0; the partner sees nothing', async () => {
     const { context, page } = await open();
-    assert.match(await page.textContent('[data-id="issue"]'), /Raise issue[\s\S]*None/);
-    assert.equal((await page.$$eval('.rows .row', (e) => e.map((x) => x.dataset.id)))[0], 'issue', 'first Home row');
     // Empty text: nothing is written.
-    await page.click('[data-a="row:issue"]'); await page.click('[data-a="issuenew"]');
+    await toIssues(page); await page.click('[data-a="issuenew"]');
     assert.equal(await page.$('.tabbar, [data-a^="tab:"]'), null, 'no tab bar while composing');
     await shot(page, '2-compose.png');
     await page.click('[data-a="issuesave"]');
@@ -111,8 +111,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     // Partner's phone: not in her list, no card.
     const d = await dump(page);
     const her = await open({ sd: asPartner(d) });
-    assert.match(await her.page.textContent('[data-id="issue"]'), /None/);
-    await her.page.click('[data-a="row:issue"]');
+    await toIssues(her.page);
     assert.doesNotMatch(await her.page.textContent('main'), /dropped the plan/);
     await her.context.close(); await context.close();
   });
@@ -163,7 +162,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     const todos = await rowsOf(b.page, ME, 'todos');
     assert.deepEqual(todos.map((t) => [t.type, t.item_id, t.needs_note]), [['task', chg.id, false]]);
     assert.deepEqual((await issues(b.page)).map((i) => [i.body, i.status]).sort(), [['Please text when late', 'delivered'], ['Second thought', 'dropped']]);
-    await b.page.click('[data-a="row:issue"]');
+    await toIssues(b.page);
     assert.doesNotMatch(await b.page.textContent('main'), /Second thought/, 'dropped issues are hidden');
     assert.match(await b.page.textContent('main'), /Please text when late[\s\S]*Change[\s\S]*Open/);
     await b.context.close();

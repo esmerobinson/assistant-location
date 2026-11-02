@@ -215,6 +215,14 @@
     [self.bridge pageWillReload];
 }
 
+// iOS kills the web content process under memory pressure; the view then stays blank and dead. Reload the same page:
+// everything the person typed was persisted through the native store (the page flushes on pagehide/visibility hidden).
+- (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView {
+    NSLog(@"[Cycle] web content process terminated; reloading");
+    if (self.loadedWeb) [self loadWebFrom:self.loadedWeb];
+    else [webView reload];
+}
+
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
     NSLog(@"[Cycle] page navigation failed: %@", error);
 }

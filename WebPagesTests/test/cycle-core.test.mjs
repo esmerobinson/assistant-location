@@ -409,13 +409,6 @@ test('a habit with no target or period (pre-goal row) has no misses; deleted hab
   assert.equal(l.balance - l.challenges.reduce((a, c) => a + c.earned, 0), 0); // challenges pay from their own start
 });
 
-test('a to do that needs a note refuses an empty one', () => {
-  const t = todo({ needs_note: true });
-  for (const n of ['', '   ', undefined, null]) assert.throws(() => C.requireNote(t, n), /Note needed/);
-  C.requireNote(t, 'booked it');
-  C.requireNote(todo({ needs_note: false }), '');
-});
-
 test('Edited shows for the owner until they next log it', () => {
   const t = todo({ owner_id: ME, created_by: YOU, edited_at: iso('2026-10-22', 12) });
   const ev = (h) => [{ todo_id: 't1', user_id: ME, kind: 'tally', at: iso('2026-10-22', h) }];
@@ -425,6 +418,13 @@ test('Edited shows for the owner until they next log it', () => {
   assert.equal(C.isEdited(t, [], YOU), false); // the editor never sees it
   assert.equal(C.isEdited(todo({ owner_id: ME, created_by: ME, edited_at: iso('2026-10-22', 12) }), [], ME), false);
 });
+test('a to do that needs a note refuses an empty one', () => {
+  const t = todo({ needs_note: true });
+  for (const n of ['', '   ', undefined, null]) assert.throws(() => C.requireNote(t, n), /Note needed/);
+  C.requireNote(t, 'booked it');
+  C.requireNote(todo({ needs_note: false }), '');
+});
+
 test('askToTodo carries an ownup ask through as an ownup to do, and the ledger scores 0 points as 0, not the task default', () => {
   const couple = { id: 'c', hold_ask_min: 0, hold_focus_min: 0, hold_truth_min: 0, hold_kudos_min: 0 };
   const item = C.buildItem({ id: 'i', couple, me: ME, to: YOU, kind: 'ask', ask_type: 'ownup', body: 'I go meta', description: 'It escalates', needs_note: true, now: 1000 });
@@ -726,21 +726,25 @@ test('goal: no streak pay, no week or month bonus at day 7, hits and fights do n
   assert.equal(l.challenges[0].count, 2); assert.equal(l.challenges[0].status, 'active');
 });
 
-test('dailyDigest: whole days before today, merged, biggest first, today excluded', () => {
-  const led = { today: '2026-10-30', spends: [{ day: '2026-10-29', pts: -50, reward_id: 'r' }], weeks: { w: { days: {
-    '2026-10-28': { lines: [{ pts: 9, label: 'Old', who: null }] },
-    '2026-10-29': { lines: [{ pts: 1, label: 'Habit tally', who: 'Run' }, { pts: 1, label: 'Habit tally', who: 'Run' }, { pts: 3, label: 'Calm day', who: null }, { pts: -5, label: 'Fight', who: null }] },
-    '2026-10-30': { lines: [{ pts: 7, label: 'Today', who: null }] },
-  } } } };
-  const g = C.dailyDigest(led, undefined);
-  assert.equal(g.start, '2026-10-29');
-  assert.equal(g.net, -50 + 2 + 3 - 5);
-  assert.deepEqual(g.lines.map((l) => [l.label, l.pts]), [['Redeemed', -50], ['Fight', -5], ['Calm day', 3], ['Habit tally', 2]]);
-  assert.equal(C.dailyDigest(led, '2026-10-28').net, -50 + 2 + 3 - 5 + 9);
-  const wash = C.dailyDigest({ today: '2026-10-30', spends: [], weeks: { w: { days: { '2026-10-29': { lines: [{ pts: 3, label: 'A', who: null }, { pts: -3, label: 'A', who: null }, { pts: 1, label: 'B', who: null }] } } } } }, undefined);
-  assert.deepEqual(wash.lines.map((l) => l.label), ['B'], 'a label netting to zero is not a line');
-  assert.equal(C.dailyDigest(led, '2026-10-30'), null, 'dismissed today');
-  assert.equal(C.dailyDigest({ today: '2026-10-30', spends: [], weeks: {} }, undefined), null, 'nothing moved');
+test('calmStats: streak ends yesterday, best is the longest run, last28 counts calm days', () => {
+  // since 10-01, today 10-10: days 10-01..10-09 are scored. Fights on 10-03 and 10-07.
+  const s = C.calmStats(['2026-10-03', '2026-10-07', '2026-10-07'], '2026-10-10', '2026-10-01');
+  assert.deepEqual(s, { streak: 2, best: 3, last28: 7 });
+  assert.equal(C.calmStats([], '2026-10-10', '2026-10-01').streak, 9);
+  assert.deepEqual(C.calmStats(['2026-10-09'], '2026-10-10', '2026-10-01').streak, 0, 'a fight yesterday ends it');
+  assert.deepEqual(C.calmStats([], '2026-10-10', '2026-10-10'), { streak: 0, best: 0, last28: 0 }, 'couple created today');
+});
+
+test('weeklyFights: oldest week first, ends on the current week, drops fights outside the range', () => {
+  const w = C.weeklyFights(['2026-10-26', '2026-10-27', '2026-10-19', '2026-01-01'], '2026-10-29', 3);
+  assert.equal(w.length, 3);
+  assert.deepEqual(w.map((x) => x.n), [0, 1, 2]);
+  assert.equal(w[2].start, '2026-10-26');
+});
+
+test('inEditWindow: open for the window after creation, shut at and after it', () => {
+  assert.equal(C.inEditWindow(0, 14 * 60000, 15), true);
+  assert.equal(C.inEditWindow(0, 15 * 60000, 15), false);
 });
 
 // ---- goal challenge logs soft-deleted by either partner (challenge_days.deleted_at) ----

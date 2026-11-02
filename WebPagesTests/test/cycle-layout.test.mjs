@@ -48,7 +48,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     const page = await context.newPage();
     page.on('pageerror', (e) => { throw e; });
     await page.goto(URL_, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector(couple ? '[data-a="row:fight"]' : 'input[data-d="name"]');
+    await page.waitForSelector(couple ? '[data-a="go:fight"]' : 'input[data-d="name"]');
     return { context, page };
   }
   // Tab-bar-less shortcut to a route: the delegated handler only needs a [data-a] element.
@@ -77,7 +77,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
 
   test('Log fight at 375x667: the last field clears the sticky Save pill at max scroll', async () => {
     const { context, page } = await open(375, 667);
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     await page.waitForSelector('[data-a="fightsave"]');
     await page.click('[data-a="chip:custom"]');
     await maxScroll(page);
@@ -95,7 +95,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
   for (const partner of ['Esme', 'Oliver', 'Alexandria Rae']) for (const [w, h] of [[375, 667], [390, 844]]) {
     test(`Log fight label and Save do not clip "${partner}" at ${w}x${h}`, async () => {
       const { context, page } = await open(w, h, true, partner);
-      await page.click('[data-a="row:fight"]');
+      await page.click('[data-a="go:fight"]');
       await page.waitForSelector('[data-a="fightsave"]');
       await maxScroll(page);
       const m = await page.evaluate(() => {
@@ -113,7 +113,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     const text = () => page.evaluate(() => document.querySelector('main').textContent);
     assert.ok(!/check-?in/i.test(await text()), 'Home mentions check-in');
     assert.equal(await page.locator('[data-a="go:today"], [data-a="checkin"]').count(), 0);
-    await nav(page, 'tab:us');
+    await nav(page, 'go:more');
     assert.ok(!/check-?in/i.test(await text()), 'Us mentions check-ins');
     assert.equal(await page.locator('.wk').count(), 0);
     await nav(page, 'go:settings');
@@ -131,7 +131,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     // Us no longer fills the screen once Kudos left it, so its free space is not its bottom padding;
     // only compare against Us when Us actually scrolls.
     const gap = () => page.evaluate(() => { const s = document.querySelector('.scr'); s.scrollTop = s.scrollHeight; return { scrolls: s.scrollHeight > s.clientHeight, gap: document.querySelector('.tabbar').getBoundingClientRect().top - [...s.querySelector('main').children].pop().getBoundingClientRect().bottom }; });
-    await nav(page, 'tab:us');
+    await nav(page, 'go:more');
     const us = await gap();
     await nav(page, 'go:settings');
     const st = await gap();
@@ -202,7 +202,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
 
   test('Log fight sections are 22px apart (cycle.css wins over base.css 10px)', async () => {
     const { context, page } = await open(390, 844);
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     await page.waitForSelector('[data-a="fightsave"]');
     const gaps = await page.evaluate(() => { const s = [...document.querySelectorAll('.p2.s2 main > section')]; return s.slice(1).map((e, i) => e.getBoundingClientRect().top - s[i].getBoundingClientRect().bottom); });
     assert.deepEqual(gaps, gaps.map(() => 22));
@@ -211,7 +211,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
 
   for (const sel of [3, 1, 5]) test(`Log fight intensity numerals clear the rule by >= 14px (selected ${sel}, 390px)`, async () => {
     const { context, page } = await open(390, 844);
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     await page.waitForSelector('[data-a="fightsave"]');
     await page.click(`[data-a="int:${sel}"]`);
     const gaps = await page.evaluate(() => {
@@ -231,14 +231,14 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     const { context, page } = await open(393, 852);
     await context.route('**/cycle.css', (route) => route.fulfill({ contentType: 'text/css', body: CSS.replaceAll('env(safe-area-inset-top)', inset + 'px') }));
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('[data-a="row:fight"]');
+    await page.waitForSelector('[data-a="go:fight"]');
     const top = await page.evaluate(() => document.querySelector('.band').getBoundingClientRect().top);
     assert.ok(top >= iconsEnd + 10, `band top edge at y=${top}, icons end at y=${iconsEnd}`);
     await context.close();
   });
 
   // Home used to render with tab:false, so the bar vanished on Today; the bar is on every screen except modal flows.
-  for (const w of [375, 430]) test(`tab bar stays on Home, Actions round trip and pushed screens at ${w}px`, async () => {
+  for (const w of [375, 430]) test(`tab bar stays on Home, To-dos round trip and pushed screens at ${w}px`, async () => {
     const { context, page } = await open(w, 844);
     const on = () => page.$$eval('.tabbar .tab.on', (t) => t.map((e) => e.dataset.a));
     const bar = () => page.evaluate(() => { const r = document.querySelector('.tabbar').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, vh: innerHeight, shown: r.height > 0 }; });
@@ -253,15 +253,14 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await page.click('.tabbar [data-a="tab:todo"]');
     assert.deepEqual(await on(), ['tab:todo']);
     await page.click('.tabbar [data-a="tab:home"]');
-    assert.equal(await page.locator('.tabbar').count(), 1, 'tab bar vanished after Actions -> Today');
+    assert.equal(await page.locator('.tabbar').count(), 1, 'tab bar vanished after To-dos -> Home');
     assert.deepEqual(await on(), ['tab:home']);
     assert.ok((await bar()).shown);
-    await page.click('[data-a="row:nudges"]');
+    await page.click('[data-a="tab:todo"]'); await page.click('[data-a="todoseg:rem"]');
     await page.waitForSelector('.nd .hd');
-    assert.deepEqual(await on(), ['tab:home']);
-    await page.click('[data-a="back"]');
-    await page.click('.tabbar [data-a="tab:us"]');
-    assert.deepEqual(await on(), ['tab:us']);
+    assert.deepEqual(await on(), ['tab:todo']);
+    await page.click('.tabbar [data-a="tab:progress"]');
+    assert.deepEqual(await on(), ['tab:progress']);
     const b1 = await bar();
     assert.ok(b1.shown && Math.abs(b1.bottom - b1.vh) <= 1, JSON.stringify(b1));
     await context.close();

@@ -110,7 +110,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
   });
 
   const logFight = async (page, note) => {
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     await page.waitForSelector('[data-a="fightsave"]');
     if (note) await page.fill('textarea[data-d="note"]', note);
     await page.click('[data-a="fightsave"]');

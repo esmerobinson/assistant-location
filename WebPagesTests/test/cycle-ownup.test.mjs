@@ -62,11 +62,11 @@ describe('webkit', { skip: !haveWebkit }, () => {
   const shot = async (page, name) => { if (process.env.OWNUP_SHOTS) await page.screenshot({ path: path.join(process.env.OWNUP_SHOTS, name), clip: { x: 0, y: 0, width: 390, height: 844 } }); };
   const openNew = async (page) => { await page.click('[data-a="tab:todo"]'); await page.click('[data-a="addpick"]'); await page.click('[data-a="newtodo:ownup"]'); };
 
-  test('Add picker offers Task, Habit, Owning up, Challenge; the sheet has a three-option Type, Earn and Lose at task defaults and no Needs a note', async () => {
+  test('Add picker offers Task, Habit, Owning up (challenges live on Progress); the sheet has a three-option Type, Earn and Lose at task defaults and no Needs a note', async () => {
     const a = await open();
     await a.page.click('[data-a="tab:todo"]');
     await a.page.click('[data-a="addpick"]');
-    assert.deepEqual(await a.page.$$eval('.opt', (els) => els.map((e) => e.textContent.trim())), ['Task', 'Habit', 'Owning up', 'Challenge']);
+    assert.deepEqual(await a.page.$$eval('.opt', (els) => els.map((e) => e.textContent.trim())), ['Task', 'Habit', 'Owning up']);
     await a.page.click('[data-a="newtodo:ownup"]');
     assert.deepEqual(await a.page.$$eval('[data-a^="nkind:"]', (els) => els.map((e) => e.textContent.trim())), ['Task', 'Habit', 'Owning up']);
     assert.equal(await a.page.$eval('[data-a="nkind:ownup"]', (e) => e.classList.contains('on')), true);
