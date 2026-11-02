@@ -517,7 +517,10 @@ var CycleStore = (function () {
     if (!hasNative || !S.session) return;
     var w = wanted(), ids = w.map(function (x) { return x.id; });
     for (var i = 0; i < scheduledIds.length; i++) if (ids.indexOf(scheduledIds[i]) < 0) await native.cancel(scheduledIds[i]);
-    for (var j = 0; j < w.length; j++) await native.schedule(w[j]);
+    for (var j = 0; j < w.length; j++) {
+      // A time that slipped into the past between wanted() and the bridge call is simply not scheduled; any other rejection is real.
+      try { await native.schedule(w[j]); } catch (e) { if (!/not in the future/.test(String(e && e.message || e))) throw e; }
+    }
     scheduledIds = ids;
   }
   function cancelAllNotifications() { scheduledIds.forEach(native.cancel); scheduledIds = []; }

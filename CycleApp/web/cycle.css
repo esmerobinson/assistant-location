@@ -417,3 +417,4 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .errscreen h2{font-family:"Archivo Black",sans-serif;font-size:28px;line-height:1.05;text-transform:uppercase}
 .errscreen p:not(.ghost){color:var(--mu);font-size:15px}
 .errscreen .save{margin-top:8px}
+.ns{color:var(--pk);font-weight:700;font-size:13px}

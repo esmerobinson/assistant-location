@@ -42,6 +42,8 @@ function today() { return C.localDay(now(), tz()); }
 function dayName(day) { return WD[C.dow(day)]; }
 function fmtDay(day) { var p = day.split('-'); return dayName(day) + ' ' + (+p[2]) + ' ' + MON[+p[1] - 1]; }
 function dueOf(day) { return C.dueInfo(day, today(), function (d) { return d <= C.addDays(today(), 6) ? dayName(d) : fmtDay(d); }); }
+// A row whose insert was dead-lettered exists only on this phone; say so wherever it shows (its text is kept).
+function ns(t, id) { return St.notSent(t, id) ? '<span class="ns">Not sent</span>' : ''; }
 function dueTag(x) { if (!x.due_date) return ''; var d = dueOf(x.due_date); return '<small><span class="due ' + d.state + '">' + d.text + '</span></small>'; }
 // Late and due-today to dos go first, oldest first; the rest keep their order. Without this a late one can sit under next week's.
 // "Hot" = late or due today (tomorrow, which dueTag also colours, is not): the one rule for ordering, and for the Actions Today section.
@@ -355,7 +357,7 @@ SCREEN.todo = function () {
   function row(x) {
     var mine = x.owner_id === St.me(), habit = x.type === 'habit', h = habit && hprog(x), resp = x.type === 'response';
     var btn = !mine ? '' : habit ? '<span class="p1b" data-a="tally:' + x.id + '">+1</span>' : '<span class="done" data-a="done:' + x.id + '">Done</span>';
-    return '<div class="td-row" data-todo="' + x.id + '" data-a="tview:' + x.id + '"><span class="om">' + (resp ? '<svg><use href="#fa"/></svg>' : '') + '</span><div class="tx"><p>' + esc(x.title) + '</p>' + tdDesc(x) + (habit ? lastNote(x) + h.bar : dueTag(x)) + edited(x) + tags(x) + '</div>' + (habit ? '<span class="hv">' + h.hv + '</span>' : '') + btn + '</div>';
+    return '<div class="td-row" data-todo="' + x.id + '" data-a="tview:' + x.id + '"><span class="om">' + (resp ? '<svg><use href="#fa"/></svg>' : '') + '</span><div class="tx"><p>' + esc(x.title) + '</p>' + tdDesc(x) + (habit ? lastNote(x) + h.bar : dueTag(x)) + edited(x) + ns('todos', x.id) + tags(x) + '</div>' + (habit ? '<span class="hv">' + h.hv + '</span>' : '') + btn + '</div>';
   }
   var heldHtml = held.length ? section('Held', held.map(function (i) {
     var rd = C.ms(i.held_until) <= now();
@@ -434,7 +436,7 @@ SCREEN.tododetail = function () {
   // A deleted comment stays as a marker, so a reply under it never reads as answering nothing.
   var thread = cm.map(function (c) {
     var del = c.author_id === St.me() && !c.deleted_at ? ' <span class="lnk" data-a="cmtdel:' + c.id + '">Delete</span>' : '';
-    return '<div class="fn' + (c.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(c.author_id)) + ' &middot; ' + noteStamp(C.ms(c.created_at)) + del + '</p><p>' + (c.deleted_at ? 'Deleted' : esc(c.body)) + '</p></div>';
+    return '<div class="fn' + (c.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(c.author_id)) + ' &middot; ' + noteStamp(C.ms(c.created_at)) + ns('todo_comments', c.id).replace('<span', ' <span') + del + '</p><p>' + (c.deleted_at ? 'Deleted' : esc(c.body)) + '</p></div>';
   }).join('');
   var edit = canEditTodo(t) ? '<span class="fight" data-a="etodo:' + t.id + '">Edit</span>' : '';
   var sh = ui.sheet && ui.sheet.type === 'newtodo' ? newTodoSheet() : '';
@@ -500,7 +502,7 @@ SCREEN.fightdetail = function () {
   var old = ownFight(mk);
   var oldNote = old && old.about ? '<div class="fn"><p class="meta">' + pnx(nameOf(mk.logged_by)) + ' &middot; ' + noteStamp(C.ms(mk.at)) + '</p><p>' + esc(old.about) + '</p></div>' : '';
   var list = oldNote + notes.map(function (n) {
-    return '<div class="fn"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + '</p><p>' + esc(n.body) + '</p></div>';
+    return '<div class="fn"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + ns('fight_notes', n.id).replace('<span', ' <span') + '</p><p>' + esc(n.body) + '</p></div>';
   }).join('');
   var chips = fightChips(mk);
   return phone('p2 fd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Fight</h2><p class="dl">' + noteStamp(C.ms(mk.at)) + '</p></div></header>' +
@@ -528,7 +530,7 @@ function fightRow(mk) {
   var own = mk.logged_by === St.me(), rec = ownFight(mk), notes = fightNotes(mk.id), first = notes[0];
   var text = own && rec && rec.about ? rec.about : first ? first.body : '', extra = notes.length - (text && first && text === first.body ? 1 : 0);
   var d = C.localDay(C.ms(mk.at), tz());
-  return '<div class="rf" data-a="openfight:' + mk.id + '"><div class="meta"><span>' + (own ? 'You' : pnx(nameOf(mk.logged_by))) + ' &middot; ' + dayName(d) + ' ' + (+d.slice(8)) + ' ' + MON[+d.slice(5, 7) - 1] + ' &middot; ' + fmtTime(C.ms(mk.at)) + '</span>' + (rec ? ix(rec.intensity) : '') + '</div>' +
+  return '<div class="rf" data-a="openfight:' + mk.id + '"><div class="meta"><span>' + (own ? 'You' : pnx(nameOf(mk.logged_by))) + ' &middot; ' + dayName(d) + ' ' + (+d.slice(8)) + ' ' + MON[+d.slice(5, 7) - 1] + ' &middot; ' + fmtTime(C.ms(mk.at)) + '</span>' + (rec ? ix(rec.intensity) : '') + ns('fight_markers', mk.id) + '</div>' +
     (text ? '<p>' + esc(text) + '</p>' : '') + '<div class="rcs">' + fightChips(mk) + (extra > 0 ? '<span class="rc">' + extra + (extra === 1 ? ' note' : ' notes') + '</span>' : '') + '</div></div>';
 }
 SCREEN.fights = function () {
@@ -806,7 +808,7 @@ function thread(sends) {
     var p = C.localDay(C.ms(s.deliver_at), tz()).split('-');
     return '<p class="when">' + (+p[2]) + ' ' + MON[+p[1] - 1] + '</p>' + reps.map(function (r) {
       var mine = r.author_id === St.me();
-      return '<div class="bub ' + (mine ? 'me' : 'her') + (r.deleted_at ? ' gone' : '') + '">' + (r.deleted_at ? 'Deleted' : esc(r.body)) + '<small>' + esc(mine ? 'You' : nameOf(r.author_id)) + ' · ' + fmtTime(C.ms(r.created_at)) + (mine && !r.deleted_at ? ' · <span class="lnk" data-a="repdel:' + r.id + '">Delete</span>' : '') + '</small></div>';
+      return '<div class="bub ' + (mine ? 'me' : 'her') + (r.deleted_at ? ' gone' : '') + '">' + (r.deleted_at ? 'Deleted' : esc(r.body)) + '<small>' + esc(mine ? 'You' : nameOf(r.author_id)) + ' · ' + fmtTime(C.ms(r.created_at)) + ns('nudge_replies', r.id).replace('<span', ' &middot; <span') + (mine && !r.deleted_at ? ' · <span class="lnk" data-a="repdel:' + r.id + '">Delete</span>' : '') + '</small></div>';
     }).join('');
   }).join('');
 }
