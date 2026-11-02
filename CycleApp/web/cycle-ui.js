@@ -958,8 +958,72 @@ function sheetHtml() { return ''; }
 var lastKey = '';
 // Note boxes grow to fit their text instead of scrolling inside.
 function fitNote(t) { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }
+// ---- Drafts ------------------------------------------------------------------------------------------------------
+// Navigating wipes ui.d in dozens of places (go, back, tab, sheet openers), so instead of guarding each one, typed text
+// is copied here on every keystroke and render() restores it when its surface is next shown. Lives in S.priv: on-device,
+// per-account, survives a kill, and never syncs to the partner, so half-written messages stay unseen until really sent.
+// Only a successful save clears a draft (draftSent); closing with X keeps it, emptying the fields discards it.
+// Auth and setup return null on purpose: a password must never be written to disk.
+function draftKey() {
+  var s = ui.sheet, name = currentScreen();
+  if (name === 'auth' || name === 'setup') return null;
+  if (s) {
+    if (s.type === 'newtodo') return 'todo:' + (s.edit || 'new');
+    if (s.type === 'still') return s.edit ? 'still:' + s.id : null;
+    if (s.type === 'note' || s.type === 'chlogedit') return s.type + ':' + s.id;
+    if (s.type === 'chlog' || s.type === 'broke' || s.type === 'chedit') return s.type + ':' + ui.chId;
+    return s.type === 'addreward' ? 'addreward' : null; // the rest (pickers, confirms) have no text field
+  }
+  if (name === 'fight' || name === 'kudosnew' || name === 'newch') return name;
+  if (name === 'fightdetail') return name + ':' + ui.fightId;
+  if (name === 'tododetail') return name + ':' + ui.todoId;
+  if (name === 'nudge') return name + ':' + ui.nid;
+  if (name === 'nudgein') return name + ':' + ui.sendId;
+  if (name === 'nudgenew') return name + ':' + (ui.nedit || 'new');
+  if (name === 'acknew') return name + ':' + (ui.aid || 'new');
+  return null;
+}
+// Choices held outside ui.d. Without them a restored ask to the partner would come back as a note to self.
+var DRAFT_UI = { 'acknew': ['afrom', 'awhen'], 'nudgenew': ['nfor'] };
+function saveDraft(k) {
+  if (!k) return;
+  var all = S.priv.drafts, had = all[k];
+  // Only strings count: a fight's default intensity or an untouched chip is not something typed.
+  var has = Object.keys(ui.d).some(function (f) { return typeof ui.d[f] === 'string' && ui.d[f].trim(); });
+  if (!has) { if (had) { delete all[k]; St.persist(); } return; }
+  var name = currentScreen(), dr = { d: ui.d, ui: {} };
+  (DRAFT_UI[name] || []).forEach(function (f) { dr.ui[f] = ui[f]; });
+  if (ui.sheet && ui.sheet.type === 'newtodo') dr.sheet = ui.sheet;
+  var json = JSON.stringify(dr);
+  if (had && JSON.stringify(had) === json) return; // render() calls this often; a write per repaint would be wasted
+  all[k] = JSON.parse(json); // a copy: ui.d keeps changing, and aliasing it would make the comparison above always equal
+  St.persist(); // not savePriv: its emit() re-renders, and this runs inside render()
+}
+// A save worked: the draft is spent. Call after validation, while ui.route / ui.sheet still name the surface.
+function draftSent(k) { k = k || draftKey(); if (k && S.priv.drafts[k]) { delete S.priv.drafts[k]; St.persist(); } }
+// Runs at the top of render(). Same surface: keep an existing draft current (chips, steppers change without an input
+// event). New surface: seed over whatever the opener put in ui.d, so an unsaved edit beats the row's stored text.
+function syncDraft() {
+  var k = draftKey();
+  if (k === ui.dkey) { if (k && S.priv.drafts[k]) saveDraft(k); return; }
+  ui.dkey = k;
+  var dr = k && S.priv.drafts[k];
+  if (!dr) return;
+  dr = JSON.parse(JSON.stringify(dr));
+  ui.d = Object.assign({}, ui.d, dr.d);
+  Object.assign(ui, dr.ui);
+  if (dr.sheet) {
+    // Keep the kind just tapped: Habit on the picker must not reopen as the drafted Task.
+    var kind = ui.sheet.kind;
+    Object.assign(ui.sheet, dr.sheet);
+    setTodoKind(ui.sheet, kind);
+  }
+}
+function setTodoKind(s, v) { if (s.kind !== v) { s.kind = v; if (!s.pt) { s.pe = v === 'habit' ? 1 : 3; s.pm = v === 'habit' ? 0 : 3; } } }
+
 function render() {
   if (!ui.ready) return;
+  syncDraft();
   if (ui.rec && !(ui.sheet && NOTE_SHEETS[ui.sheet.type])) guard(stopRec)(); // the mic only lives while its sheet is up
   var sc = document.querySelector('.scr'), top = sc ? sc.scrollTop : 0, name = currentScreen(), key = name + (ui.sheet ? 's' : '');
   // A tapped control must not close the keyboard: hand focus to the field's twin after the swap (else .scr grows and clamps scrollTop).
@@ -1019,6 +1083,7 @@ document.addEventListener('focusout', function () { setTimeout(function () { if 
 app.addEventListener('input', function (e) {
   var k = e.target.getAttribute('data-d'); if (!k) return;
   ui.d[k] = e.target.value;
+  saveDraft(draftKey());
   if (ui.rec && ui.rec.field === k) guard(stopRec)(); // typing takes over from the mic
   if (e.target.closest('.ta.nt')) fitNote(e.target);
   if (k === 'dotherv') doneRefresh();
@@ -1084,6 +1149,7 @@ function logFight() {
   // Intensity is the only part that stays on this phone.
   S.priv.fights.push({ id: id, at: at, intensity: d.int || 3 });
   St.savePriv();
+  draftSent();
   M.play('crack', el);
   tab('home');
 }
@@ -1091,7 +1157,7 @@ function saveNote() {
   var body = (ui.d.more || '').trim();
   if (!body) return;
   St.insert('fight_notes', { id: St.uuid(), couple_id: S.couple.id, fight_marker_id: ui.fightId, author_id: St.me(), body: body, created_at: new Date(whenMs('mw')).toISOString() });
-  ui.d.more = ''; delete ui.d.mwD; delete ui.d.mwT; render();
+  draftSent(); ui.d.more = ''; delete ui.d.mwD; delete ui.d.mwT; render();
 }
 
 var ACT = {
@@ -1138,7 +1204,7 @@ var ACT = {
   }),
   still: function (id) { ui.sheet = stillHeld(id) ? { type: 'still', id: id } : null; ui.d = {}; render(); },
   edit: function (id) { ui.sheet.edit = true; render(); },
-  editsave: guard(function (id) { var b = (ui.d.edit || '').trim(); if (!b) throw new Error('Message needed'); St.patch('items', id, { body: b }); ui.sheet.edit = false; ui.d = {}; render(); }),
+  editsave: guard(function (id) { var b = (ui.d.edit || '').trim(); if (!b) throw new Error('Message needed'); St.patch('items', id, { body: b }); draftSent(); ui.sheet.edit = false; ui.d = {}; render(); }),
   deliver: guard(function (id) { var el = document.querySelector('.bs .save'); deliver(S.rows.items[id]); M.play('send', el); ui.sheet = null; render(); }),
   drop: guard(function (id) { St.patch('items', id, { status: 'dropped' }); ui.sheet = null; render(); }),
   addpick: function () { ui.sheet = { type: 'addpick' }; ui.d = {}; render(); },
@@ -1169,10 +1235,10 @@ var ACT = {
     var body = (ui.d.cmt || '').trim(); if (!body) throw new Error('Comment needed');
     var n = nowIso();
     St.insert('todo_comments', { id: St.uuid(), couple_id: S.couple.id, todo_id: id, author_id: St.me(), body: body, created_at: n, updated_at: n, deleted_at: null });
-    ui.d.cmt = ''; render();
+    draftSent(); ui.d.cmt = ''; render();
   }),
   nfor: function (v) { ui.sheet.who = v; render(); },
-  nkind: function (v) { var s = ui.sheet; s.kind = v; if (!s.pt) { s.pe = v === 'habit' ? 1 : 3; s.pm = v === 'habit' ? 0 : 3; } render(); },
+  nkind: function (v) { setTodoKind(ui.sheet, v); render(); },
   nper: function (v) { ui.sheet.period = v; render(); },
   stp: function (a) { var p = a.split(':'), s = ui.sheet; s[p[0]] = Math.max(p[0] === 'tgt' ? 1 : 0, s[p[0]] + +p[1]); if (p[0] !== 'tgt') s.pt = true; render(); },
   nnote: function () { ui.sheet.nn = !ui.sheet.nn; render(); },
@@ -1197,9 +1263,9 @@ var ACT = {
       if (St.partner()) sendItem('ask', ask); else { S.priv.queued.push(ask); St.savePriv(); }
     }
     else St.insert('todos', Object.assign({ id: St.uuid(), couple_id: S.couple.id, owner_id: St.me(), created_by: St.me(), item_id: null, fight_marker_id: null, tally: 0, done_at: null, edited_at: null, created_at: at !== null ? new Date(at).toISOString() : nowIso(), updated_at: nowIso(), deleted_at: null }, f));
-    ui.sheet = null; ui.d = {}; render();
+    draftSent(); ui.sheet = null; ui.d = {}; render();
   }),
-  tododel: guard(function (id) { St.patch('todos', id, { deleted_at: nowIso() }); ui.sheet = null; ui.d = {}; if (ui.route === 'tododetail') back(); else render(); }),
+  tododel: guard(function (id) { St.patch('todos', id, { deleted_at: nowIso() }); draftSent('todo:' + id); ui.sheet = null; ui.d = {}; if (ui.route === 'tododetail') back(); else render(); }),
   done: guard(function (id) {
     var t = S.rows.todos[id];
     if (t.needs_note) { ui.sheet = { type: 'note', id: id, kind: 'done' }; ui.d = {}; render(); }
@@ -1213,7 +1279,7 @@ var ACT = {
   lognote: guard(function () {
     var k = ui.sheet.kind, t = S.rows.todos[ui.sheet.id], note = (ui.d.note || '').trim();
     C.requireNote(t, note);
-    ui.sheet = null; ui.d = {}; render();
+    draftSent(); ui.sheet = null; ui.d = {}; render();
     if (k === 'done') todoDone(t, document.querySelector('[data-todo="' + t.id + '"] .om'), note); else todoTally(t, document.querySelector('[data-todo="' + t.id + '"] .p1b'), note);
   }),
   int: function (n) { ui.d.int = +n; render(); },
@@ -1253,6 +1319,7 @@ var ACT = {
     var n = (ui.d.chname || '').trim(); if (!n) return;
     var id = St.uuid();
     St.insert('challenges', { couple_id: S.couple.id, id: id, name: n, start: today(), for_user: val('chfor', St.partner().user_id), breaks_on: val('chbr', 'tap'), accepted_at: null, created_at: nowIso(), updated_at: nowIso() });
+    draftSent();
     ui.route = ui.stack.pop().route;
     go('challenge', { chId: id });
   }),
@@ -1261,7 +1328,7 @@ var ACT = {
     var c = ledger().challenges.filter(function (x) { return x.id === ui.chId; })[0];
     if (c.broken_today) return;
     St.insert('challenge_breaks', { couple_id: S.couple.id, id: St.uuid(), challenge_id: ui.chId, day: today(), note: (ui.d.brnote || '').trim() || null, by: St.me(), created_at: nowIso(), updated_at: nowIso() });
-    ui.sheet = null; ui.d = {}; render();
+    draftSent(); ui.sheet = null; ui.d = {}; render();
   }),
   chlog: function () { ui.sheet = { type: 'chlog' }; ui.d = {}; render(); },
   chlogsave: guard(function () {
@@ -1273,7 +1340,7 @@ var ACT = {
       var old = St.list('challenge_days').filter(function (x) { return x.challenge_id === ui.chId && x.day === today(); })[0];
       if (old) St.patch('challenge_days', old.id, { note: note, deleted_at: null });
       else St.insert('challenge_days', { couple_id: S.couple.id, id: St.uuid(), challenge_id: ui.chId, day: today(), note: note, by: St.me(), created_at: nowIso(), updated_at: nowIso(), deleted_at: null });
-      ui.sheet = null; ui.d = {}; render();
+      draftSent(); ui.sheet = null; ui.d = {}; render();
     });
   }),
   chlogedit: function (id) { ui.sheet = { type: 'chlogedit', id: id }; ui.d = { chlognote: S.rows.challenge_days[id].note }; render(); },
@@ -1283,24 +1350,24 @@ var ACT = {
     if (row.deleted_at) throw new Error('Already deleted');
     return stopRec().then(function () {
       if (note !== row.note) St.patch('challenge_days', row.id, { note: note });
-      ui.sheet = null; ui.d = {}; render();
+      draftSent(); ui.sheet = null; ui.d = {}; render();
     });
   }),
   chlogdelq: guard(function () { return stopRec().then(function () { ui.sheet = { type: 'chlogdel', id: ui.sheet.id }; render(); }); }),
-  chlogdel: guard(function () { St.patch('challenge_days', ui.sheet.id, { deleted_at: nowIso() }); ui.sheet = null; ui.d = {}; render(); }),
+  chlogdel: guard(function () { St.patch('challenge_days', ui.sheet.id, { deleted_at: nowIso() }); draftSent('chlogedit:' + ui.sheet.id); ui.sheet = null; ui.d = {}; render(); }),
   chedit: function () { ui.sheet = { type: 'chedit' }; ui.d = { chname: ledger().challenges.filter(function (x) { return x.id === ui.chId; })[0].name }; render(); },
   chaccept: guard(function () { St.patch('challenges', ui.chId, { accepted_at: nowIso() }); render(); }),
   chsave: guard(function () {
     var n = (ui.d.chname || '').trim(); if (!n) throw new Error('Name needed');
     if (n !== S.rows.challenges[ui.chId].name) St.patch('challenges', ui.chId, { name: n });
-    ui.sheet = null; ui.d = {}; render();
+    draftSent(); ui.sheet = null; ui.d = {}; render();
   }),
   addreward: function () { ui.sheet = { type: 'addreward' }; ui.d = {}; render(); },
   savereward: guard(function () {
     var n = (ui.d.rname || '').trim(), p = parseInt(ui.d.rprice, 10);
     if (!n || !(p >= 0)) throw new Error('Name and price needed');
     St.insert('rewards', { id: St.uuid(), couple_id: S.couple.id, name: n, price: p, created_by: St.me(), archived: false, created_at: nowIso(), updated_at: nowIso() });
-    ui.sheet = null; ui.d = {}; render();
+    draftSent(); ui.sheet = null; ui.d = {}; render();
   }),
   digestx: function () { prefs().digestDay = today(); St.savePriv(); render(); },
   digest: function () { prefs().digestDay = today(); St.savePriv(); go('points'); },
@@ -1337,10 +1404,10 @@ var ACT = {
   nudgenew: function () { go('nudgenew', { nedit: null, nfor: ui.ntier }); },
   nudgefor: function (v) { ui.nfor = v; render(); },
   // Save only: the nudge joins the library of the tier chosen in For, and the library shows that tier.
-  nudgesave: guard(function () { saveNudge(); ui.ntier = ui.nfor; back(); }),
+  nudgesave: guard(function () { saveNudge(); draftSent(); ui.ntier = ui.nfor; back(); }),
   nudgenewsend: guard(function () {
     var el = document.querySelector('.pair .save');
-    var row = saveNudge(); doSend(ui.nfor, row); ui.ntier = ui.nfor; ui.tip = false;
+    var row = saveNudge(); doSend(ui.nfor, row); draftSent(); ui.ntier = ui.nfor; ui.tip = false;
     M.play('send', el); back();
   }),
   // Replies are not held: the row goes straight into the outbox.
@@ -1349,7 +1416,7 @@ var ACT = {
     if (!body) return;
     St.insert('nudge_replies', { id: St.uuid(), couple_id: S.couple.id, send_id: s.id, author_id: St.me(), body: body, read_at: null,
       created_at: nowIso(), updated_at: nowIso(), deleted_at: null });
-    ui.d.reply = ''; render();
+    draftSent(); ui.d.reply = ''; render();
   }),
   nudgein: function (id) { openSend(id); go('nudgein', { sendId: id }); },
   replyopen: function (id) { openSend(id); go('nudgein', { sendId: id }); },
@@ -1371,6 +1438,7 @@ var ACT = {
     }
     else St.insert('acks', { id: St.uuid(), couple_id: S.couple.id, author_id: St.me(), requested_by: null, item_id: null, title: title, description: desc,
       status: 'done', done_at: at !== null ? new Date(at).toISOString() : nowIso(), read_at: null, created_at: at !== null ? new Date(at).toISOString() : nowIso(), updated_at: nowIso(), deleted_at: null });
+    draftSent();
     back();
   }),
   // ---- Kudos ----
@@ -1382,9 +1450,10 @@ var ACT = {
     if (gift && !/^\d+$/.test(gift)) { M.play('jiggle', document.querySelector('[data-d="kgift"]')); throw new Error('Whole number needed'); }
     if (!St.partner()) throw new Error('No partner yet');
     celebrate(sendItem('kudos', { body: body, gift_points: gift ? +gift : 0 }), el);
+    draftSent();
     back();
   }),
-  ackdel: guard(function () { St.patch('acks', ui.aid, { deleted_at: nowIso() }); back(); }),
+  ackdel: guard(function () { St.patch('acks', ui.aid, { deleted_at: nowIso() }); draftSent(); back(); }),
   day: function (d) { ui.cyc.sel = d; render(); },
   mon: function (n) { var c = ui.cyc, m = c.m + +n; c.y += m < 1 ? -1 : m > 12 ? 1 : 0; c.m = m < 1 ? 12 : m > 12 ? 1 : m; render(); }
 };
@@ -1544,7 +1613,7 @@ window.cycleNative = {
   speech: function (text, final) {
     if (!ui.rec) return;
     var f = ui.rec.field, el = document.querySelector('[data-d="' + f + '"]');
-    if (text) { ui.d[f] = C.appendSpeech(ui.rec.base, text); if (el) el.value = ui.d[f]; }
+    if (text) { ui.d[f] = C.appendSpeech(ui.rec.base, text); if (el) el.value = ui.d[f]; saveDraft(draftKey()); }
     if (final) { ui.rec = null; render(); }
   },
   speechError: function (msg) { ui.rec = null; showErr(plain(new Error(msg))); },

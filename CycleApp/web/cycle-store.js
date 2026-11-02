@@ -108,7 +108,7 @@ var CycleStore = (function () {
 
   // Me nudges live here, never in Supabase: `nudges` shaped like the shared table, `nudge_sends` like
   // nudge_sends (recipient = me) so the UI treats both tiers with one code path.
-  function emptyPriv() { return { fights: [], nudges: [], nudge_sends: [], prefs: {}, queued: [] }; }
+  function emptyPriv() { return { fights: [], nudges: [], nudge_sends: [], prefs: {}, queued: [], drafts: {} }; }
 
   // ---- HTTP ------------------------------------------------------------------
   function authHeaders(extra) {
@@ -180,6 +180,7 @@ var CycleStore = (function () {
     var p = S.priv;
     if (!p.nudges) { p.nudges = []; p.nudge_sends = []; }
     if (!p.queued) p.queued = []; // asks for a partner who has not joined yet
+    if (!p.drafts) p.drafts = {}; // unsent text per compose surface (see Drafts in cycle-ui.js)
     if (!p.affirmations) return;
     p.affirmations.forEach(function (a, i) {
       var body = typeof a === 'string' ? a : a.text || a.body;
@@ -415,6 +416,6 @@ var CycleStore = (function () {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
     kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
-    api: api, persistNow: persistNow, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
+    api: api, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
   };
 })();
