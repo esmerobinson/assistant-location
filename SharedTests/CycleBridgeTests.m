@@ -114,6 +114,17 @@
     XCTAssertEqualObjects([self run:@"store.keys" args:(@{@"prefix": @"log:"})][@"result"], (@[@"log:2"]));
 }
 
+// A nil store (the app delegate's NSAssert is compiled out in Release) must report an error, not silent success.
+- (void)testNilStoreReportsErrorInsteadOfSuccess {
+    CycleBridge *bare = [[CycleBridge alloc] initWithStore:nil notifier:[[CycleNotifier alloc] initWithCenter:self.center]];
+    __block NSString *err = nil;
+    [bare dispatchCommand:@"store.set" args:@{@"key": @"k", @"value": @"v"} completion:^(id result, NSString *error) { err = error; }];
+    XCTAssertNotNil(err, @"store.set with no store must fail loudly");
+    err = nil;
+    [bare dispatchCommand:@"store.get" args:@{@"key": @"k"} completion:^(id result, NSString *error) { err = error; }];
+    XCTAssertNotNil(err);
+}
+
 - (void)testStoreRejectsNonStringValueAndKey {
     XCTAssertNotEqualObjects([self run:@"store.set" args:(@{@"key": @"k", @"value": @5})][@"error"], NSNull.null);
     XCTAssertNotEqualObjects([self run:@"store.set" args:(@{@"value": @"v"})][@"error"], NSNull.null);

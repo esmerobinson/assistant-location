@@ -80,6 +80,9 @@ static NSString *CycleKeychainError(NSString *op, OSStatus st) {
 
 - (void)dispatchCommand:(NSString *)cmd args:(NSDictionary *)args completion:(CycleResult)done {
     NSError *nsError = nil;
+    // The app delegate's NSAssert on store creation is compiled out in Release, which leaves a nil store; messaging nil
+    // would report success for a write that went nowhere. Say so instead so the page shows "not saved".
+    if (!self.store && [cmd hasPrefix:@"store."]) { done(nil, @"Storage unavailable: nothing was saved"); return; }
     if ([cmd isEqualToString:@"store.get"]) {
         NSString *key = args[@"key"];
         if (![key isKindOfClass:NSString.class]) { done(nil, @"store.get: 'key' must be a string"); return; }
