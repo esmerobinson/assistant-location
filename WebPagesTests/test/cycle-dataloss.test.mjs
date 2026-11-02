@@ -252,8 +252,9 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await ready(page);
     await page.evaluate(() => { const l = CycleStore.list; CycleStore.list = () => { throw new Error('bad row'); }; window.__l = l; CycleStore.emit(); });
     await page.waitForSelector('.errscreen');
-    await page.evaluate(() => { CycleStore.list = window.__l; });
-    await page.click('.errscreen [data-a="gohome"]');
+    // Restore and tap in one step: a background emit (sync backoff) may re-render the healthy screen on its own between two separate steps,
+    // which is fine for the user but would leave a separate click with nothing to hit.
+    await page.evaluate(() => { CycleStore.list = window.__l; document.querySelector('.errscreen [data-a="gohome"]').click(); });
     await page.waitForSelector('.rows .row');
     await context.close();
   });

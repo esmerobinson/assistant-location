@@ -408,9 +408,13 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .p2 main > .hd + .seg{margin-top:10px}
 .p2 .hd + .card.in,.p2 main > .hd + .card.in{margin-top:21px}
 .pts main > .hd + .card.in{margin-top:14px}
+/* Progress has a one-line header, so its pink wedge ends lower than the Balance label would start; push the summary below it (pink-on-pink otherwise). */
+.p2 main > .hd + .sum{margin-top:30px}
 .nd .bub + .bub,.nd .bub.gone + .bub{margin-top:2px}
 .nd .rem.c + .rem.c{margin-top:2px}
 .rf .rcs{margin-top:10px;gap:10px}
+/* A long chip ("Hit herself, not related to <name>") wraps; let it grow instead of clipping two lines into a fixed-height pill. */
+.rf .rc{height:auto;min-height:30px;padding:6px 12px;line-height:1.25}
 
 /* Error screen (boot or a screen that cannot draw): no band, no tab bar, content centred in the safe area. Uses the p2 family for .save/.ghost. */
 .errscreen{justify-content:center;gap:16px;padding:var(--st) 24px var(--sb)}
