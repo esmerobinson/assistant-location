@@ -18,8 +18,9 @@ var ui = {
   route: 'home', stack: [], sheet: null, d: {}, err: null, errTimer: 0,
   dirty: false, ready: false, cyc: null,
   mode: 'create', code: null,
-  // todoSeg: the To-dos tab's segment ('todo' | 'rem'); remView: which Reminders list shows; frange: Fights chart range.
-  todoSeg: 'todo', remView: 'lib', frange: '8w',
+  // todoSeg: the To-dos tab's segment ('todo' | 'rem'); remView: which Reminders list shows; fz: the Fights chart's zoomed day range
+  // {a, b} (null = everything); fpick: the day whose tooltip shows; notesOpen: the fight id whose collapsed notes list is open.
+  todoSeg: 'todo', remView: 'lib', fz: null, fpick: null, notesOpen: null,
   ntier: 'esme', tip: false, nid: null, nedit: null, nfor: 'esme', sendId: null
 };
 // Minutes after submitting during which the author can still fix a to-do or a delivered ask, (the owner still sees Edited on the row).
@@ -519,7 +520,18 @@ function fightChips(mk) {
   return (hit ? '<span class="rc">' + esc(hit) + '</span>' : '') + (mk.repaired_at ? '<span class="rc d">Repaired</span>' : '') +
     (mk.delete_requested_at ? '<span class="rc">Delete requested</span>' : mk.delete_declined_at ? '<span class="rc">Delete declined</span>' : '');
 }
-// Intensity lives only on the logger's own phone (S.priv.fights), so the partner's fight never has one to show.
+// The viewer's own intensity for a fight: their fight_ratings row, else (a fight rated before ratings were shared and not yet
+// uploaded) the on-device record. null = I have not rated it.
+function myRating(mk) {
+  var r = S.rows.fight_ratings[mk.id + ':' + St.me()], rec = ownFight(mk);
+  return r ? r.intensity : rec ? rec.intensity : null;
+}
+// Writes my rating through the offline outbox; the chart counts it for both of us.
+function setRating(fightId, n) {
+  var me = St.me();
+  St.upsert('fight_ratings', { id: fightId + ':' + me, fight_marker_id: fightId, user_id: me, intensity: n, updated_at: nowIso() }, 'fight_marker_id,user_id');
+}
+// The logger's on-device record of the fight (its text and intensity predate shared ratings); the partner's fight has none.
 function ownFight(mk) { return mk.logged_by === St.me() ? S.priv.fights.filter(function (f) { return f.id === mk.id; })[0] : null; }
 // Edit window start for my own fight: the server's created_at once the marker has synced, else the moment I logged it
 // on this phone. A fight with neither (logged before the window existed) is not editable. The server enforces the same
@@ -530,19 +542,65 @@ function fightEditable(mk) {
   return !!start && C.inEditWindow(start, now(), EDIT_WINDOW_MIN);
 }
 function hmOf(ms) { return new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz() }); }
+// A person's analysis shown word for word: author, paragraphs, then chips that open the earlier fights it points at.
+function analysisCard(n) {
+  var del = n.author_id === St.me() ? ' <span class="lnk" data-a="notedel:' + n.id + '">Delete</span>' : '';
+  var links = (n.linked_fight_ids || []).map(function (id) { return S.rows.fight_markers[id]; }).filter(function (m) { return m && !m.deleted_at; })
+    .sort(function (x, y) { return C.ms(x.at) - C.ms(y.at); }).map(function (m) {
+      var d = C.localDay(C.ms(m.at), tz());
+      return '<span class="lk" data-a="openfight:' + m.id + '">Also ' + dayName(d) + ' ' + (+d.slice(8)) + ' ' + MON[+d.slice(5, 7) - 1] + ic('chevr', 'sm') + '</span>';
+    }).join('');
+  return '<div class="pcard"><p class="who">' + pnx(nameOf(n.author_id)) + del + '</p>' + n.body.split('\n').filter(function (l) { return l.trim(); }).map(function (l) { return '<p>' + esc(l) + '</p>'; }).join('') +
+    (links ? '<div class="chips">' + links + '</div>' : '') + '</div>';
+}
+// The story beats with each analysis card after the beat the summarizer placed it by; analysis it did not place (written since,
+// or deleted placement) goes after the last beat. Deleted analysis never shows.
+function beatsHtml(mk, notes) {
+  var an = {}; notes.filter(function (n) { return n.kind === 'analysis' && !n.deleted_at; }).forEach(function (n) { an[n.id] = n; });
+  var placed = {};
+  var out = mk.summary_beats.map(function (b) {
+    var cards = (b.after || []).filter(function (id) { return an[id]; }).map(function (id) { placed[id] = 1; return analysisCard(an[id]); }).join('');
+    return '<p class="bt"><b>' + esc(b.lead) + '.</b> ' + esc(b.text) + '</p>' + cards;
+  }).join('');
+  return out + Object.keys(an).filter(function (id) { return !placed[id]; }).map(function (id) { return analysisCard(an[id]); }).join('');
+}
+// Earlier fights an analysis can point at, newest first.
+function linkChoices(mk) {
+  return L('fight_markers').filter(function (m) { return m.id !== mk.id && C.ms(m.at) < C.ms(mk.at); }).sort(function (x, y) { return C.ms(y.at) - C.ms(x.at); });
+}
 SCREEN.fightdetail = function () {
   var mk = S.rows.fight_markers[ui.fightId];
   // An approved delete (possibly from the other phone while this page is open) takes the fight off every screen.
   if (!mk || mk.deleted_at) return bounce('fights');
-  var me = mk.logged_by === St.me(), notes = fightNotes(mk.id), mine = notes.some(function (n) { return n.author_id === St.me() && !n.deleted_at; });
+  var me = mk.logged_by === St.me(), notes = fightNotes(mk.id), mine = notes.some(function (n) { return n.author_id === St.me() && !n.deleted_at && n.kind !== 'analysis'; });
   var old = ownFight(mk);
   var oldNote = old && old.about ? '<div class="fn"><p class="meta">' + pnx(nameOf(mk.logged_by)) + ' &middot; ' + noteStamp(C.ms(mk.at)) + '</p><p>' + esc(old.about) + '</p></div>' : '';
   // A deleted note stays as a marker, so a reply under it never reads as answering nothing.
   var list = oldNote + notes.map(function (n) {
     var del = n.author_id === St.me() && !n.deleted_at ? ' <span class="lnk" data-a="notedel:' + n.id + '">Delete</span>' : '';
-    return '<div class="fn' + (n.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + ns('fight_notes', n.id).replace('<span', ' <span') + '</p><p>' + (n.deleted_at ? 'Deleted' : esc(n.body)) + '</p></div>' + (del ? '<p class="meta fna">' + del + '</p>' : '');
+    return '<div class="fn' + (n.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + (n.kind === 'analysis' && !n.deleted_at ? ' &middot; Analysis' : '') + ns('fight_notes', n.id).replace('<span', ' <span') + '</p><p>' + (n.deleted_at ? 'Deleted' : esc(n.body)) + '</p></div>' + (del ? '<p class="meta fna">' + del + '</p>' : '');
   }).join('');
   var chips = fightChips(mk), gap = C.fightGap({ me: St.me(), marker: mk, notes: notes.filter(function (n) { return !n.deleted_at; }) });
+  var hasBeats = !!(mk.summary_beats && mk.summary_beats.length), hidden = !!mk.summary_hidden_at;
+  var live = notes.filter(function (n) { return !n.deleted_at; }).length + (oldNote ? 1 : 0);
+  // The summary and its collapsed notes row; with no summary yet, or it hidden, the raw notes are the page.
+  var story = '';
+  if (hasBeats && !hidden) {
+    story = '<section><p class="lab" style="margin-bottom:12px">Summary <span class="lnk" data-a="sumhide">Hide</span></p>' + beatsHtml(mk, notes) + '</section>';
+  } else if (hasBeats) {
+    story = '<section><p class="lab">Summary <span class="lnk" data-a="sumshow">Show</span></p></section>';
+  }
+  var gapHtml = gap ? '<section class="fgap"><p class="lab">Missing</p><p>' + esc(gap) + '</p></section>' : '';
+  var collapsed = hasBeats && !hidden, open = ui.notesOpen === mk.id;
+  var notesHtml = !list ? '' : collapsed
+    ? '<div class="srow" data-a="notestoggle"><span>' + live + (live === 1 ? ' note' : ' notes') + '</span>' + ic('chevr', 'sm chv' + (open ? ' up' : '')) + '</div>' + (open ? '<section class="fns">' + list + '</section>' : '')
+    : '<section class="fns">' + list + '</section>';
+  var nkind = ui.d.fnkind === 'analysis' ? 'analysis' : 'note';
+  var picks = nkind === 'analysis' ? linkChoices(mk) : [];
+  var linkRow = picks.length ? '<p class="lab" style="margin-top:14px">Link earlier fights</p><div class="chips">' + picks.map(function (m) {
+    var d = C.localDay(C.ms(m.at), tz());
+    return '<span class="lk' + ((ui.d.nlinks || {})[m.id] ? ' on' : '') + '" data-a="nlink:' + m.id + '">' + dayName(d) + ' ' + (+d.slice(8)) + ' ' + MON[+d.slice(5, 7) - 1] + '</span>';
+  }).join('') + '</div>' : '';
   var sh = '';
   if (ui.sheet && ui.sheet.type === 'fightedit' && fightEditable(mk)) {
     sh = sheet('t3', '<div class="bsh"><h3>Edit</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Intensity</p><div class="arrows">' + intensityArrows(ui.d.int || 3) + '</div><div class="ends"><span>Low</span><span>High</span></div>' +
@@ -554,29 +612,58 @@ SCREEN.fightdetail = function () {
   var del = me && !mk.delete_requested_at ? '<div class="ghost" data-a="fightdelq">Delete</div>' : '';
   var edit = fightEditable(mk) ? '<span class="fight" data-a="fightedit">Edit</span>' : '';
   return phone('p2 fd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Fight</h2><p class="dl">' + noteStamp(C.ms(mk.at)) + '</p></div>' + edit + '</header>' +
-    (mk.summary ? '<section class="fsum"><p>' + esc(mk.summary) + '</p></section>' : '') +
-    (old ? intensityPicker(old.intensity, 'fightint') : '') +
+    intensityPicker(myRating(mk), 'fightint') +
     (chips ? '<section class="meta2"><div class="rcs">' + chips + '</div></section>' : '') +
-    (list ? '<section class="fns">' + list + '</section>' : '') +
-    (gap ? '<section class="fgap"><p class="lab">Missing</p><p>' + esc(gap) + '</p></section>' : '') +
-    '<section><p class="lab">' + (!me && !mine ? 'Add your version' : 'Add more') + '</p>' + micTa('more', 'nt') + whenRow('mw') + '</section>' +
+    story + gapHtml + notesHtml +
+    '<section><p class="lab">' + (!me && !mine ? 'Add your version' : 'Add more') + '</p>' + seg([['note', 'Note'], ['analysis', 'Analysis']], nkind, 'fnkind', 'ty') + micTa('more', 'nt') + linkRow + whenRow('mw') + '</section>' +
     '<div class="save" data-a="notesave">Save</div>' + pending + del, { sheet: sh });
 };
 
 // ---- Fights tab ---------------------------------------------------------------------------------------------
-// Fights per week as bars (the weekly pattern), then every fight either of us logged. Shared markers only: the
-// intensity bar of my own fights comes from the on-device record and the partner's never has one.
-var FRANGE = { '4w': 4, '8w': 8, '16w': 16 };
-function fightChart(weeks) {
-  var days = L('fight_markers').map(function (m) { return C.localDay(C.ms(m.at), tz()); });
-  var ws = C.weeklyFights(days, today(), weeks), max = Math.max.apply(null, ws.map(function (w) { return w.n; }).concat(1)), bw = 342 / ws.length, every = ws.length > 8 ? 4 : 1;
-  return '<svg class="fchart" viewBox="0 0 342 168" width="342" height="168" role="img" aria-label="Fights per week">' + ws.map(function (w, i) {
-    var h = w.n ? Math.max(6, Math.round(110 * w.n / max)) : 2, x = i * bw + bw * 0.18, bwid = bw * 0.64;
-    return '<rect class="' + (w.n ? 'b' : 'z') + '" x="' + x.toFixed(1) + '" y="' + (130 - h) + '" width="' + bwid.toFixed(1) + '" height="' + h + '" rx="3"/>' +
-      (w.n ? '<text class="n" x="' + (x + bwid / 2).toFixed(1) + '" y="' + (124 - h) + '" text-anchor="middle">' + w.n + '</text>' : '') +
-      (i % every === 0 ? '<text class="d" x="' + (x + bwid / 2).toFixed(1) + '" y="152" text-anchor="middle">' + fmtShort(w.start) + '</text>' : '');
-  }).join('') + '</svg>';
+// One dot per day that had fights, at the day's total intensity (each fight counts as my rating, else my partner's, else 1,
+// shown as Unrated), and a thick line for the 7-day average. Dragging 3+ days zooms in and filters the list to that range;
+// a shorter drag or a tap shows that day's tooltip. The chart never says whose rating a number is.
+var FW = 342, FCL = 26, FCR = 8, FT1 = 28, FPH = 124, FH = 186; // viewBox width, left/right margin, top, plot height, total height
+function fightDomain(totals) {
+  var first = Object.keys(totals).sort()[0], end = today(), start = first && first < C.addDays(end, -13) ? first : C.addDays(end, -13), out = [];
+  for (var d = start; d <= end; d = C.addDays(d, 1)) out.push(d);
+  return out;
 }
+// The days the chart is showing: the zoomed range, else the whole domain.
+function fightView(totals) {
+  var all = fightDomain(totals);
+  return ui.fz ? all.filter(function (d) { return d >= ui.fz.a && d <= ui.fz.b; }) : all;
+}
+function fightLabel(d) { return MON[+d.slice(5, 7) - 1] + ' ' + (+d.slice(8)); }
+// The SVG for `days` (oldest first), with the drag selection {a, b} (indexes into days) or the tapped day's tooltip drawn on top.
+function fightChartSvg(totals, days, drag, pick) {
+  var n = days.length, pw = FW - FCL - FCR, cw = pw / n, o = '', mx = 0, i, v;
+  var CX = function (k) { return FCL + (k + 0.5) * cw; };
+  var sum = function (d) { return totals[d] ? totals[d].sum : 0; };
+  days.forEach(function (d) { mx = Math.max(mx, sum(d), C.rollingAvg(totals, d)); });
+  var ax = C.niceAxis(mx), Y = function (x) { return FT1 + (ax.top - x) / ax.top * FPH; };
+  days.forEach(function (d, k) { if (C.dow(d) === 0) o += '<line class="wk" x1="' + CX(k) + '" x2="' + CX(k) + '" y1="' + (FT1 - 4) + '" y2="' + Y(0) + '"/>'; });
+  for (v = 0; v <= ax.top; v += ax.step) o += '<line class="' + ((v / ax.step) % 2 ? 'gd' : 'gl') + '" x1="' + FCL + '" x2="' + (FW - FCR) + '" y1="' + Y(v) + '" y2="' + Y(v) + '"/><text class="ax" x="' + (FCL - 6) + '" y="' + (Y(v) + 4) + '" text-anchor="end">' + v + '</text>';
+  var pts = []; days.forEach(function (d, k) { if (sum(d) > 0) pts.push(k); });
+  // A thin dashed line joins the days that have fights; days without get no mark, so the baseline stays clean.
+  pts.slice(1).forEach(function (k2, j) { var k1 = pts[j]; o += '<line class="ln" x1="' + CX(k1) + '" y1="' + Y(sum(days[k1])) + '" x2="' + CX(k2) + '" y2="' + Y(sum(days[k2])) + '" stroke-dasharray="2 3" opacity=".6"/>'; });
+  var r = Math.max(2, Math.min(4.6, cw * 0.42));
+  pts.forEach(function (k) { o += '<circle class="dot c" cx="' + CX(k) + '" cy="' + Y(sum(days[k])) + '" r="' + r + '"/>'; });
+  o += '<path class="avg" d="' + days.map(function (d, k) { return (k ? 'L' : 'M') + CX(k) + ' ' + Y(C.rollingAvg(totals, d)); }).join('') + '"/>';
+  var step = n <= 10 ? 2 : n <= 16 ? 3 : n <= 35 ? 7 : 14;
+  for (i = 0; i < n; i += step) o += '<text class="ax" x="' + CX(i) + '" y="' + (Y(0) + 26) + '" text-anchor="' + (i === 0 ? 'start' : 'middle') + '" dx="' + (i === 0 ? -4 : 0) + '">' + fightLabel(days[i]) + '</text>';
+  if (drag) {
+    var lo = Math.min(drag.a, drag.b), hi = Math.max(drag.a, drag.b), t = fightLabel(days[lo]) + ' \u2192 ' + fightLabel(days[hi]) + ' \u00b7 ' + (hi - lo + 1) + 'd';
+    var w = 16 + t.length * 6.3, x = Math.max(2, Math.min(FCL + (lo + hi + 1) / 2 * cw - w / 2, FW - w - 2));
+    o += '<rect class="sel" x="' + (FCL + lo * cw) + '" y="' + FT1 + '" width="' + ((hi - lo + 1) * cw) + '" height="' + (Y(0) - FT1 + 2) + '"/><rect class="chip" x="' + x + '" y="2" width="' + w + '" height="22" rx="6"/><text class="chipt" x="' + (x + w / 2) + '" y="17" text-anchor="middle">' + t + '</text>';
+  } else if (pick != null && days[pick]) {
+    var td = totals[days[pick]], tx = fightLabel(days[pick]) + (td ? ' \u00b7 ' + td.n + (td.n > 1 ? ' fights' : ' fight') + ' \u00b7 Total ' + td.sum + (td.unrated ? (td.unrated === td.n ? ' \u00b7 Unrated' : ' \u00b7 ' + td.unrated + ' unrated') : '') : ' \u00b7 No fights');
+    var w2 = 16 + tx.length * 6.3, x2 = Math.max(2, Math.min(FCL + (pick + 0.5) * cw - w2 / 2, FW - w2 - 2));
+    o += '<rect class="tip" x="' + x2 + '" y="2" width="' + w2 + '" height="22" rx="6"/><text class="tipt" x="' + (x2 + w2 / 2) + '" y="17" text-anchor="middle">' + tx + '</text>';
+  }
+  return '<svg class="zoomchart" viewBox="0 0 ' + FW + ' ' + FH + '" role="img" aria-label="Daily fight intensity total and 7-day average">' + o + '</svg>';
+}
+function fightTotals() { return C.dailyTotals(L('fight_markers'), St.me(), L('fight_ratings'), tz()); }
 // The partner's member row, or null while the couple has only one member.
 function partnerMember() { return S.members.filter(function (x) { return x.user_id !== St.me(); })[0] || null; }
 // Per-viewer action chips: to-dos and "Add your side" ask for action (.rc.a), "Waiting" is passive.
@@ -596,11 +683,48 @@ function fightRow(mk) {
     (text ? '<p class="sm">' + esc(text) + '</p>' : '') + (chips ? '<div class="rcs">' + chips + '</div>' : '') + '</div>';
 }
 SCREEN.fights = function () {
-  var all = L('fight_markers').slice().sort(function (a, b) { return C.ms(b.at) - C.ms(a.at); });
+  var all = L('fight_markers').slice().sort(function (a, b) { return C.ms(b.at) - C.ms(a.at); }), totals = fightTotals(), days = fightView(totals);
+  var shown = ui.fz ? all.filter(function (m) { var d = C.localDay(C.ms(m.at), tz()); return d >= ui.fz.a && d <= ui.fz.b; }) : all;
+  var pick = ui.fpick ? days.indexOf(ui.fpick) : -1;
   return phone('p2 fl', '<header class="hd"><div><h2>Fights</h2><p class="dl">' + all.length + '</p></div><span class="plus" data-a="go:fight" role="button" aria-label="Log fight">' + ic('plus') + '</span></header>' +
-    seg([['4w', '4w'], ['8w', '8w'], ['16w', '16w']], ui.frange, 'frange') + '<section class="fchw">' + fightChart(FRANGE[ui.frange]) + '</section>' +
-    (all.length ? '<section><div class="list">' + all.map(fightRow).join('') + '</div></section>' : '<p class="empty">None</p>'));
+    '<div class="zrow"' + (ui.fz ? '' : ' style="display:none"') + '>' + (ui.fz ? '<span class="zc" data-a="fzreset">' + fightLabel(ui.fz.a) + ' &ndash; ' + fightLabel(ui.fz.b) + ' &#x2715;</span>' : '') + '</div>' +
+    '<section class="cv fcv">' + fightChartSvg(totals, days, null, pick < 0 ? null : pick) + '</section>' +
+    '<div class="leg"><span><i class="f1"></i>Daily total</span><span><i class="av"></i>7-day avg</span></div>' +
+    (shown.length ? '<section><div class="list">' + shown.map(fightRow).join('') + '</div></section>' : '<p class="empty">None</p>'));
 };
+// Drag on the chart: the selection redraws only the SVG (a full render would drop the pointer capture); letting go commits it.
+(function () {
+  var drag = null;
+  function idx(e, host, n) {
+    var r = host.querySelector('svg').getBoundingClientRect(), vx = (e.clientX - r.left) / r.width * FW;
+    return Math.max(0, Math.min(n - 1, Math.floor((vx - FCL) / (FW - FCL - FCR) * n)));
+  }
+  function ctx(e) { var host = e.target.closest && e.target.closest('.fcv'); if (!host || !host.querySelector('svg')) return null; var t = fightTotals(), days = fightView(t); return { host: host, t: t, days: days, n: days.length }; }
+  app.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    var c = ctx(e); if (!c) return;
+    c.host.setPointerCapture(e.pointerId);
+    var i = idx(e, c.host, c.n); drag = { a: i, b: i, moved: false }; ui.fpick = null;
+    c.host.innerHTML = fightChartSvg(c.t, c.days, drag, null);
+  });
+  app.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    var c = ctx(e); if (!c) return;
+    var i = idx(e, c.host, c.n); if (i === drag.b) return;
+    if (i !== drag.a) drag.moved = true; drag.b = i;
+    c.host.innerHTML = fightChartSvg(c.t, c.days, drag, null);
+  });
+  app.addEventListener('pointerup', function (e) {
+    if (!drag) return;
+    var c = ctx(e), d = drag; drag = null; if (!c) return;
+    var lo = Math.min(d.a, d.b), hi = Math.max(d.a, d.b);
+    // 3+ days zooms; anything shorter is a tap on a day and shows its tooltip.
+    if (d.moved && hi - lo >= 2) { ui.fz = { a: c.days[lo], b: c.days[hi] }; ui.fpick = null; }
+    else ui.fpick = c.days[idx(e, c.host, c.n)];
+    render();
+  });
+  app.addEventListener('pointercancel', function () { if (drag) { drag = null; render(); } });
+})();
 
 // ---- Progress tab: points, the shop, challenges and the calm streak ------------------------------------------------
 SCREEN.progress = function () {
@@ -1331,7 +1455,8 @@ function logFight() {
   St.insert('fight_markers', marker);
   if (noteRow) St.insert('fight_notes', noteRow);
   asks.forEach(sendBuilt);
-  // Intensity is the only part that stays on this phone.
+  // The text of my own log stays on this phone; the intensity is also shared as my rating (after the marker in the outbox).
+  setRating(id, d.int || 3);
   S.priv.fights.push({ id: id, at: at, logged_at: Date.now(), intensity: d.int || 3 });
   St.savePriv();
   draftSent();
@@ -1343,8 +1468,14 @@ function saveNote() {
   // Intensity saves on tap, so Save with no note has nothing left to do.
   if (!body) return ACT.back();
   if (!S.rows.fight_markers[ui.fightId]) throw new Error('Fight is gone');
-  St.insert('fight_notes', { id: St.uuid(), couple_id: S.couple.id, fight_marker_id: ui.fightId, author_id: St.me(), body: body, created_at: new Date(whenMs('mw')).toISOString() });
-  draftSent(); ui.d.more = ''; delete ui.d.mwD; delete ui.d.mwT; render();
+  var row = { id: St.uuid(), couple_id: S.couple.id, fight_marker_id: ui.fightId, author_id: St.me(), body: body, created_at: new Date(whenMs('mw')).toISOString() };
+  // An analysis is the author's own reading, shown word for word; only an analysis can point at earlier fights.
+  if (ui.d.fnkind === 'analysis') {
+    row.kind = 'analysis';
+    row.linked_fight_ids = Object.keys(ui.d.nlinks || {}).filter(function (id) { return ui.d.nlinks[id] && S.rows.fight_markers[id]; });
+  }
+  St.insert('fight_notes', row);
+  draftSent(); ui.d.more = ''; ui.d.fnkind = 'note'; ui.d.nlinks = {}; delete ui.d.mwD; delete ui.d.mwT; render();
 }
 
 var ACT = {
@@ -1397,7 +1528,7 @@ var ACT = {
   codedone: function () { ui.code = null; ui.copied = false; ui.d = {}; render(); },
   todoseg: function (v) { ui.todoSeg = v; render(); },
   remview: function (v) { ui.remView = v; render(); },
-  frange: function (v) { ui.frange = v; render(); },
+  fzreset: function () { ui.fz = null; ui.fpick = null; render(); },
   doneall: function () { ui.doneAll = !ui.doneAll; render(); },
   decline: guard(function (id) { St.patch('redemptions', id, { status: 'declined', decided_by: St.me(), decided_at: nowIso() }); }),
   approve: guard(function (id) {
@@ -1445,9 +1576,9 @@ var ACT = {
   fightedit: guard(function () {
     var mk = S.rows.fight_markers[ui.fightId];
     if (!mk || !fightEditable(mk)) throw new Error('Edit window closed');
-    var rec = ownFight(mk), at = C.ms(mk.at);
+    var at = C.ms(mk.at);
     ui.sheet = { type: 'fightedit' };
-    ui.d = { int: rec ? rec.intensity : 3, hit: mk.hit_self === true ? 'yes' : mk.hit_self === false ? 'no' : null, hitN: mk.hit_count || 1, hitNot: mk.hit_related === false,
+    ui.d = { int: myRating(mk) || 3, hit: mk.hit_self === true ? 'yes' : mk.hit_self === false ? 'no' : null, hitN: mk.hit_count || 1, hitNot: mk.hit_related === false,
       ewD: C.localDay(at, tz()), ewT: hmOf(at) };
     render();
   }),
@@ -1458,10 +1589,11 @@ var ACT = {
     var at = whenMs('ew'), f = { hit_self: ynVal(d.hit), hit_related: d.hit === 'yes' && d.hitNot ? false : null, hit_count: d.hit === 'yes' ? d.hitN || 1 : null }, ch = {};
     Object.keys(f).forEach(function (k) { if ((mk[k] == null ? null : mk[k]) !== f[k]) ch[k] = f[k]; });
     if (at !== C.ms(mk.at)) ch.at = new Date(at).toISOString();
-    // Shared marker fields only: intensity is private and never leaves this phone, so it is written to S.priv, not the patch.
+    // The marker patch carries only the marker's own fields; intensity goes through my fight_ratings row.
     if (Object.keys(ch).length) St.patch('fight_markers', mk.id, ch);
     var rec = ownFight(mk);
     if (rec) { rec.intensity = d.int || 3; rec.at = at; St.savePriv(); }
+    setRating(mk.id, d.int || 3);
     draftSent(); ui.sheet = null; ui.d = {}; render();
   }),
   fightdelq: function () { ui.sheet = { type: 'fightdel' }; render(); },
@@ -1606,7 +1738,18 @@ var ACT = {
     if (k === 'done') todoDone(t, document.querySelector('[data-todo="' + t.id + '"] .om'), note); else todoTally(t, document.querySelector('[data-todo="' + t.id + '"] .p1b'), note);
   }),
   int: function (n) { ui.d.int = +n; render(); },
-  fightint: function (n) { ownFight(S.rows.fight_markers[ui.fightId]).intensity = +n; St.savePriv(); render(); },
+  // Intensity is shared now: both of us can rate, each only our own. The on-device copy is kept in step for my own fights.
+  fightint: function (n) {
+    var mk = S.rows.fight_markers[ui.fightId], rec = ownFight(mk);
+    if (rec) { rec.intensity = +n; St.savePriv(); }
+    setRating(mk.id, +n); render();
+  },
+  fnkind: function (v) { ui.d.fnkind = v; render(); },
+  nlink: function (id) { ui.d.nlinks = ui.d.nlinks || {}; ui.d.nlinks[id] = !ui.d.nlinks[id]; render(); },
+  notestoggle: function () { ui.notesOpen = ui.notesOpen === ui.fightId ? null : ui.fightId; render(); },
+  // Either of us can hide the summary for both; the raw notes then show. The server stamps who did it.
+  sumhide: guard(function () { St.patch('fight_markers', ui.fightId, { summary_hidden_at: nowIso() }); render(); }),
+  sumshow: guard(function () { St.patch('fight_markers', ui.fightId, { summary_hidden_at: null }); render(); }),
   yn: function (a) { var p = a.split(':'), k = p[0], v = p[1]; ui.d[k] = ui.d[k] === v ? null : v; render(); },
   // Steps .5, 1, 2, 3...; .5 is a light hit.
   hitn: function (a) { var n = ui.d.hitN || 1; ui.d.hitN = n === 0.5 ? (+a > 0 ? 1 : 0.5) : n === 1 && +a < 0 ? 0.5 : n + +a; render(); },

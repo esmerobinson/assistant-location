@@ -735,11 +735,33 @@ test('calmStats: streak ends yesterday, best is the longest run, last28 counts c
   assert.deepEqual(C.calmStats([], '2026-10-10', '2026-10-10'), { streak: 0, best: 0, last28: 0 }, 'couple created today');
 });
 
-test('weeklyFights: oldest week first, ends on the current week, drops fights outside the range', () => {
-  const w = C.weeklyFights(['2026-10-26', '2026-10-27', '2026-10-19', '2026-01-01'], '2026-10-29', 3);
-  assert.equal(w.length, 3);
-  assert.deepEqual(w.map((x) => x.n), [0, 1, 2]);
-  assert.equal(w[2].start, '2026-10-26');
+// ---- fights chart value: my rating, else my partner's, else unrated (counts 1) ----
+const R = (f, u, n) => ({ fight_marker_id: f, user_id: u, intensity: n });
+test('chartValue: own rating beats the partner\'s, the partner\'s beats unrated', () => {
+  assert.deepEqual(C.chartValue('f', 'me', [R('f', 'her', 5), R('f', 'me', 2)]), { value: 2, unrated: false });
+  assert.deepEqual(C.chartValue('f', 'me', [R('f', 'her', 5)]), { value: 5, unrated: false });
+  assert.deepEqual(C.chartValue('f', 'me', [R('g', 'me', 4)]), { value: 1, unrated: true }, 'a rating of another fight does not count');
+});
+
+test('dailyTotals: sums chart values per local day, counts unrated, omits empty days', () => {
+  const at = (iso) => new Date(iso).toISOString();
+  const fights = [{ id: 'a', at: at('2026-11-01T15:00:00Z') }, { id: 'b', at: at('2026-11-01T20:00:00Z') }, { id: 'c', at: at('2026-11-03T15:00:00Z') }];
+  const t = C.dailyTotals(fights, 'me', [R('a', 'me', 3), R('b', 'her', 4)], 'America/New_York');
+  assert.deepEqual(t, { '2026-11-01': { sum: 7, n: 2, unrated: 0 }, '2026-11-03': { sum: 1, n: 1, unrated: 1 } });
+});
+
+test('rollingAvg: 7 days ending on the day, zero days included', () => {
+  const t = { '2026-11-01': { sum: 7 }, '2026-11-03': { sum: 7 } };
+  assert.equal(C.rollingAvg(t, '2026-11-03'), 2);
+  assert.equal(C.rollingAvg(t, '2026-11-08'), 1, 'the 1st has aged out of the window');
+});
+
+test('niceAxis: starts at 0 with clean steps and a top that covers the max', () => {
+  assert.deepEqual(C.niceAxis(0), { step: 1, top: 1 });
+  assert.deepEqual(C.niceAxis(5), { step: 1, top: 5 });
+  assert.deepEqual(C.niceAxis(9), { step: 2, top: 10 });
+  assert.deepEqual(C.niceAxis(13), { step: 5, top: 15 });
+  assert.deepEqual(C.niceAxis(41), { step: 10, top: 50 });
 });
 
 test('inEditWindow: open for the window after creation, shut at and after it', () => {

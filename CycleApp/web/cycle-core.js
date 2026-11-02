@@ -442,13 +442,40 @@ var CycleCore = (function () {
     }
     return { streak: run, best: best, last28: last28 };
   }
-  // Fights per week for `weeks` weeks ending with the week of `today`: [{start, n}] oldest first.
-  function weeklyFights(days, today, weeks) {
-    var first = addDays(weekStart(today), -7 * (weeks - 1)), out = [];
-    for (var i = 0; i < weeks; i++) out.push({ start: addDays(first, 7 * i), n: 0 });
-    days.forEach(function (d) { var k = Math.floor(dayDiff(first, d) / 7); if (k >= 0 && k < weeks) out[k].n++; });
+  // ---- fights chart: one number per fight, summed per day --------------------------------------------------------
+  // What a fight counts as on the chart: my rating, else my partner's, else 1 and flagged unrated (a fight still has to
+  // show, and 1 is the floor of the scale). ratings: [{fight_marker_id, user_id, intensity}]. The chart never shows whose.
+  function chartValue(fightId, me, ratings) {
+    var mine = null, theirs = null;
+    ratings.forEach(function (r) {
+      if (r.fight_marker_id !== fightId) return;
+      if (r.user_id === me) mine = r.intensity; else theirs = r.intensity;
+    });
+    if (mine != null) return { value: mine, unrated: false };
+    if (theirs != null) return { value: theirs, unrated: false };
+    return { value: 1, unrated: true };
+  }
+  // Per local day: {sum, n, unrated} over the live fights. Days with no fight are absent (they plot as no dot, 0 in the average).
+  function dailyTotals(fights, me, ratings, tz) {
+    var out = {};
+    fights.forEach(function (f) {
+      var d = localDay(ms(f.at), tz), v = chartValue(f.id, me, ratings), t = out[d] || (out[d] = { sum: 0, n: 0, unrated: 0 });
+      t.sum += v.value; t.n++; if (v.unrated) t.unrated++;
+    });
     return out;
   }
+  // Mean of the daily sums over the 7 days ending on `day`, zero days included.
+  function rollingAvg(totals, day) {
+    var t = 0;
+    for (var k = 0; k < 7; k++) { var x = totals[addDays(day, -k)]; if (x) t += x.sum; }
+    return t / 7;
+  }
+  // y-axis step and top for a max value: clean ticks starting at 0.
+  function niceAxis(max) {
+    var m = Math.max(max, 1), st = m <= 6 ? 1 : m <= 12 ? 2 : m <= 30 ? 5 : 10;
+    return { step: st, top: Math.ceil(m / st) * st };
+  }
+
   // May the author still change something they just submitted? True for `windowMin` minutes after `createdAtMs`.
   function inEditWindow(createdAtMs, nowMs, windowMin) { return nowMs - createdAtMs < windowMin * MIN; }
 
@@ -512,7 +539,8 @@ var CycleCore = (function () {
   function fightGap(o) {
     var m = o.marker, g = m.gaps && typeof m.gaps === 'object' ? m.gaps[o.me] : '';
     if (typeof g !== 'string' || !g || m.repaired_at || m.deleted_at) return '';
-    var mine = o.notes.filter(function (n) { return n.fight_marker_id === m.id && n.author_id === o.me; });
+    // An analysis is interpretation, not an account, so only plain notes count as having written.
+    var mine = o.notes.filter(function (n) { return n.fight_marker_id === m.id && n.author_id === o.me && n.kind !== 'analysis'; });
     if (!mine.length) return g;
     if (!m.summary_notes_at) return '';
     var newest = Math.max.apply(null, mine.map(function (n) { return Date.parse(n.updated_at || n.created_at); }));
@@ -523,7 +551,7 @@ var CycleCore = (function () {
   // -> [{kind: 'add'} | {kind: 'details'} | {kind: 'todo', id, title} | {kind: 'wait', name}]. Held asks have no todo yet, so they never show.
   function fightActions(o) {
     var out = [], open = function (t) { return t.fight_marker_id === o.marker.id && !t.done_at && !t.deleted_at; };
-    var wrote = function (uid) { return o.notes.some(function (n) { return n.fight_marker_id === o.marker.id && n.author_id === uid; }); };
+    var wrote = function (uid) { return o.notes.some(function (n) { return n.fight_marker_id === o.marker.id && n.author_id === uid && n.kind !== 'analysis'; }); };
     var repaired = !!o.marker.repaired_at;
     if (!repaired && !wrote(o.me)) out.push({ kind: 'add' });
     else if (wrote(o.me) && fightGap(o)) out.push({ kind: 'details' });
@@ -550,7 +578,7 @@ var CycleCore = (function () {
     zonedMs: zonedMs, deliverAt: deliverAt, issueHeldUntil: issueHeldUntil, sectionNudges: sectionNudges,
     addMonths: addMonths, splitPayout: splitPayout, awardStatus: awardStatus,
     earnPts: earnPts, missPts: missPts, periodOf: periodOf, habitCount: habitCount, habitMisses: habitMisses, requireNote: requireNote, isEdited: isEdited,
-    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, needsYou: needsYou, calmStats: calmStats, weeklyFights: weeklyFights, inEditWindow: inEditWindow, monthGrid: monthGrid, fightActions: fightActions, fightGap: fightGap,
+    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, needsYou: needsYou, calmStats: calmStats, inEditWindow: inEditWindow, monthGrid: monthGrid, chartValue: chartValue, dailyTotals: dailyTotals, rollingAvg: rollingAvg, niceAxis: niceAxis, fightActions: fightActions, fightGap: fightGap,
     // Only a still-held item may offer Send / Edit / Drop; a stale notification can point at a delivered or dropped one.
     isStillHeld: function (i) { return !!i && i.status === 'held' && !i.deleted_at; }
   };

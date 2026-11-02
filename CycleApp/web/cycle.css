@@ -388,13 +388,34 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 /* Home: momentum row, add rows */
 .nc.mom .x{font-family:"Archivo Black",sans-serif}
 /* Fights tab: weekly bars and the full list */
-.fchw{padding:6px 0 10px}
-.fchart{width:100%;height:auto;display:block}
-.fchart .b{fill:var(--pk)}
-.fchart .z{fill:#2a2a2a}
-.fchart text{font-family:"Space Grotesk",sans-serif;font-weight:700}
-.fchart .n{fill:#fff;font-size:13px}
-.fchart .d{fill:#bdbdbd;font-size:11px}
+/* Fights chart (daily total dots + 7-day average), story beats and analysis cards. touch-action:pan-y lets a vertical swipe
+   scroll the page while a horizontal drag on the chart selects a range. */
+.zrow{display:flex;min-height:44px;flex:none}
+.zrow[style*="none"]{min-height:0}
+.zc{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 14px 0 16px;border-radius:22px;border:2px solid #fff;font-weight:700;font-size:14px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
+svg.zoomchart{display:block;width:100%;height:auto;touch-action:pan-y;user-select:none;-webkit-user-select:none;cursor:crosshair;overflow:visible}
+.zoomchart .sel{fill:var(--pk);opacity:.18}
+.zoomchart .chip{fill:var(--pk)}.zoomchart .chipt{fill:#0a0a0a;font:700 12px "Space Grotesk",sans-serif}
+.zoomchart .tip{fill:#fff}.zoomchart .tipt{fill:#0a0a0a;font:700 12px "Space Grotesk",sans-serif}
+.zoomchart .gl{stroke:#2a2a2a}.zoomchart .gd{stroke:#2a2a2a;stroke-dasharray:2 4}.zoomchart .wk{stroke:#2a2a2a;stroke-dasharray:1 5}
+.zoomchart .ax{fill:var(--mu);font:700 11px "Space Grotesk",sans-serif}
+.zoomchart .dot{fill:#0a0a0a;stroke:#bdbdbd;stroke-width:1.4}.zoomchart .dot.c{stroke:var(--pk);stroke-width:2}
+.zoomchart .ln{stroke:#8a8a8a;stroke-width:1.2;fill:none}
+.zoomchart .avg{stroke:#fff;stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
+.leg{display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0 12px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--mu)}
+.leg i{display:inline-block;vertical-align:middle;margin-right:6px}
+.leg .av{width:18px;height:3px;background:#fff;border-radius:2px}
+.leg .f1{width:8px;height:8px;border-radius:50%;border:2px solid var(--pk)}
+.bt{font-size:17px;line-height:1.45;font-weight:500;margin:0 0 16px}
+.bt b{color:var(--pk);font-weight:700}
+.pcard{border:2px solid #3a3a3a;border-left:4px solid var(--pk);border-radius:14px;padding:12px 14px;margin:-4px 0 18px}
+.pcard .who{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mu);margin:0 0 6px}
+.pcard p:not(.who){font-size:16px;line-height:1.4;font-weight:500;margin:0 0 8px}.pcard p:last-child{margin-bottom:0}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.lk{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border:2px solid var(--pk);border-radius:17px;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--pk);cursor:pointer}
+.lk.on{background:var(--pk);color:#0a0a0a}
+.lk .ic{width:14px;height:14px;stroke-width:2.6}
+.chv.up{transform:rotate(-90deg)}
 /* Voice textarea: the mic sits in the corner of the box */
 .micta{position:relative}
 .micta textarea{padding-right:52px}

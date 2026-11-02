@@ -143,7 +143,7 @@ const SCENARIOS = [
   ['todo-new-later', ['tab:todo', 'addpick', 'newtodo:task', 'nwhen:later']], ['todo-new-later-me', ['tab:todo', 'addpick', 'newtodo:task', 'nfor:me', 'nwhen:later']],
   ['ownup-new', ['tab:todo', 'addpick', 'newtodo:ownup']], ['ownup-new-later', ['tab:todo', 'addpick', 'newtodo:ownup', 'nwhen:later']], ['ownup-edit', ['tab:todo', 'etodo:t-ownup-open']],
   ['ownup-note', ['tab:todo', 'done:t-ownup-open']], ['ownup-detail-hers', ['tview:t-ownup-done']],
-  ['fights', ['tab:fights']], ['fights-16w', ['tab:fights', 'frange:16w']], ['progress', ['tab:progress']], ['dropped', ['go:more', 'go:dropped']],
+  ['fights', ['tab:fights']], ['progress', ['tab:progress']], ['dropped', ['go:more', 'go:dropped']],
   ['todo-done-all', ['tab:todo', 'doneall']], ['rem-sent', ['tab:todo', 'todoseg:rem', 'remview:sent']], ['rem-recv', ['tab:todo', 'todoseg:rem', 'remview:recv']],
   ['rem-arch', ['tab:todo', 'todoseg:rem', 'remview:arch']], ['shop-edit', ['go:points', 'go:shop', 'shopedit']], ['shop-edit-sheet', ['go:points', 'go:shop', 'shopedit', 'reward:r1']],
   ['issues', ['go:issues']], ['issue-still', ['go:issues', 'still:i-iss-held']], ['issue-still-ready', ['go:issues', 'still:i-iss-ready']],

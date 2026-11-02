@@ -71,11 +71,11 @@ var CycleStore = (function () {
   };
 
   // ---- state ---------------------------------------------------------------
-  var SHARED = ['items', 'todos', 'todo_events', 'fight_markers', 'rewards', 'redemptions', 'nudges', 'nudge_sends', 'nudge_replies', 'nudge_awards', 'fight_notes', 'challenges', 'challenge_breaks', 'challenge_days', 'todo_comments', 'todo_nudges', 'challenge_nudges'];
+  var SHARED = ['items', 'todos', 'todo_events', 'fight_markers', 'rewards', 'redemptions', 'nudges', 'nudge_sends', 'nudge_replies', 'nudge_awards', 'fight_notes', 'challenges', 'challenge_breaks', 'challenge_days', 'todo_comments', 'todo_nudges', 'challenge_nudges', 'fight_ratings'];
   // Pull strategy per table: cursor column, or null = re-pull everything each sync.
   // nudge_sends MUST be re-pulled whole: the recipient's RLS hides a send until deliver_at, and when it
   // becomes visible its updated_at is old (it was stamped at insert), so an updated_at cursor would skip it forever.
-  var CURSOR = { items: 'updated_at', todos: 'updated_at', rewards: 'updated_at', redemptions: 'updated_at', todo_events: 'updated_at', fight_markers: null, nudges: 'updated_at', nudge_sends: null, nudge_replies: 'updated_at', nudge_awards: 'updated_at', fight_notes: 'updated_at', challenges: 'updated_at', challenge_breaks: 'updated_at', challenge_days: 'updated_at', todo_comments: 'updated_at', todo_nudges: 'updated_at', challenge_nudges: 'updated_at' };
+  var CURSOR = { items: 'updated_at', todos: 'updated_at', rewards: 'updated_at', redemptions: 'updated_at', todo_events: 'updated_at', fight_markers: null, nudges: 'updated_at', nudge_sends: null, nudge_replies: 'updated_at', nudge_awards: 'updated_at', fight_notes: 'updated_at', challenges: 'updated_at', challenge_breaks: 'updated_at', challenge_days: 'updated_at', todo_comments: 'updated_at', todo_nudges: 'updated_at', challenge_nudges: 'updated_at', fight_ratings: 'updated_at' };
   // Sort column for tables with no cursor (the default is `at`).
   var ORDER = { nudge_sends: 'created_at' };
   var S = { session: null, couple: null, members: [], rows: {}, cursors: {}, outbox: [], priv: null, syncError: null, syncing: false,
@@ -278,7 +278,7 @@ var CycleStore = (function () {
       page.forEach(function (row) {
         var pend = S.outbox.filter(function (o) { return o.table === t && o.id === row.id; });
         // A local edit not yet pushed wins over the server copy (last write wins).
-        pend.forEach(function (o) { if (o.op === 'patch') for (var k in o.patch) row[k] = o.patch[k]; });
+        pend.forEach(function (o) { if (o.op === 'patch') for (var k in o.patch) row[k] = o.patch[k]; else if (o.op === 'upsert') Object.assign(row, o.row); });
         S.rows[t][row.id] = row; seen[row.id] = true;
         if (cur && (!max || row[cur] > max)) max = row[cur];
       });
@@ -312,7 +312,12 @@ var CycleStore = (function () {
   }
   // Sends one outbox entry; returns normally only when the server confirmed it. Throws otherwise (see push for the classes).
   async function sendEntry(o) {
-    if (o.op === 'insert') {
+    if (o.op === 'upsert') {
+      // fight_ratings: one row per (fight, person), so a re-rating must merge into the existing row rather than 409.
+      // Only the writable columns go out: id is generated on the server and updated_at is stamped there (neither is grantable).
+      var u = await apiRaw('POST', o.table + '?on_conflict=' + o.conflict, { fight_marker_id: o.row.fight_marker_id, user_id: o.row.user_id, intensity: o.row.intensity }, { Prefer: 'resolution=merge-duplicates,return=minimal' });
+      if (u.status !== 201 && u.status !== 200 && u.status !== 204) { var e5 = new Error('Unexpected reply (' + u.status + ') from ' + o.table); e5.status = u.status; e5.badReply = true; throw e5; }
+    } else if (o.op === 'insert') {
       try {
         var r = await apiRaw('POST', o.table, o.row, { Prefer: 'return=minimal' });
         if (r.status !== 201) { var e = new Error('Unexpected reply (' + r.status + ') from ' + o.table); e.status = r.status; e.badReply = true; throw e; }
@@ -366,7 +371,7 @@ var CycleStore = (function () {
     try {
       var pushErr = null, pullErr = null;
       try { if (S.couple) await push(); } catch (e) { pushErr = e; }
-      try { await pull(); } catch (e) { pullErr = e; }
+      try { await pull(); uploadOwnRatings(); } catch (e) { pullErr = e; }
       var err = pushErr || pullErr;
       // Only fetch's own network failure is "offline"; a TypeError from our code is a bug and shows.
       if (!err || err.offline) { S.syncError = null; S.syncErrorStatus = null; }
@@ -376,6 +381,20 @@ var CycleStore = (function () {
       if (S.couple) registerPush();
       if (syncAgain) { syncAgain = false; scheduleSync(); }
     }
+  }
+  // One-time: the intensities this phone kept in S.priv.fights (before ratings were shared) become fight_ratings rows, so the
+  // partner's chart can use them. Runs after a pull so only fights the server knows are sent; `ratingsUploaded` makes it never repeat.
+  function uploadOwnRatings() {
+    if (!S.couple || !S.priv || S.priv.ratingsUploaded) return;
+    var me = S.session.user.id;
+    S.priv.fights.forEach(function (f) {
+      var mk = S.rows.fight_markers[f.id];
+      if (!mk || mk.logged_by !== me || !(f.intensity >= 1 && f.intensity <= 5)) return;
+      var id = f.id + ':' + me;
+      if (S.rows.fight_ratings[id]) return; // already rated on the server (or on another phone): that value stands
+      upsert('fight_ratings', { id: id, fight_marker_id: f.id, user_id: me, intensity: f.intensity, updated_at: nowIso() }, 'fight_marker_id,user_id');
+    });
+    S.priv.ratingsUploaded = true; persist();
   }
   // Ends any backoff so the next push tries now: called on foreground and on every local write.
   function retryPush() { S.pushNextAt = 0; }
@@ -407,6 +426,17 @@ var CycleStore = (function () {
   function insert(t, row) {
     S.rows[t][row.id] = row;
     S.outbox.push({ op: 'insert', table: t, id: row.id, row: Object.assign({}, row) });
+    retryPush();
+    persist(); emit(); scheduleSync(); reschedule();
+    return row;
+  }
+  // Insert-or-replace for a table keyed by more than id (fight_ratings: fight + person). A still-unsent upsert of the same row
+  // is replaced, so tapping 3 then 4 sends one write. `row.id` must be the derived text id the server also exposes.
+  function upsert(t, row, conflict) {
+    S.rows[t][row.id] = row;
+    var last = S.outbox.filter(function (o) { return o.table === t && o.id === row.id; }).pop();
+    if (last && last.op === 'upsert' && !last.inflight) last.row = Object.assign({}, row);
+    else S.outbox.push({ op: 'upsert', table: t, id: row.id, conflict: conflict, row: Object.assign({}, row) });
     retryPush();
     persist(); emit(); scheduleSync(); reschedule();
     return row;
@@ -585,7 +615,7 @@ var CycleStore = (function () {
   return {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
-    kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
+    kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, upsert: upsert, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
     api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
   };
 })();
