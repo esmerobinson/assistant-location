@@ -239,7 +239,7 @@
 }
 
 + (BOOL)isCancellation:(NSError *)error {
-    return [error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled;
+    return NO;
 }
 
 #pragma mark Loading
