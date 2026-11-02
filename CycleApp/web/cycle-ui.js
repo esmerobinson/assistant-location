@@ -930,11 +930,10 @@ function draftKey() {
   if (name === 'nudge') return name + ':' + ui.nid;
   if (name === 'nudgein') return name + ':' + ui.sendId;
   if (name === 'nudgenew') return name + ':' + (ui.nedit || 'new');
-  if (name === 'acknew') return name + ':' + (ui.aid || 'new');
   return null;
 }
 // Choices held outside ui.d. Without them a restored ask to the partner would come back as a note to self.
-var DRAFT_UI = { 'acknew': ['afrom', 'awhen'], 'nudgenew': ['nfor'] };
+var DRAFT_UI = { 'nudgenew': ['nfor'] };
 function saveDraft(k) {
   if (!k) return;
   var all = S.priv.drafts, had = all[k];

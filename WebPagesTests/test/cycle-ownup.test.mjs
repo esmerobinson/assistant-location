@@ -153,6 +153,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     const card = '.nc[data-a="tview:t1"]';
     assert.match(await me.page.textContent(card), /From Her[\s\S]*Own the tone/);
     assert.equal(await me.page.$('[data-a^="ackedit"], [data-a="acks"]'), null);
+    await me.page.locator(card).scrollIntoViewIfNeeded();
     await shot(me.page, '2-home-card.png');
     await me.page.click(card);
     await me.page.waitForSelector('.tdd2');

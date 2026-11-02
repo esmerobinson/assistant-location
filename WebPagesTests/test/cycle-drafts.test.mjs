@@ -79,21 +79,27 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await context.close();
   });
 
-  test('ack: failed validation keeps the draft; from-partner choice is restored; save clears', async () => {
+  test('owning up: failed validation keeps the draft; For-partner choice and kind are restored; save clears', async () => {
     const { context, page } = await open();
-    await page.click('[data-a="row:ack"]');
-    await page.click('[data-a="acknew"]');
-    await page.click('[data-a="acknfrom:them"]');
-    await page.fill('textarea[data-d="adesc"]', 'Only description');
-    await page.click('[data-a="acksave"]');
-    assert.ok((await drafts(page))['acknew:new'], 'kept when the title is missing');
-    await page.click('[data-a="back"]');
-    await page.click('[data-a="acknew"]');
-    assert.equal(await fieldVal(page, 'adesc'), 'Only description');
-    assert.ok(await page.locator('[data-a="acknfrom:them"].on, .on[data-a="acknfrom:them"]').count(), 'still addressed to the partner');
-    await page.fill('input[data-d="atitle"]', 'Title');
-    await page.click('[data-a="acksave"]');
+    await page.click('[data-a="row:todo"]');
+    await page.evaluate(() => document.querySelector('[data-a="addpick"]').click());
+    await page.click('[data-a="newtodo:ownup"]');
+    await page.click('[data-a="nfor:them"]');
+    await page.fill('textarea[data-d="desc"]', 'Only description');
+    await page.click('[data-a="savetodo"]');
+    assert.ok((await drafts(page))['todo:new'], 'kept when the title is missing');
+    await page.click('.bsh [data-a="sheet:close"]');
+    await page.evaluate(() => document.querySelector('[data-a="addpick"]').click());
+    await page.click('[data-a="newtodo:ownup"]');
+    assert.equal(await fieldVal(page, 'desc'), 'Only description');
+    assert.ok(await page.locator('[data-a="nfor:them"].on').count(), 'still addressed to the partner');
+    assert.ok(await page.locator('[data-a="nkind:ownup"].on').count(), 'still Owning up');
+    assert.equal(await page.$('[data-a="nnote"]'), null, 'needs-a-note toggle stays hidden');
+    await page.fill('input[data-d="title"]', 'Title');
+    await page.click('[data-a="savetodo"]');
     assert.deepEqual(await drafts(page), {});
+    const items = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => k.startsWith('cycle:shared.')))).rows.items));
+    assert.deepEqual([items[0].ask_type, items[0].needs_note], ['ownup', true]);
     await context.close();
   });
 
