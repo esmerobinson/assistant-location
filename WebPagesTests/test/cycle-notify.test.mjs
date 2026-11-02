@@ -117,19 +117,26 @@ describe('webkit', { skip: !haveWebkit }, () => {
   };
   const fnotes = async (page) => (await calls(page, 'notify.schedule')).filter((a) => a.id.startsWith('fnote-'));
 
-  test('a fight logged with no note asks 30 min later, opens that fight, and adding a note cancels it', async () => {
+  test('a fight logged with no note asks after 30 min then every 2 hours outside 22-08, opens that fight, and a note cancels them all', async () => {
     const { context, page } = await open();
     const t0 = Date.now();
     await logFight(page);
-    await page.waitForFunction(() => window.__calls.some((x) => x.cmd === 'notify.schedule' && x.args.id.startsWith('fnote-')));
-    const [n] = await fnotes(page), id = n.id.slice(6);
-    assert.ok(n.at >= t0 + 30 * 60000 && n.at <= Date.now() + 30 * 60000, 'at is 30 min after logging');
-    assert.equal(n.route, 'fight/' + id);
-    await page.evaluate((r) => window.cycleNative.route(r), n.route);
+    await page.waitForFunction(() => window.__calls.filter((x) => x.cmd === 'notify.schedule' && x.args.id.startsWith('fnote-')).length >= 6);
+    const ns = await fnotes(page), hour = (ms) => +new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hourCycle: 'h23', hour: '2-digit' }).format(new Date(ms));
+    assert.equal(ns.length, 6);
+    const logged = await page.evaluate(() => JSON.parse(localStorage.getItem('cycle:priv.u-me')).fights[0].logged_at);
+    assert.ok(logged >= t0 && logged <= Date.now());
+    const expected = [];
+    for (let k = 0; expected.length < 6; k++) { const at = logged + 30 * 60000 + k * 2 * 3600000, h = hour(at); if (h < 22 && h >= 8) expected.push(at); }
+    assert.deepEqual(ns.map((n) => n.at), expected);
+    const id = await page.evaluate(() => JSON.parse(localStorage.getItem('cycle:priv.u-me')).fights[0].id);
+    ns.forEach((n) => assert.equal(n.route, 'fight/' + id));
+    await page.evaluate((r) => window.cycleNative.route(r), ns[0].route);
     assert.equal(await page.textContent('.hd h2'), 'Fight');
     await page.fill('textarea[data-d="more"]', 'It was the dishes');
     await page.click('[data-a="notesave"]');
-    await page.waitForFunction((i) => window.__calls.some((x) => x.cmd === 'notify.cancel' && x.args.id === i), n.id);
+    const cancelled = (await waitCalls(page, 'notify.cancel', 6)).map((a) => a.id);
+    assert.deepEqual(ns.map((n) => n.id).filter((x) => !cancelled.includes(x)), []);
     await context.close();
   });
 
