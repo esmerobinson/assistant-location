@@ -101,7 +101,7 @@ const SHARED = {
       { ...base, id: 'cd1', challenge_id: 'c-goal', day: '2026-10-20', note: 'chapter 2', by: ME },
       { ...base, id: 'cd2', challenge_id: 'c-done', day: '2026-10-12', note: 'ok', by: ME },
     ].map((r) => [r.id, r])),
-    fight_notes: { fn1: { ...base, id: 'fn1', fight_marker_id: 'fm1', author_id: ME, body: 'I raised my voice about the dishes' } },
+    fight_notes: { fn1: { ...base, id: 'fn1', fight_marker_id: 'fm1', author_id: ME, created_at: iso(30), body: 'I raised my voice about the dishes' } },
     rewards: { r1: { ...base, id: 'r1', name: 'Breakfast in bed', price: 40, archived: false, art: null }, r2: { ...base, id: 'r2', name: 'Pick the next film', price: 120, archived: false, art: null }, r3: { ...base, id: 'r3', name: 'Breast implants', price: 5, archived: false, art: 'upgrading' }, r4: { ...base, id: 'r4', name: 'Breast implants', price: 10000, archived: false, art: 'cupid' }, r5: { ...base, id: 'r5', name: 'Plain', price: 5, archived: false, art: null }, r6: { ...base, id: 'r6', name: 'Shopping', price: 5, archived: false, art: 'shopper' } },
     redemptions: { rd1: { ...base, id: 'rd1', reward_id: 'r1', requested_by: HER, status: 'pending', price: 40, decided_by: null, decided_at: null } },
     nudges: { n1: nudge('n1', 'You are doing fine, take a breath'), n2: nudge('n2', 'Done one', { done_at: iso(20) }), n3: nudge('n3', 'Archived reminder about water', { archived_at: iso(40) }) },

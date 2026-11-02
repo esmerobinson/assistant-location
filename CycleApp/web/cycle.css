@@ -377,7 +377,8 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 /* ---- Job tabs: Home / To-dos / Fights / Progress ---- */
 /* Four tabs share the bar, so each takes a quarter instead of the base 96px that fitted three. */
 .tabbar .tab{width:auto;flex:1;min-width:0}
-.tabbar{padding-left:8px;padding-right:8px}
+/* .phone prefix beats cycle.base.css's `.pts .tabbar{padding:9px 18px 0}`, which otherwise sat Home (and Points/Shop) 7px lower and narrower than the p2 tabs. */
+.phone .tabbar{padding:2px 8px 0}
 .p2 .seg.h4{height:52px}
 .p2 .seg.h4 span{flex:1;min-width:0;padding:0;font-size:13px;letter-spacing:.04em}
 /* Whose-it-is and kind pills under a to-do title */
@@ -422,3 +423,9 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .errscreen p:not(.ghost){color:var(--mu);font-size:15px}
 .errscreen .save{margin-top:8px}
 .ns{color:var(--pk);font-weight:700;font-size:13px}
+
+/* Home's pinned add row: a sibling of .scr (not inside it) so it never scrolls away; order:1 puts it between the scroller (0) and the tab bar (2). */
+.pts .rows.pin{order:1;flex-direction:row;gap:8px;padding:10px 22px;background:#0a0a0a;border-top:1px solid #222}
+.pts .pin .r2{flex:1;min-width:0;height:48px;padding:0 8px;gap:4px;justify-content:center;border-radius:24px}
+.pts .pin .r2 .lb{font-size:14px;white-space:nowrap}
+.pts .pin .r2 .mt{margin-left:0}

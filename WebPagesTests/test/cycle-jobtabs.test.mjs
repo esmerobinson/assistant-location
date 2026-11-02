@@ -406,4 +406,58 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
     await expectErr('[data-a^="tcomment:"]', 'comment');
     await context.close();
   });
+  // ---- D: layout guarantees found in screenshot review ----
+  const tabRects = (page) => page.evaluate(() => {
+    const r = (e) => { const b = e.getBoundingClientRect(); return [b.x, b.y, b.width, b.height].map((n) => Math.round(n * 10) / 10); };
+    return { bar: r(document.querySelector('.tabbar')), tabs: [...document.querySelectorAll('.tabbar .tab')].map((t) => [r(t), r(t.querySelector('svg')), r(t.querySelector('b'))]) };
+  });
+  test('D2 the tab bar, its icons and its labels sit at the same place on all four tabs', async () => {
+    const { context, page } = await open({ sd: seed({ rows: { fight_markers: [mine] }, priv: { fights: [{ id: 'fm', at: Date.parse(mine.at), intensity: 3 }] } }), offline: true });
+    await ready(page);
+    const seen = {};
+    for (const t of ['home', 'todo', 'fights', 'progress']) {
+      await page.click('[data-a="tab:' + t + '"]'); await wait(page, 200);
+      seen[t] = await tabRects(page);
+    }
+    for (const t of ['todo', 'fights', 'progress']) assert.deepEqual(seen[t], seen.home, t + ' tab bar differs from Home');
+    await context.close();
+  });
+  test('D3 a fight logged with a note shows the same date and time in the detail header and on the note', async () => {
+    const { context, page } = await open({ offline: true });
+    await ready(page);
+    await page.click('[data-a="go:fight"]');
+    await page.click('[data-a="int:3"]');
+    await page.fill('[data-d="note"]', 'about the dishes');
+    await page.click('[data-a="fightsave"]');
+    await page.click('[data-a="tab:fights"]');
+    await page.click('[data-a^="openfight:"]');
+    await page.waitForSelector('.fd .fn');
+    const head = (await page.textContent('.fd .hd .dl')).trim();
+    const note = (await page.textContent('.fd .fn .meta')).trim();
+    assert.ok(head.length > 8, 'header shows a stamp: ' + head);
+    assert.ok(note.endsWith(head), 'note stamp "' + note + '" should end with header "' + head + '"');
+    await context.close();
+  });
+  test('D1 Home keeps Log fight / To-do / Reminder visible above the tab bar however long the list, and the list scrolls clear of them', async () => {
+    const dues = Array.from({ length: 9 }, (_, i) => todo('due' + i, { due_date: '2026-10-21', title: 'Due thing number ' + i }));
+    const { context, page } = await open({ sd: seed({ rows: { todos: dues } }), offline: true });
+    await page.setViewportSize({ width: 375, height: 844 });
+    await ready(page);
+    const box = (sel) => page.evaluate((sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; }, sel);
+    const scr = await page.evaluate(() => { const s = document.querySelector('.scr'); return { sh: s.scrollHeight, ch: s.clientHeight }; });
+    assert.ok(scr.sh > scr.ch + 200, 'seed must overflow the screen: ' + JSON.stringify(scr));
+    const rows = await page.$$eval('.pin .row', (els) => els.map((e) => { const b = e.getBoundingClientRect(); return [e.textContent.trim(), b.top, b.bottom, b.left, b.right]; }));
+    assert.deepEqual(rows.map((r) => r[0]), ['Log fight', 'To-do', 'Reminder']);
+    const tab = await box('.tabbar');
+    for (const [name, top, bottom, left, right] of rows) {
+      assert.ok(top >= 0 && bottom <= 844 && left >= 0 && right <= 375, name + ' inside the viewport');
+      assert.ok(bottom <= tab.top, name + ' not covered by the tab bar');
+    }
+    await page.evaluate(() => { const s = document.querySelector('.scr'); s.scrollTop = s.scrollHeight; });
+    const pin = await box('.pin'), last = await box('.scr main > .nd:last-child');
+    assert.ok(last.bottom <= pin.top, 'last card (' + last.bottom + ') scrolls fully clear of the pinned row (' + pin.top + ')');
+    await page.click('.pin [data-a="nudgenew"]'); // still tappable while the list is scrolled
+    await page.waitForSelector('.pin', { state: 'detached' }); // navigated off Home
+    await context.close();
+  });
 });

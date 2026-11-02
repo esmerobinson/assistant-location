@@ -170,7 +170,7 @@ function phone(cls, inner, o) {
   // Refused writes sit in S.deadLetters until the person reads/exports them; the bar opens that list when nothing more urgent shows.
   var err = shown || (dl ? dl + (dl === 1 ? ' change' : ' changes') + ' not sent' : null), dlBar = !shown && dl;
   var off = !navigator.onLine || (S.outbox && S.outbox.length) ? '<span class="off' + (o.band === false ? ' nb' : '') + '">Offline</span>' : '';
-  return '<div class="phone ' + cls + (o.tab === false ? ' nt' : '') + '"><div class="scr">' + band + off + '<div class="status"></div><main>' + inner + '</main></div>' +
+  return '<div class="phone ' + cls + (o.tab === false ? ' nt' : '') + '"><div class="scr">' + band + off + '<div class="status"></div><main>' + inner + '</main></div>' + (o.pin || '') +
     (o.tab === false ? '' : tabbar(tabFor(ui.route))) + (o.sheet || '') + (err ? '<div class="errbar' + (o.sheet ? ' top' : '') + '" role="alert"' + (dlBar ? ' data-a="deadletters"' : '') + '>' + esc(err) + '</div>' : '') + '</div>';
 }
 function tabbar(active) {
@@ -300,8 +300,9 @@ SCREEN.home = function () {
   var k = calm();
   return phone('pts', '<header class="hd"><div class="ttl"><span class="mark"><svg><use href="#arwh"/></svg></span><div><h2>Home</h2><p class="dl">' + fmtDay(t) + '</p></div></div><span class="gear" data-a="go:more">' + ic('cog') + '</span></header>' +
     '<div class="nd"><p class="lab">Needs you</p>' + (html || '<p class="empty">None</p>') + '</div>' + (dueCards ? '<div class="nd"><p class="lab">Due</p>' + dueCards + '</div>' : '') +
-    '<div class="rows">' + addRow('Log fight', 'go:fight') + addRow('To-do', 'newtodo:task') + addRow('Reminder', 'nudgenew') + '</div>' +
-    '<div class="nd"><div class="nc mom" data-a="tab:progress"><div class="mid"><p class="s">Calm streak</p><p class="x">' + k.streak + (k.streak === 1 ? ' day' : ' days') + '</p></div>' + ic('chevr', 'chv') + '</div></div>');
+    '<div class="nd"><div class="nc mom" data-a="tab:progress"><div class="mid"><p class="s">Calm streak</p><p class="x">' + k.streak + (k.streak === 1 ? ' day' : ' days') + '</p></div>' + ic('chevr', 'chv') + '</div></div>',
+    // How to add must be obvious on opening, so the three adders sit outside the scroller, pinned above the tab bar at any list length.
+    { pin: '<div class="rows pin">' + addRow('Log fight', 'go:fight') + addRow('To-do', 'newtodo:task') + addRow('Reminder', 'nudgenew') + '</div>' });
 };
 
 function stepper(k) {
