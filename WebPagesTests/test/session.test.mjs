@@ -4365,6 +4365,122 @@ test('clarify mic: a Start retried while its clarification is transcribing: the 
   await context.close();
 });
 
+test('clarify mic: a transcription that fails on a later poll puts the typed text back in the box', async () => {
+  const { context, page, bodies } = await startedClarifyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#session-clarify-text', 'typed');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await mockVoice(page, { voicePending: { ready: [], failed: [{ id: 'v9', error: 'bad audio', launchId }], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'typed');
+  assert.match(await page.locator('#gl-error-text').textContent(), /Transcription failed: bad audio/);
+  assert.equal(bodies.length, 0);
+  assert.deepEqual(await clarifyLaunchRecords(page), []);
+  await context.close();
+});
+
+test('clarify mic: a transcript redelivered after a reload (ack failed the first time) is one clarification, and the record clears', async () => {
+  const { context, page, bodies } = await startedClarifyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.evaluate(() => window.__glMock.configure({ errors: { voiceAck: 'nope' } }));
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v9' } });
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting'), CLARIFY_LAUNCHES);
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  const ready = { voicePending: { ready: [{ id: 'v9', text: 'words', launchId }], failed: [], pending: [], waiting: 0 } };
+  await mockVoice(page, ready);
+  await pollNow(page);
+  await waitFor(() => bodies.length === 1, 'the first delivery');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'delivered'), CLARIFY_LAUNCHES);
+  await page.reload();
+  await page.waitForFunction(() => !!document.getElementById('session-project-pill').dataset.ready);
+  await mockVoice(page, ready);
+  await pollNow(page);
+  await page.waitForFunction((k) => localStorage.getItem(k) === null, CLARIFY_LAUNCHES);
+  await page.waitForTimeout(300);
+  assert.equal(bodies.length, 1, 'sent once');
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  await context.close();
+});
+
+test('clarify mic: a poll reporting the recording pending records its voice id, so the lost-recording sweep cannot kill it', async () => {
+  const { context, page } = await startedClarifyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await mockVoice(page, { voicePending: { ready: [], failed: [], pending: [{ id: 'v9', launchId }], waiting: 1 } });
+  await pollNow(page);
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting' && r.voiceId === 'v9'), CLARIFY_LAUNCHES);
+  await context.close();
+});
+
+test('clarify mic: hold + Insert while the box is unreachable: the late transcript fills the clarify box, not the prompt', async () => {
+  const { context, page, bodies } = await startedClarifyPage({ hasTouch: true, beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v9' } });
+  await recordClarify(page);
+  const { touch, target } = await holdMic(page, 'session-clarify');
+  await touch('touchMove', target);
+  await page.waitForSelector('#session-clarify-insert-target.armed');
+  await touch('touchEnd');
+  await page.waitForFunction(() => window.__glCallLog.some((c) => c.method === 'voiceStop'));
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'late words' }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'late words');
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  assert.equal(bodies.length, 0);
+  await context.close();
+});
+
+test('clarify mic: a Start retried WHILE the mic is recording: the clarification goes to the retried key', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { context, page, calls } = await startPageWithStartRoute(async (route, n) => {
+    if (n === 1) { await gate; return OK_JSON(route, 400, { error: 'refused' }); }
+    return OK_START(route);
+  });
+  const bodies = await routeClarify(context, (route) => OK_JSON(route, 200, { delivered: 'live' }));
+  await pressStart(page, 'build the thing');
+  await recordClarify(page);
+  release();
+  const row = page.locator('.gl-row-failed', { hasText: 'build the thing' });
+  await row.waitFor();
+  await row.locator('button', { hasText: 'Retry' }).click();
+  await waitFor(() => calls.length === 2, 'the retried start');
+  await page.click('#session-clarify-record-btn');
+  await waitFor(() => bodies.length === 1, 'the clarification');
+  assert.equal(bodies[0].startKey, calls[1].idempotencyKey);
+  await context.close();
+});
+
+test('clarify mic: voiceStop erroring puts the typed text back with the error, nothing sent', async () => {
+  const { context, page, bodies } = await startedClarifyPage();
+  await page.fill('#session-clarify-text', 'typed');
+  await page.evaluate(() => window.__glMock.configure({ errors: { voiceStop: 'boom' } }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'typed');
+  assert.match(await page.locator('#gl-error-text').textContent(), /Transcription failed: boom/);
+  assert.equal(bodies.length, 0);
+  assert.deepEqual(await clarifyLaunchRecords(page), []);
+  await context.close();
+});
+
+test('clarify mic: storage refusing the record clears nothing, stops nothing, and says so', async () => {
+  const { context, page } = await startedClarifyPage();
+  await page.fill('#session-clarify-text', 'typed');
+  await recordClarify(page);
+  await page.evaluate(() => { const set = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (/clarify-launches/.test(k)) throw new Error('quota'); return set.call(this, k, v); }; });
+  await page.click('#session-clarify-record-btn');
+  await page.waitForSelector('#gl-error:not(.gl-hidden)');
+  assert.match(await page.locator('#gl-error-text').textContent(), /Couldn't save the clarification/);
+  assert.equal(await page.inputValue('#session-clarify-text'), 'typed');
+  assert.equal((await callsTo(page, 'voiceStop')).length, 0);
+  await context.close();
+});
+
 test('clarify mic: disabled while the launcher mic records', async () => {
   const { context, page } = await startedClarifyPage();
   await page.click('#session-record-btn');
