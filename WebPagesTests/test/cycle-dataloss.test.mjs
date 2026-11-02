@@ -92,7 +92,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     const { context, page, sent } = await open({ handler: async (r) => { if (r.method === 'POST') await gate; } });
     await ready(page);
     await insertTodo(page, 'n2'); // sync() fires 400ms later and hangs on the gate
-    await page.waitForFunction(() => CycleStore.S.syncing);
+    for (let i = 0; i < 50 && !sent.some((x) => x.method === 'POST'); i++) await page.waitForTimeout(100); // the POST is now held at the gate
     await page.evaluate(() => CycleStore.patch('todos', 'n2', { title: 'Edited while sending' }));
     release(); await settle(page, 2000);
     const patches = sent.filter((x) => x.method === 'PATCH' && /id=eq.n2/.test(x.search));
@@ -169,7 +169,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
 
   // ---- 6/7: persistence ------------------------------------------------------------------------------------------------
   test('6 a failed persist and an unhandled rejection both show in the error bar', async () => {
-    const { context, page } = await open();
+    const { context, page } = await open({ pageErrors: [] }); // the deliberate rejection below also fires pageerror
     await ready(page);
     await page.evaluate(() => { Storage.prototype.setItem = function () { throw new Error('QuotaExceededError'); }; CycleStore.patch('todos', 't1', { title: 'x' }); });
     await page.waitForSelector('.errbar', { timeout: 3000 });
@@ -202,7 +202,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
 
   // ---- 8: Log fight is all-or-nothing ----------------------------------------------------------------------------------
   test('8 Log fight with an Ask chip and no partner queues nothing and says why; the typed note stays', async () => {
-    const { context, page } = await open({ tweak: (sh) => { sh.members = [MEMBERS[0]]; } });
+    const { context, page } = await open({ tweak: (sh) => { sh.members = [MEMBERS[0]]; }, handler: (r) => r.path === 'members' ? { status: 200, body: [MEMBERS[0]] } : undefined });
     await ready(page);
     await page.click('[data-a="row:fight"]');
     await page.fill('textarea[data-d="note"]', 'She said');
@@ -277,7 +277,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
   test('14 Broke it on a day already broken says so and keeps the text', async () => {
     const { context, page } = await open({ tweak: (sh) => { sh.rows.challenges.ch1 = { id: 'ch1', couple_id: 'c1', name: 'No yelling', start: '2026-01-02', for_user: UID, breaks_on: 'tap', accepted_at: ago(5000), created_at: ago(5000), updated_at: ago(5000) }; } });
     await ready(page);
-    await page.click('.ach[data-a="challenge:ch1"]');
+    await page.evaluate(() => cycleNative.route('challenge/ch1')); await page.waitForSelector('[data-a="broke"]');
     await page.click('[data-a="broke"]');
     await page.fill('[data-d="brnote"]', 'my note');
     await page.evaluate(() => CycleStore.insert('challenge_breaks', { couple_id: 'c1', id: 'b1', challenge_id: 'ch1', day: CycleCore.localDay(Date.now(), 'America/New_York'), note: null, by: 'u-me', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }));

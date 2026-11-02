@@ -236,6 +236,8 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
       sh.rows.fight_markers.fp = { id: 'fp', couple_id: 'c1', logged_by: pid, at: new Date(Date.now() - 36e5).toISOString(), repaired_at: null, hit_self: true, hit_related: false };
       localStorage.setItem(k, JSON.stringify(sh));
     }, [PID]);
+    // pagehide now flushes the page's own state over storage; stop that so the seeded row survives the reload.
+    await page.evaluate(() => { CycleStore.S.loaded = false; });
     await page.reload({ waitUntil: 'domcontentloaded' });
     assert.ok((await pointsText(page)).includes('\u22125Fight · Hit herself, not related to Her'), 'Points Fight line');
     await context.close();
@@ -405,6 +407,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
       const k = 'cycle:priv.u-me', p = JSON.parse(localStorage.getItem(k));
       p.fights.push({ id: 'fm', at: Date.now() - 36e5, intensity: 3, about: 'Old private about', vent: '', rewritten: '', shared: false });
       localStorage.setItem(k, JSON.stringify(p));
+      CycleStore.S.loaded = false; // pagehide flush must not overwrite the seeded private fight
     });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.click('[data-a="tab:us"]');
