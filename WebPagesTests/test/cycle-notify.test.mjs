@@ -51,7 +51,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
         else if (cmd === 'notify.status') r = window.__status;
         else if (cmd === 'lock.get') r = false;
         else if (cmd === 'notify.permission') r = true;
-        else if (!['notify.schedule', 'notify.cancel', 'app.openSettings'].includes(cmd)) throw new Error('unexpected bridge cmd ' + cmd);
+        else if (!['ready', 'notify.schedule', 'notify.cancel', 'app.openSettings'].includes(cmd)) throw new Error('unexpected bridge cmd ' + cmd);
         setTimeout(() => window.__cycleReply(id, r, null), 0);
       } } } };
     }, { sd: seed(ch), status, native: status !== null });

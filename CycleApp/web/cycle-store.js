@@ -36,6 +36,9 @@ var CycleStore = (function () {
     keys: function (p) { return Promise.resolve(Object.keys(localStorage).filter(function (k) { return k.indexOf(LS + p) === 0; }).map(function (k) { return k.slice(LS.length); })); }
   };
   var native = {
+    // Tells the shell the page can take calls. CycleBridge holds the push token, notification taps, foreground and
+    // speech callbacks until this arrives, so without it the box never learns this phone's push token.
+    ready: function () { return hasNative ? bridge('ready') : Promise.resolve(); },
     permission: function () { return hasNative ? bridge('notify.permission') : Promise.resolve(false); },
     schedule: function (o) { return hasNative ? bridge('notify.schedule', o) : Promise.resolve(); },
     cancel: function (id) { return hasNative ? bridge('notify.cancel', { id: id }) : Promise.resolve(); },

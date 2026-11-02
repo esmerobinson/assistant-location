@@ -1555,7 +1555,7 @@ window.cycleNative = {
 
 // ---- boot --------------------------------------------------------------------------------------------------------------
 St.boot().then(function () { return St.hasNative ? St.native.lockGet() : false; }).then(function (lockOn) {
-  ui.lockOn = lockOn; ui.ready = true; render(); window.cycleNative.ready(); checkNotif();
+  ui.lockOn = lockOn; ui.ready = true; render(); window.cycleNative.ready(); St.native.ready(); checkNotif();
   // No realtime channel: poll while visible (cursor-based, so a quiet poll is 9 tiny GETs), plus the
   // 15s repaint that moves countdowns and promotes a held item to "ready".
   setInterval(function () { if (document.visibilityState === 'visible' && S.session) St.sync(); }, 5000);
