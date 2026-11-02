@@ -50,8 +50,8 @@
     XCTAssertGreaterThanOrEqual([self.plist[@"CycleShellVersion"] integerValue], 2, @"the speech bridge commands arrived in shell 2; shell.json minShell gates the web that calls them");
 }
 
-- (void)testNoPushNoBackgroundModesNoUrlScheme {
-    XCTAssertNil(self.plist[@"UIBackgroundModes"], @"Cycle uses local notifications only");
+- (void)testNoBackgroundModesNoUrlScheme {
+    XCTAssertNil(self.plist[@"UIBackgroundModes"], @"push wakes only the CycleNSE extension, never the app");
     XCTAssertNil(self.plist[@"CFBundleURLTypes"]);
     XCTAssertNil(self.plist[@"NSLocationWhenInUseUsageDescription"]);
 }
