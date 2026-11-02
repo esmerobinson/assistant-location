@@ -388,6 +388,12 @@ var CycleStore = (function () {
       var mk = S.rows.fight_markers[f.id];
       if (at > now && !f.followed && !(mk && mk.repaired_at)) out.push({ id: 'fu-' + f.id, at: at, title: 'Follow up', body: '', route: 'log-followup' });
     });
+    // A fight I logged with no note from me yet: ask once, 30 min after logging. Fights logged before this have no logged_at.
+    (S.priv ? S.priv.fights : []).forEach(function (f) {
+      if (!f.logged_at || f.logged_at + 30 * 60000 <= now) return;
+      if (!list('fight_notes').some(function (n) { return n.fight_marker_id === f.id && n.author_id === me(); }))
+        out.push({ id: 'fnote-' + f.id, at: f.logged_at + 30 * 60000, title: 'Log fight', body: 'What happened?', route: 'fight/' + f.id });
+    });
     // An unaccepted challenge for me: a 09:00 reminder (my timezone) on each of the next 7 days until I accept.
     var tz = m.tz || S.couple.tz;
     list('challenges').forEach(function (c) {

@@ -109,6 +109,39 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await context.close();
   });
 
+  const logFight = async (page, note) => {
+    await page.click('[data-a="row:fight"]');
+    await page.waitForSelector('[data-a="fightsave"]');
+    if (note) await page.fill('textarea[data-d="note"]', note);
+    await page.click('[data-a="fightsave"]');
+  };
+  const fnotes = async (page) => (await calls(page, 'notify.schedule')).filter((a) => a.id.startsWith('fnote-'));
+
+  test('a fight logged with no note asks 30 min later, opens that fight, and adding a note cancels it', async () => {
+    const { context, page } = await open();
+    const t0 = Date.now();
+    await logFight(page);
+    await page.waitForFunction(() => window.__calls.some((x) => x.cmd === 'notify.schedule' && x.args.id.startsWith('fnote-')));
+    const [n] = await fnotes(page), id = n.id.slice(6);
+    assert.ok(n.at >= t0 + 30 * 60000 && n.at <= Date.now() + 30 * 60000, 'at is 30 min after logging');
+    assert.equal(n.route, 'fight/' + id);
+    await page.evaluate((r) => window.cycleNative.route(r), n.route);
+    assert.equal(await page.textContent('.hd h2'), 'Fight');
+    await page.fill('textarea[data-d="more"]', 'It was the dishes');
+    await page.click('[data-a="notesave"]');
+    await page.waitForFunction((i) => window.__calls.some((x) => x.cmd === 'notify.cancel' && x.args.id === i), n.id);
+    await context.close();
+  });
+
+  test('a fight logged with a note asks nothing', async () => {
+    const { context, page } = await open();
+    await logFight(page, 'It was the dishes');
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('cycle:priv.u-me')).fights.length === 1);
+    await page.waitForTimeout(800); // past the 200ms reschedule debounce
+    assert.deepEqual(await fnotes(page), []);
+    await context.close();
+  });
+
   test('denied: the sheet shows on load and again on every foreground; the X closes it for this open only', async () => {
     const { context, page } = await open({ status: 'denied' });
     await page.waitForSelector('.sheetlayer');

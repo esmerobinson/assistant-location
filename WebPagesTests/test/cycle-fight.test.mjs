@@ -269,7 +269,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     assert.ok(sh.outbox.some((o) => o.table === 'fight_notes' && o.op === 'insert' && o.row.body === 'Line one\nLine two'), 'queued in the outbox');
     assert.ok(sh.outbox.findIndex((o) => o.table === 'fight_markers') < sh.outbox.findIndex((o) => o.table === 'fight_notes'), 'marker is sent before its note');
     const priv = await page.evaluate(() => JSON.parse(localStorage.getItem('cycle:priv.u-me')).fights[0]);
-    assert.deepEqual(Object.keys(priv).sort(), ['at', 'id', 'intensity']);
+    assert.deepEqual(Object.keys(priv).sort(), ['at', 'id', 'intensity', 'logged_at']);
     assert.equal(priv.intensity, 4);
     assert.equal(Object.keys(sh.rows.items).length, 0, 'no truth/rewrite item');
     await context.close();

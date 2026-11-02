@@ -1100,7 +1100,7 @@ function logFight() {
     if (chips[c[0]] && c[1]) sendItem('ask', { body: c[1], ask_type: 'task', origin: 'fight', response_type: c[0], fight_marker_id: id });
   });
   // Intensity is the only part that stays on this phone.
-  S.priv.fights.push({ id: id, at: at, intensity: d.int || 3 });
+  S.priv.fights.push({ id: id, at: at, logged_at: Date.now(), intensity: d.int || 3 });
   St.savePriv();
   draftSent();
   M.play('crack', el);
@@ -1531,6 +1531,7 @@ function applyRoute(r) {
   if (m) { ui.stack = []; ui.route = 'todo'; ui.sheet = stillHeld(m[1]) ? { type: 'still', id: m[1] } : null; ui.d = {}; render(); }
   else if ((m = /^nudge\/(.+)$/.exec(r))) { ui.stack = []; ui.route = 'nudgein'; ui.sendId = m[1]; ui.d = {}; ui.sheet = null; openSend(m[1]); render(); }
   else if ((m = /^challenge\/(.+)$/.exec(r))) { ui.stack = [{ route: 'todo' }]; ui.route = 'challenge'; ui.chId = m[1]; ui.d = {}; ui.sheet = null; render(); }
+  else if ((m = /^fight\/(.+)$/.exec(r))) { ui.stack = [{ route: 'home' }]; ui.route = 'fightdetail'; ui.fightId = m[1]; ui.d = {}; ui.sheet = null; render(); }
   else if ((m = /^todo\/(.+)$/.exec(r))) { markOwnupSeen(m[1]); ui.stack = [{ route: 'todo' }]; ui.route = 'tododetail'; ui.todoId = m[1]; ui.d = {}; ui.sheet = null; render(); }
   else if (r === 'today') tab('home'); // a reminder scheduled by an older build
   else if (r === 'log-followup' || r === 'todo') tab('todo');
