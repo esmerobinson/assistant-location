@@ -377,11 +377,11 @@ var CycleStore = (function () {
     // the real 8 am alert for a partner nudge is remote push, phase 2.)
     list('nudge_sends').forEach(function (n) {
       if (n.recipient_id === me() && !n.opened_at && !n.deleted_at && C.ms(n.deliver_at) > now)
-        out.push({ id: 'nudge-' + n.id, at: C.ms(n.deliver_at), title: 'Nudge', body: n.body, route: 'nudge/' + n.id });
+        out.push({ id: 'nudge-' + n.id, at: C.ms(n.deliver_at), title: 'Reminder', body: n.body, route: 'nudge/' + n.id });
     });
     (S.priv ? S.priv.nudge_sends : []).forEach(function (n) {
       if (!n.opened_at && !n.deleted_at && C.ms(n.deliver_at) > now)
-        out.push({ id: 'nudge-' + n.id, at: C.ms(n.deliver_at), title: 'Nudge', body: n.body, route: 'nudge/' + n.id });
+        out.push({ id: 'nudge-' + n.id, at: C.ms(n.deliver_at), title: 'Reminder', body: n.body, route: 'nudge/' + n.id });
     });
     (S.priv ? S.priv.fights : []).forEach(function (f) {
       var at = f.at + 24 * 3600000;

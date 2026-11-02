@@ -263,14 +263,14 @@ var CycleCore = (function () {
     rows.nudge_sends.forEach(function (n) {
       if (n.deleted_at || ms(n.deliver_at) > opts.now) return;
       var d = dayOf(n.deliver_at);
-      if (n.opened_at && dayOf(n.opened_at) === d) add(d, 1, 'Nudge opened');
-      else if (d < today) add(d, -1, 'Nudge unopened');
+      if (n.opened_at && dayOf(n.opened_at) === d) add(d, 1, 'Reminder opened');
+      else if (d < today) add(d, -1, 'Reminder unopened');
     });
 
     // "Nudge done" installments from the author's awards to the recipient (see awardInstallments for the stop rule).
     rows.nudge_awards.forEach(function (a) {
       if (a.deleted_at) return;
-      awardInstallments(a, today, tz).forEach(function (x) { if (x.paid) add(x.day, x.points, 'Nudge done', nameOf[a.recipient_id]); });
+      awardInstallments(a, today, tz).forEach(function (x) { if (x.paid) add(x.day, x.points, 'Reminder done', nameOf[a.recipient_id]); });
     });
 
     var todoById = {};

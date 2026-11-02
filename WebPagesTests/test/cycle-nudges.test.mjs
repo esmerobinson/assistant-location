@@ -194,8 +194,8 @@ describe('nudges', () => {
 
   test('Today has no Send row, even from a saved order that still lists it', async () => {
     // Send was removed from Today; an order saved before that must drop it, keep the user's arrangement
-    // and append rows added since (ack) instead of rendering a dead Send row.
-    const cases = [[undefined, ['nudges', 'todo', 'ack', 'fight']], [['send', 'todo', 'fight'], ['todo', 'fight', 'nudges', 'ack']], [['send', 'nudges', 'todo', 'fight'], ['nudges', 'todo', 'fight', 'ack']]];
+    // and append rows added since instead of rendering a dead Send row.
+    const cases = [[undefined, ['nudges', 'todo', 'fight']], [['send', 'todo', 'fight'], ['todo', 'fight', 'nudges']], [['send', 'nudges', 'todo', 'fight'], ['nudges', 'todo', 'fight']], [['ack', 'todo', 'nudges', 'fight'], ['todo', 'nudges', 'fight']]];
     for (const [rows, want] of cases) {
       const s = seed(ME);
       if (rows) s['priv.' + ME].prefs.rows = rows;
@@ -302,13 +302,13 @@ describe('nudges', () => {
     await context.close();
   });
 
-  test("Esme's ledger shows 'Nudge done' entries", async () => {
+  test("Esme's ledger shows 'Reminder done' entries", async () => {
     const aw = { id: 'a1', couple_id: 'c1', author_id: ME, recipient_id: HER, nudge_id: 'n1', body: 'x', points: 30, payout: 'now',
       done_at: '2026-10-25T14:00:00Z', stopped_at: null, created_at: '2026-10-25T14:00:00Z', updated_at: '2026-10-25T14:00:00Z', deleted_at: null };
     const { context, page } = await open(seed(HER, { nudges: [nd('n1', 'x', { done_at: aw.done_at })], awards: [aw] }), HER);
     await page.click('.bal');
     await page.waitForSelector('#balance');
-    assert.ok((await page.content()).includes('Nudge done'));
+    assert.ok((await page.content()).includes('Reminder done'));
     await context.close();
   });
 });

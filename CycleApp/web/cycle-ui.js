@@ -161,7 +161,7 @@ function tabbar(active) {
   return '<nav class="tabbar">' + tab('home', 'moon', 'Today') + tab('todo', 'circ', 'Actions', n) + tab('us', 'us', 'Us') + '</nav>';
 }
 function tabFor(r) { return ['todo', 'tododetail', 'challenge', 'newch'].indexOf(r) >= 0 ? 'todo' : ['us', 'points', 'shop', 'settings', 'cycle'].indexOf(r) >= 0 ? 'us' : 'home'; }
-function backLabel() { var p = ui.stack[ui.stack.length - 1]; return { home: 'Today', us: 'Us', cycle: 'Cycle', points: 'Points', todo: 'Actions', settings: 'Settings', nudges: 'Nudges', nudge: 'Nudge', nudgedone: 'Done', talk: 'Talk', kudosnew: 'Talk' }[p && p.route] || 'Today'; }
+function backLabel() { var p = ui.stack[ui.stack.length - 1]; return { home: 'Today', us: 'Us', cycle: 'Cycle', points: 'Points', todo: 'Actions', settings: 'Settings', nudges: 'Reminders', nudge: 'Reminder', nudgedone: 'Done' }[p && p.route] || 'Today'; }
 function back() { var p = ui.stack.pop(); ui.route = p ? p.route : 'home'; ui.d = {}; ui.sheet = null; render(); }
 function go(route, extra) {
   ui.stack.push({ route: ui.route });
@@ -225,7 +225,7 @@ function rowsOrder() {
   // The saved order wins. Rows added since it was saved (a new default id) are appended in default order,
   // and saved ids no longer in the default set (the removed Send row) are dropped, so an old order never
   // renders a row with no label or screen and never loses the user's arrangement.
-  var def = ['nudges', 'todo', 'ack', 'fight'], kept = (prefs().rows || []).filter(function (id) { return def.indexOf(id) >= 0; });
+  var def = ['nudges', 'todo', 'fight'], kept = (prefs().rows || []).filter(function (id) { return def.indexOf(id) >= 0; });
   return kept.concat(def.filter(function (id) { return kept.indexOf(id) < 0; }));
 }
 function rowMeta(id) {
@@ -235,7 +235,6 @@ function rowMeta(id) {
     return nudgeTier('esme').nudges.filter(live).length + ' saved';
   }
   if (id === 'todo') return todoCount();
-  if (id === 'ack') return kudosEntries().length || 'None';
   var f = S.priv.fights.slice().sort(function (a, b) { return b.at - a.at; })[0];
   if (!f) return 'None';
   var d = C.localDay(f.at, tz());
@@ -255,7 +254,7 @@ function digestCard(led) {
       return '<p class="dgl' + (l.pts < 0 ? ' ls' : '') + '"><b>' + sg(l.pts) + '</b><span>' + esc(l.label) + (l.who ? ' &middot; ' + esc(l.who) : '') + '</span></p>';
     }).join('') + (more > 0 ? '<p class="dgm">+' + more + ' more</p>' : '') + '</div>';
 }
-var ROWLAB = { nudges: 'Nudges', todo: 'Actions', ack: 'Talk', fight: 'Log fight' };
+var ROWLAB = { nudges: 'Reminders', todo: 'Actions', fight: 'Log fight' };
 
 SCREEN.home = function () {
   var led = ledger(), t = today();
@@ -687,7 +686,7 @@ SCREEN.nudges = function () {
     return list.length ? '<div class="lst" data-sec="' + key + '"><p class="lab">' + label + '</p>' + list.map(function (n) { return row(n, grip); }).join('') + '</div>' : '';
   }
   var total = sec.pinned.length + sec.recent.length + sec.all.length, all = total + sec.done.length;
-  return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Nudges</h2><p class="dl">' + total + ' saved</p></div><span class="plus" data-a="nudgenew">' + ic('plus') + '</span></header>' +
+  return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Reminders</h2><p class="dl">' + total + ' saved</p></div><span class="plus" data-a="nudgenew">' + ic('plus') + '</span></header>' +
     seg([['esme', pn()], ['me', 'Me']], tier, 'ntier') +
     (all ? group('Pinned', sec.pinned, 'pinned', true) + group('Recent', sec.recent, 'recent', false) + group('All', sec.all, 'all', true) + group('Done', sec.done, 'done', false) : '<p class="empty">None</p>'));
 };
@@ -721,13 +720,13 @@ SCREEN.nudge = function () {
   if (aw) {
     // Done card: Send again is a normal send (8 pm rule applies) and the nudge stays in Done.
     var st = C.awardStatus(aw, today(), tz());
-    return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Nudges</h2><p class="dl">' + (sends.length ? 'Sent ' + sends.length + (sends.length === 1 ? ' time' : ' times') : 'Not sent') + '</p></div></header>' +
+    return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Reminders</h2><p class="dl">' + (sends.length ? 'Sent ' + sends.length + (sends.length === 1 ? ' time' : ' times') : 'Not sent') + '</p></div></header>' +
       '<div class="card dn"><p class="q2">' + esc(n.body) + '</p><p class="meta">Done ' + fmtShort(C.localDay(C.ms(n.done_at), tz())) + ' \u00b7 ' + (st.complete ? st.total + ' paid' : st.paid + ' of ' + st.total + ' paid') + '</p>' +
       (late && ui.tip ? '<div class="tip">' + TIP_TEXT + '</div>' : '') +
       '<div class="row3"><span class="btn o" data-a="nudgesend">Send again' + (late ? '<span class="qm" data-a="tip">?</span>' : '') + '</span>' +
       (st.complete || st.stopped ? '' : '<span class="btn g bd" data-a="nudgestop">Stop the rest</span>') + '</div></div>' + thr);
   }
-  return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Nudges</h2><p class="dl">' + (sends.length ? 'Sent ' + sends.length + (sends.length === 1 ? ' time' : ' times') : 'Not sent') + '</p></div></header>' +
+  return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Reminders</h2><p class="dl">' + (sends.length ? 'Sent ' + sends.length + (sends.length === 1 ? ' time' : ' times') : 'Not sent') + '</p></div></header>' +
     '<div class="card"><p class="q2">' + esc(n.body) + '</p>' + (n.pinned ? '<p class="meta">pinned</p>' : '') +
     (late && ui.tip ? '<div class="tip">' + TIP_TEXT + '</div>' : '') +
     '<span class="btn f" data-a="nudgesend">' + (late ? 'Send tomorrow<span class="qm" data-a="tip">?</span>' : 'Send') + '</span>' +
@@ -769,7 +768,7 @@ function doneRefresh() {
 SCREEN.nudgein = function () {
   var s = findSend(ui.sendId), priv = !S.rows.nudge_sends[ui.sendId];
   var name = priv ? '' : nameOf(s.sender_id);
-  return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>' + (priv ? 'Nudge' : 'From ' + pnx(name)) + '</h2><p class="dl">' + fmtDay(C.localDay(C.ms(s.deliver_at), tz())) + '</p></div></header>' +
+  return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>' + (priv ? 'Reminder' : 'From ' + pnx(name)) + '</h2><p class="dl">' + fmtDay(C.localDay(C.ms(s.deliver_at), tz())) + '</p></div></header>' +
     '<div class="card"><p class="quote">' + esc(s.body) + '</p></div>' +
     (priv ? '' : '<div class="th">' + thread(sendsOfNudge(s.nudge_id)) + '</div>' + replyBox()));
 };
@@ -808,35 +807,6 @@ function openSend(id) {
   }
   if (!priv) markRead(idSet(sendsOfNudge(s.nudge_id)));
 }
-
-// ---- Talk -------------------------------------------------------------------------------------------------------
-// Kudos only. Owning up is a to-do type ('ownup', see the Actions screen and the Home needs-you card), so it has no list here.
-SCREEN.talk = function () {
-  function sub(label, act, inner) { return '<section class="list"><p class="lab tsh"><span>' + label + '</span><span class="elink" data-a="' + act + '">Add</span></p>' + (inner || '<p class="empty">None</p>') + '</section>'; }
-  return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Talk</h2></div></header>' + sub('Kudos', 'kudosnew', kudosRows()));
-};
-
-// Kudos list: given and received between us (items).
-function kudosEntries() {
-  var me = St.me(), out = [];
-  L('items').filter(function (i) { return i.kind === 'kudos' && !i.deleted_at && i.status !== 'dropped' && (i.sender_id === me || (i.recipient_id === me && i.status === 'delivered')); })
-    .forEach(function (i) {
-      var mine = i.sender_id === me;
-      out.push({ at: C.ms(i.delivered_at || i.created_at), body: i.body, small: (mine ? 'To ' : 'From ') + pn() + (i.gift_points > 0 ? ' &middot; ' + i.gift_points + (i.gift_points === 1 ? ' point' : ' points') : i.gift_points == null && i.points === false ? ' &middot; No points' : '') + (i.status === 'held' ? ' &middot; Held' : '') });
-    });
-  return out.sort(function (a, b) { return b.at - a.at; });
-}
-function kudosRows() {
-  return kudosEntries().map(function (k) {
-    return '<div class="rem c"><div><p>' + esc(k.body) + '</p><small>' + k.small + ' &middot; ' + fmtDay(C.localDay(k.at, tz())) + '</small></div></div>';
-  }).join('');
-}
-SCREEN.kudosnew = function () {
-  return phone('p2 nd', '<header class="hd"><div><h2>Kudos</h2><p class="dl">&nbsp;</p></div><span class="txtbtn" data-a="back">Cancel</span></header>' +
-    inp('ktext', 'Kudos').replace('class="inp"', 'class="inp fill"') +
-    '<div class="frow"><span class="lab0">Gift points</span><input class="inp" type="number" inputmode="numeric" min="0" step="1" data-d="kgift" value="' + esc(val('kgift')) + '"></div>' +
-    '<div class="save" data-a="kudossave">Send</div>', { tab: false });
-};
 
 // ---- Cycle (private) screen -----------------------------------------------------------------------------
 // Ring geometry and per-phase angles are measured from the approved mockup (degrees clockwise from top).
@@ -924,7 +894,7 @@ function draftKey() {
     if (s.type === 'chlog' || s.type === 'broke' || s.type === 'chedit') return s.type + ':' + ui.chId;
     return s.type === 'addreward' ? 'addreward' : null; // the rest (pickers, confirms) have no text field
   }
-  if (name === 'fight' || name === 'kudosnew' || name === 'newch') return name;
+  if (name === 'fight' || name === 'newch') return name;
   if (name === 'fightdetail') return name + ':' + ui.fightId;
   if (name === 'tododetail') return name + ':' + ui.todoId;
   if (name === 'nudge') return name + ':' + ui.nid;
@@ -1147,7 +1117,7 @@ var ACT = {
   }),
   sharecode: guard(function () { return St.native.shareText('Together code: ' + ui.code); }),
   codedone: function () { ui.code = null; ui.copied = false; ui.d = {}; render(); },
-  row: function (id) { if (ui.reorder) return; if (id === 'ack') ACT.talk(); else go(id === 'fight' ? 'fight' : id); },
+  row: function (id) { if (ui.reorder) return; go(id === 'fight' ? 'fight' : id); },
   reorderdone: function () { ui.reorder = false; render(); },
   decline: guard(function (id) { St.patch('redemptions', id, { status: 'declined', decided_by: St.me(), decided_at: nowIso() }); }),
   approve: guard(function (id) {
@@ -1372,20 +1342,6 @@ var ACT = {
   }),
   nudgein: function (id) { openSend(id); go('nudgein', { sendId: id }); },
   replyopen: function (id) { openSend(id); go('nudgein', { sendId: id }); },
-  // ---- Talk ----
-  talk: function () { go('talk'); },
-  // ---- Kudos ----
-  kudosnew: function () { go('kudosnew'); },
-  kudossave: guard(function () {
-    var body = (ui.d.ktext || '').trim(), el = document.querySelector('.save');
-    if (!body) { M.play('jiggle', document.querySelector('.inp')); throw new Error('Kudos needed'); }
-    var gift = (ui.d.kgift || '').trim();
-    if (gift && !/^\d+$/.test(gift)) { M.play('jiggle', document.querySelector('[data-d="kgift"]')); throw new Error('Whole number needed'); }
-    if (!St.partner()) throw new Error('No partner yet');
-    celebrate(sendItem('kudos', { body: body, gift_points: gift ? +gift : 0 }), el);
-    draftSent();
-    back();
-  }),
   day: function (d) { ui.cyc.sel = d; render(); },
   mon: function (n) { var c = ui.cyc, m = c.m + +n; c.y += m < 1 ? -1 : m > 12 ? 1 : 0; c.m = m < 1 ? 12 : m > 12 ? 1 : m; render(); }
 };
@@ -1535,8 +1491,8 @@ function applyRoute(r) {
   else if ((m = /^todo\/(.+)$/.exec(r))) { markOwnupSeen(m[1]); ui.stack = [{ route: 'todo' }]; ui.route = 'tododetail'; ui.todoId = m[1]; ui.d = {}; ui.sheet = null; render(); }
   else if (r === 'today') tab('home'); // a reminder scheduled by an older build
   else if (r === 'log-followup' || r === 'todo') tab('todo');
-  // 'acks' is the route notifications delivered before owning up became a to do carry; it opens Talk.
-  else if (r === 'acks') { tab('home'); ACT.talk(); }
+  // 'acks' is the route notifications delivered before owning up became a to do carry; it opens Home.
+  else if (r === 'acks') tab('home');
   else throw new Error('unknown route ' + r);
 }
 window.cycleNative = {

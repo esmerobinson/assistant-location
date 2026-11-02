@@ -211,27 +211,18 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await b.context.close();
   });
 
-  test('Talk is Kudos only; its Home row shows the kudos count or None; the old acks route and a cached acks table still open it', async () => {
+  test('Home has no Talk row; the old acks route and a cached acks table open Home', async () => {
     const a = await open();
-    assert.match(await a.page.textContent('[data-id="ack"]'), /Talk[\s\S]*None/);
-    await a.page.click('[data-a="row:ack"]');
-    assert.equal(await a.page.textContent('h2'), 'Talk');
-    assert.deepEqual(await a.page.$$eval('main > section > .lab', (els) => els.map((e) => e.textContent.replace('Add', ''))), ['Kudos']);
-    assert.doesNotMatch(await a.page.textContent('body'), /Owning up|Asked|Acknowledge/);
-    assert.equal(await a.page.$('[data-a="acknew"]'), null);
-    await shot(a.page, '4-talk.png');
+    assert.equal(await a.page.$('[data-id="ack"]'), null);
     await a.context.close();
 
-    const kudos = { id: 'k1', couple_id: 'c1', sender_id: HER, recipient_id: ME, kind: 'kudos', body: 'You listened', ask_type: null, status: 'delivered', delivered_at: ago(5), created_at: ago(5), updated_at: ago(5), deleted_at: null, opened_at: null, kept: null };
     const b = await open((sh) => {
-      sh.rows.items = byId([kudos]);
       // A store cached before this change still carries an acks table.
       sh.rows.acks = { a1: { id: 'a1', couple_id: 'c1', author_id: HER, requested_by: null, title: 'old ack', status: 'done', done_at: ago(2), read_at: null, created_at: ago(3), updated_at: ago(2), deleted_at: null } };
     });
-    assert.match(await b.page.textContent('[data-id="ack"]'), /1/);
     await b.page.evaluate(() => window.cycleNative.route('acks'));
-    assert.equal(await b.page.textContent('h2'), 'Talk');
-    assert.match(await b.page.textContent('main'), /You listened/);
+    assert.ok(await b.page.$('.rows .row'), 'Home rows shown');
+    assert.equal(await b.page.$('[data-id="ack"]'), null);
     assert.doesNotMatch(await b.page.textContent('main'), /old ack/);
     await b.context.close();
   });

@@ -128,8 +128,7 @@ const SCENARIOS = [
   ['nudge-incoming', ['nudgein:s1']], ['nudge-new', ['row:nudges', 'nudgenew']],
   ['todo-new-later', ['tab:todo', 'addpick', 'newtodo:task', 'nwhen:later']], ['todo-new-later-me', ['tab:todo', 'addpick', 'newtodo:task', 'nfor:me', 'nwhen:later']],
   ['ownup-new', ['tab:todo', 'addpick', 'newtodo:ownup']], ['ownup-new-later', ['tab:todo', 'addpick', 'newtodo:ownup', 'nwhen:later']], ['ownup-edit', ['tab:todo', 'etodo:t-ownup-open']],
-  ['ownup-note', ['tab:todo', 'done:t-ownup-open']], ['ownup-detail-hers', ['tview:t-ownup-done']],
-  ['talk', ['row:ack']], ['kudos-new', ['row:ack', 'kudosnew']], ['kudos-new-long', ['row:ack', 'kudosnew', 'fill:ktext=Thank you for cooking when I was exhausted this week', 'fill:kgift=2147483647']],
+  ['ownup-note', ['tab:todo', 'done:t-ownup-open']], ['ownup-detail-hers', ['tview:t-ownup-done']]
 ];
 
 // Runs in the page. Returns violation strings: "<selector> <what> <numbers>".
