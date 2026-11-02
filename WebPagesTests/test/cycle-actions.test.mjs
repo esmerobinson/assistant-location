@@ -1,4 +1,4 @@
-// The Actions tab (was To do): section assignment, challenge cards, the Add picker, and challenges gone from Us / Points.
+// The To-dos tab: one Open list with whose-it-is tags, the Done section, the Add picker, and the challenge cards that now live on Progress.
 // Real app in headless WebKit against seeded localStorage, backend aborted. Needs GL_WEBKIT_PW / GL_WEBKIT_EXEC.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -59,52 +59,61 @@ describe('actions tab (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_W
   // [label, [row ids]] per labelled section on the Actions screen, in screen order.
   const sections = (page) => page.$$eval('.td .list', (els) => els.map((e) => [e.querySelector('.lab').textContent, [...e.querySelectorAll('[data-a^="tview:"]')].map((r) => r.dataset.a.slice(6)), !!e.querySelector('.empty')]));
 
-  test('every user-visible name for the tab says Actions: tab bar, header, home row, and the Back label from a to do', async () => {
+  test('tabs are Home / To-dos / Fights / Progress; the To-dos header and the Back label from a to do say To-dos', async () => {
     const { context, page } = await open(seed({ todos: [td('a')] }));
-    assert.equal(await page.$eval('.tabbar .tab.on b', (e) => e.textContent), 'Actions');
-    assert.equal(await page.textContent('.hd h2'), 'Actions');
-    await page.click('.tabbar [data-a="tab:home"]');
-    assert.equal(await page.$eval('.row[data-id="todo"]', (e) => e.textContent.includes('Actions') && !e.textContent.includes('To do')), true);
-    await page.click('.tabbar [data-a="tab:todo"]');
+    assert.deepEqual(await page.$$eval('.tabbar .tab b', (e) => e.map((x) => x.textContent)), ['Home', 'To-dos', 'Fights', 'Progress']);
+    assert.equal(await page.$eval('.tabbar .tab.on b', (e) => e.textContent), 'To-dos');
+    assert.equal(await page.textContent('.hd h2'), 'To-dos');
     await page.click('[data-todo="a"]');
-    assert.equal((await page.textContent('.tdd2 .back')).trim(), 'Actions');
+    assert.equal((await page.textContent('.tdd2 .back')).trim(), 'To-dos');
     await context.close();
   });
 
-  test('Today holds my late and due-today to dos (oldest first) plus Response items; Open holds the rest incl. habits; done and partner items stay out', async () => {
+  test('Open is one list: my late and due-today first (oldest first), then the rest of mine, then the partner\'s; each row says whose; done stays out', async () => {
     const todos = [td('later', { due_date: T.later }), td('none'), td('today', { due_date: T.today }), td('habit', { type: 'habit', target: 3, period: 'week' }),
-      td('tomorrow', { due_date: T.tomorrow }), td('late', { due_date: T.yesterday }), td('resp', { type: 'response' }), td('resp-future', { type: 'response', due_date: T.later }),
+      td('tomorrow', { due_date: T.tomorrow }), td('late', { due_date: T.yesterday }),
       td('finished', { due_date: T.yesterday, done_at: '2026-10-21T12:00:00Z' }), td('hers', { owner_id: HER, due_date: T.yesterday })];
     const { context, page } = await open(seed({ todos }));
-    assert.deepEqual(await sections(page), [
-      ['Today', ['late', 'today', 'resp', 'resp-future'], false],
-      ['Open', ['later', 'none', 'habit', 'tomorrow'], false],
-      ['For Esme', ['hers'], false],
-    ]);
+    const s = await sections(page);
+    assert.deepEqual(s.map((x) => x[0]), ['Open', 'Done · 1']);
+    assert.deepEqual(s[0][1], ['late', 'today', 'later', 'none', 'habit', 'tomorrow', 'hers']);
+    assert.equal(await page.$eval('[data-todo="hers"] .tt', (e) => e.textContent), 'Esme');
+    assert.equal(await page.$eval('[data-todo="late"] .tt', (e) => e.textContent), 'You');
+    assert.deepEqual(await page.$$eval('[data-todo="habit"] .tt', (e) => e.map((x) => x.textContent)), ['You', 'Habit']);
     await context.close();
   });
 
-  test('Today and Open each vanish when empty; with both empty a single None shows; For <partner> keeps its own None', async () => {
-    let { context, page } = await open(seed({ todos: [td('later', { due_date: T.later })] }));
-    assert.deepEqual(await sections(page), [['Open', ['later'], false], ['For Esme', [], true]]);
-    await context.close();
-    ({ context, page } = await open(seed({ todos: [td('late', { due_date: T.yesterday })] })));
-    assert.deepEqual(await sections(page), [['Today', ['late'], false], ['For Esme', [], true]]);
-    await context.close();
-    ({ context, page } = await open(seed({ todos: [td('finished', { done_at: '2026-10-21T12:00:00Z' })] })));
-    assert.deepEqual(await sections(page), [['Open', [], true], ['For Esme', [], true]]);
+  test('with nothing open a single None shows in Open, and Done stays out until something is done', async () => {
+    const { context, page } = await open(seed({ todos: [] }));
+    assert.deepEqual(await sections(page), [['Open', [], true]]);
     await context.close();
   });
 
-  test('Done still works from the Today section and the row leaves it', async () => {
-    const { context, page } = await open(seed({ todos: [td('late', { due_date: T.yesterday }), td('later', { due_date: T.later })] }));
+  test('Done holds mine and theirs newest first and opens the detail; Done on a row moves it from Open to Done', async () => {
+    const todos = [td('late', { due_date: T.yesterday }), td('old', { done_at: '2026-10-19T12:00:00Z' }), td('hers', { owner_id: HER, done_at: '2026-10-20T12:00:00Z' })];
+    const { context, page } = await open(seed({ todos }));
+    let s = await sections(page);
+    assert.deepEqual(s[1], ['Done · 2', ['hers', 'old'], false]);
     await page.click('[data-a="done:late"]');
-    await page.waitForFunction(() => !document.querySelector('[data-todo="late"]'));
-    assert.deepEqual((await sections(page)).map((x) => x[0]), ['Open', 'For Esme']);
+    await page.waitForFunction(() => !document.querySelector('.td .list [data-todo="late"]'));
+    s = await sections(page);
+    assert.deepEqual(s.map((x) => x[0]), ['Open', 'Done · 3']);
+    assert.equal(s[1][1][0], 'late');
+    await page.click('.dn[data-a="tview:hers"]');
+    assert.equal((await page.textContent('.tdd2 .back')).trim(), 'To-dos');
     await context.close();
   });
 
-  test('challenge cards: one per challenge in ledger order, big status per state, caption is the person or, for goals, a bar and the window end', async () => {
+  test('Done shows 10 rows and an All toggle shows the rest', async () => {
+    const todos = Array.from({ length: 12 }, (_, i) => td('d' + i, { done_at: '2026-10-' + String(10 + i).padStart(2, '0') + 'T12:00:00Z' }));
+    const { context, page } = await open(seed({ todos }));
+    assert.equal((await sections(page))[1][1].length, 10);
+    await page.click('[data-a="doneall"]');
+    assert.equal((await sections(page))[1][1].length, 12);
+    await context.close();
+  });
+
+  test('challenges live on Progress now: one card per challenge in ledger order, status per state, none on To-dos', async () => {
     const fights = [{ id: 'f1', couple_id: 'c1', at: '2026-10-18T16:00:00Z', logged_by: HER, hit_self: true, hit_count: 1 }];
     const days = [{ id: 'd1', couple_id: 'c1', challenge_id: 'g-active', day: '2026-10-20', note: 'x', by: ME }, { id: 'd2', couple_id: 'c1', challenge_id: 'g-done', day: '2026-10-20', note: 'x', by: ME }];
     const challenges = [
@@ -117,6 +126,9 @@ describe('actions tab (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_W
       goal('g-failed', { name: 'Stretch', goal_window_days: 2, start: '2026-10-10', accepted_at: '2026-10-10T12:00:00Z' }),
     ];
     const { context, page } = await open(seed({ challenges, fights, days }));
+    assert.equal(await page.$('.deck'), null, 'not on To-dos');
+    await page.click('.tabbar [data-a="tab:progress"]');
+    await page.waitForSelector('.deck .ach');
     const cards = await page.$$eval('.deck .ach', (els) => els.map((e) => ({ id: e.dataset.a, nm: e.querySelector('.nm').textContent, big: e.querySelector('.big').textContent,
       bt: e.querySelector('.bt').textContent, bar: e.querySelector('.pb i')?.style.width || null, n: e.classList.contains('n'), o: e.classList.contains('o') })));
     assert.deepEqual(cards.map((c) => c.id), challenges.map((c) => 'challenge:' + c.id), 'every challenge, in the order the ledger returns them');
@@ -132,28 +144,29 @@ describe('actions tab (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_W
     ]);
     await page.click('.ach[data-a="challenge:g-active"]');
     assert.equal(await page.textContent('.hd h2'), 'Read');
+    assert.equal((await page.textContent('.hd .back')).trim(), 'Progress');
     await context.close();
   });
 
-  test('the card row is its own horizontal scroller (the page does not move), and the Challenges section sits between Held/Scheduled and Today', async () => {
+  test('the card row is its own horizontal scroller (the page does not move)', async () => {
     const challenges = ['a', 'b', 'c', 'd', 'e'].map((n) => ch(n, { name: 'Challenge ' + n }));
-    const { context, page } = await open(seed({ challenges, todos: [td('late', { due_date: T.yesterday })] }));
-    assert.deepEqual((await sections(page)).map((x) => x[0]), ['Challenges', 'Today', 'For Esme']);
-    const m = await page.$eval('.deck', (e) => ({ sw: e.scrollWidth, cw: e.clientWidth, oy: getComputedStyle(e).overflowY, ox: getComputedStyle(e).overflowX }));
+    const { context, page } = await open(seed({ challenges }));
+    await page.click('.tabbar [data-a="tab:progress"]');
+    await page.waitForSelector('.deck');
+    const m = await page.$eval('.deck', (e) => ({ sw: e.scrollWidth, cw: e.clientWidth, ox: getComputedStyle(e).overflowX }));
     assert.ok(m.sw > m.cw && m.ox === 'auto', JSON.stringify(m));
     const before = await page.evaluate(() => ({ x: document.querySelector('.deck').scrollLeft, y: document.querySelector('.scr').scrollTop }));
-    // Programmatic scroll proves the container is the scroller; the page itself did not move.
     await page.$eval('.deck', (e) => { e.scrollLeft = 120; });
     const after = await page.evaluate(() => ({ x: document.querySelector('.deck').scrollLeft, y: document.querySelector('.scr').scrollTop }));
     assert.ok(after.x === 120 && after.y === before.y, JSON.stringify({ before, after }));
     await context.close();
   });
 
-  test('Add opens a New picker: Task and Habit open the new-to-do sheet on that type, Challenge opens the new challenge screen', async () => {
+  test('Add opens a New picker of Task, Habit and Owning up (no Challenge); Task and Habit open the new-to-do sheet on that type; New challenge on Progress opens the form', async () => {
     const { context, page } = await open(seed({}));
     await page.click('.hd [data-a="addpick"]');
     assert.equal(await page.textContent('.bs h3'), 'New');
-    assert.deepEqual(await page.$$eval('.bs .opt', (e) => e.map((x) => x.textContent)), ['Task', 'Habit', 'Owning up', 'Challenge']);
+    assert.deepEqual(await page.$$eval('.bs .opt', (e) => e.map((x) => x.textContent)), ['Task', 'Habit', 'Owning up']);
     await page.click('.bs [data-a="newtodo:task"]');
     assert.equal(await page.textContent('.bs h3'), 'New to do');
     assert.equal(await page.$eval('[data-a="nkind:task"]', (e) => e.classList.contains('on')), true);
@@ -164,11 +177,11 @@ describe('actions tab (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_W
     assert.equal(await page.$eval('[data-a="nkind:habit"]', (e) => e.classList.contains('on')), true);
     assert.ok((await page.$$eval('.frow .lab0', (l) => l.map((e) => e.textContent))).includes('Times'));
     await page.click('.bs [data-a="sheet:close"]');
-    await page.click('.hd [data-a="addpick"]');
-    await page.click('.bs [data-a="newch"]');
+    await page.click('.tabbar [data-a="tab:progress"]');
+    await page.click('[data-a="newch"]');
     assert.equal(await page.textContent('.hd h2'), 'New');
     assert.ok(await page.$('#chnew'));
-    assert.equal((await page.textContent('.hd .back')).trim(), 'Actions');
+    assert.equal((await page.textContent('.hd .back')).trim(), 'Progress');
     await context.close();
   });
 

@@ -54,7 +54,7 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     const page = await context.newPage();
     page.on('pageerror', (e) => { throw e; });
     await page.goto(URL_, { waitUntil: 'domcontentloaded' });
-    await page.click('[data-a="row:todo"]');
+    await page.click('[data-a="tab:todo"]');
     await page.waitForSelector('[data-a="addpick"]');
     return { context, page };
   }
@@ -73,8 +73,8 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
       td('hers-soon', { title: 'hs', owner_id: HER, due_date: '2026-10-22' }), td('hers-late', { title: 'hl', owner_id: HER, due_date: '2026-10-20' }),
     ] }));
     const rows = (sel) => page.$$eval(sel, (es) => es.map((e) => e.querySelector('.tx p').textContent + ': ' + (e.querySelector('.due') ? e.querySelector('.due').textContent : '')));
-    assert.deepEqual(await rows('section:not(.ro2) .td-row'), ['late: 3 days late', 'now: Due today', 'soon: Due Fri', 'far: Due Sat 14 Nov']);
-    assert.deepEqual(await rows('.ro2 .td-row'), ['hl: 1 day late', 'hs: Due tomorrow']);
+    // One list now: mine first (late, due-today first), then hers, tagged by owner.
+    assert.deepEqual(await rows('.td-row'), ['late: 3 days late', 'now: Due today', 'soon: Due Fri', 'far: Due Sat 14 Nov', 'hl: 1 day late', 'hs: Due tomorrow']);
     // Overdue, close, and plain must each paint differently.
     const paint = (id) => page.$eval('[data-todo="' + id + '"] .due', (e) => { const c = getComputedStyle(e); return [c.color, c.borderColor, c.backgroundColor].join(); });
     const [late, now, far] = [await paint('late'), await paint('now'), await paint('far')];
@@ -85,13 +85,13 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     await context.close();
   });
 
-  test('Today lists only my late and due-today to dos, never hers, and a card opens the view page', async () => {
+  test('Home lists only my late and due-today to dos, never hers, and a card opens the view page', async () => {
     const { page, context } = await open(seed({ todos: [
       td('late', { title: 'Mine late', due_date: '2026-10-18' }), td('now', { title: 'Mine today', due_date: '2026-10-21' }),
       td('soon', { title: 'Mine soon', due_date: '2026-10-22' }), td('finished', { title: 'Mine done', due_date: '2026-10-18', done_at: '2026-10-17T12:00:00Z' }),
       td('hl', { title: 'Hers late', owner_id: HER, due_date: '2026-10-20' }), td('ht', { title: 'Hers today', owner_id: HER, due_date: '2026-10-21' }),
     ] }));
-    await page.click('.tab >> text=Today');
+    await page.click('.tabbar [data-a="tab:home"]');
     await page.waitForSelector('.nc.dc');
     assert.deepEqual(await page.$$eval('.nc.dc', (es) => es.map((e) => e.querySelector('.s').textContent + ' | ' + e.querySelector('.x').textContent)),
       ['3 days late | Mine late', 'Due today | Mine today']);
@@ -106,7 +106,7 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
   for (const [due, text, colour] of [['2026-10-18', '3 days late', 'rgb(255, 46, 136)'], ['2026-10-21', 'Due today', 'rgb(255, 176, 32)'], ['2026-10-22', 'Due tomorrow', 'rgb(255, 176, 32)']]) {
     test('view page due row: ' + text, async () => {
       const { page, context } = await open(seed({ todos: [td('x', { title: 'x', owner_id: HER, due_date: due })] }));
-      await page.click('.ro2 .td-row .tx p');
+      await page.click('.td-row .tx p');
       await page.waitForSelector('.tdd2');
       assert.equal(await page.$eval('.tdd2 .frow .due', (e) => e.textContent), text);
       assert.equal(await page.$eval('.tdd2 .frow .due', (e) => getComputedStyle(e).borderTopColor), colour);
@@ -117,7 +117,7 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
 
   test('view page due row has no pill when the date is not close', async () => {
     const { page, context } = await open(seed({ todos: [td('x', { title: 'x', owner_id: HER, due_date: '2026-10-30' })] }));
-    await page.click('.ro2 .td-row .tx p');
+    await page.click('.td-row .tx p');
     await page.waitForSelector('.tdd2');
     assert.equal(await page.$('.tdd2 .frow .due'), null);
     await context.close();
@@ -126,7 +126,7 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
   test('a long title stays on the pink band: the band reaches past the last line', async () => {
     const title = 'Can you tell me what you are doing for the whole of next weekend so that I can plan around it please';
     const { page, context } = await open(seed({ todos: [td('long', { title, owner_id: HER, due_date: '2026-10-18' })] }));
-    await page.click('.ro2 .td-row .tx p');
+    await page.click('.td-row .tx p');
     await page.waitForSelector('.tdd2');
     // The band's rotated bottom edge rises to the right, so measure at the last line's right end, the tightest point.
     const gap = await page.evaluate(() => {
@@ -143,9 +143,10 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     await context.close();
   });
 
-  test("tap her to do I created: view page with Edit and Ping; Edit saves and stays on the page; back returns to Actions", async () => {
-    const { page, context } = await open(seed({ todos: [HERS] }));
-    await page.click('.ro2 .td-row .tx p');
+  test("tap her to do I created: view page with Edit and Ping; Edit saves and stays on the page; back returns to To-dos", async () => {
+    // Edit on a delivered ask only shows inside the edit window, so this one was delivered 5 minutes before NOW.
+    const { page, context } = await open(seed({ todos: [{ ...HERS, created_at: '2026-10-21T14:55:00Z' }] }));
+    await page.click('.td-row .tx p');
     await page.waitForSelector('.tdd2');
     assert.equal(await page.$eval('.tdd2 h2', (e) => e.textContent), 'Renew insurance');
     assert.match(await page.$eval('.tdd2', (e) => e.textContent), /Ask about the multi-car rate/);
@@ -187,7 +188,7 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
 
   test('nudge: one per to do per local day; Pinged is disabled, survives reload, and a new day allows another', async () => {
     const { page, context } = await open(seed({ todos: [HERS] }));
-    await page.click('.ro2 .td-row .tx p');
+    await page.click('.td-row .tx p');
     await page.click('[data-a="tnudge:hers"]');
     await shot(page, 'a3-nudged');
     const s = await stored(page, (x) => Object.keys(x.rows.todo_nudges || {}).length === 1);
@@ -200,13 +201,13 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     await page.click('.tdd2 .ghost', { force: true }).catch(() => {});
     assert.equal(Object.keys((await stored(page)).rows.todo_nudges).length, 1, 'second tap writes nothing');
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.click('[data-a="row:todo"]'); await page.click('.ro2 .td-row .tx p');
+    await page.click('[data-a="tab:todo"]'); await page.click('.td-row .tx p');
     assert.equal(await page.$eval('.tdd2 .ghost', (e) => e.textContent), 'Pinged');
     await context.close();
     // Yesterday's nudge does not block today's.
     const old = { id: 'n0', couple_id: 'c1', todo_id: 'hers', sender_id: ME, created_at: '2026-10-20T15:00:00Z', updated_at: '2026-10-20T15:00:00Z', deleted_at: null };
     const o2 = await open(seed({ todos: [HERS], extra: { todo_nudges: [old] } }));
-    await o2.page.click('.ro2 .td-row .tx p');
+    await o2.page.click('.td-row .tx p');
     assert.ok(await o2.page.$('[data-a="tnudge:hers"]'));
     await o2.context.close();
   });
@@ -223,7 +224,7 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
   test('comment: Send adds it to the thread with author and time, persists across reload; empty is refused; offline it queues', async () => {
     const theirs = { id: 'c0', couple_id: 'c1', todo_id: 'hers', author_id: HER, body: 'On it tomorrow', created_at: '2026-10-21T13:00:00Z', updated_at: '2026-10-21T13:00:00Z', deleted_at: null };
     const { page, context } = await open(seed({ todos: [HERS], extra: { todo_comments: [theirs] } }));
-    await page.click('.ro2 .td-row .tx p');
+    await page.click('.td-row .tx p');
     assert.match(await page.$eval('.tdd2 .fns', (e) => e.textContent), /Esme.*On it tomorrow/s);
     await page.click('[data-a="tcomment:hers"]'); // empty
     assert.equal((await stored(page)).outbox.length, 0, 'empty comment writes nothing');
@@ -244,7 +245,7 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     await page.waitForTimeout(300);
     await shot(page, 'a2-comments-input');
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.click('[data-a="row:todo"]'); await page.click('.ro2 .td-row .tx p');
+    await page.click('[data-a="tab:todo"]'); await page.click('.td-row .tx p');
     assert.match(await page.$eval('.tdd2 .fns', (e) => e.textContent), /Thanks, please do/);
     await context.close();
   });
@@ -252,7 +253,7 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
   test('375px: the comment input and Send clear the tab bar when scrolled to the bottom', async () => {
     const { page, context } = await open(seed({ todos: [HERS] }));
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.click('.ro2 .td-row .tx p');
+    await page.click('.td-row .tx p');
     await page.evaluate(() => { document.querySelector('[data-a^="tcomment:"]').scrollIntoView({ block: 'end' }); });
     await page.waitForTimeout(300);
     const r = await page.evaluate(() => ({ save: document.querySelector('[data-a^="tcomment:"]').getBoundingClientRect().bottom, ta: document.querySelector('[data-d="cmt"]').getBoundingClientRect().top, bar: document.querySelector('.tabbar').getBoundingClientRect().top }));
@@ -261,12 +262,12 @@ describe('todo view page (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     await context.close();
   });
 
-  test('push route todo/<id> opens that view page with Back to Actions', async () => {
+  test('push route todo/<id> opens that view page with Back to To-dos', async () => {
     const { page, context } = await open(seed({ todos: [HERS] }));
     await page.evaluate(() => window.cycleNative.route('todo/hers'));
     await page.waitForSelector('.tdd2');
     assert.equal(await page.$eval('.tdd2 h2', (e) => e.textContent), 'Renew insurance');
-    assert.match(await page.$eval('.tdd2 .back', (e) => e.textContent), /Actions/);
+    assert.match(await page.$eval('.tdd2 .back', (e) => e.textContent), /To-dos/);
     await page.click('[data-a="back"]');
     await page.waitForSelector('[data-a="addpick"]');
     await context.close();

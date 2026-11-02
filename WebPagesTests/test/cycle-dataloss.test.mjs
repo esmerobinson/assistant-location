@@ -204,7 +204,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
   test('8 Log fight with an Ask chip and no partner queues nothing and says why; the typed note stays', async () => {
     const { context, page } = await open({ tweak: (sh) => { sh.members = [MEMBERS[0]]; }, handler: (r) => r.path === 'members' ? { status: 200, body: [MEMBERS[0]] } : undefined });
     await ready(page);
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     await page.fill('textarea[data-d="note"]', 'She said');
     await page.click('[data-a="chip:apologize"]');
     await page.click('[data-a="fightsave"]');
@@ -219,11 +219,11 @@ describe('webkit', { skip: !haveWebkit }, () => {
   test('8b a Log fight draft survives a reload', async () => {
     const { context, page } = await open();
     await ready(page);
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     await page.fill('textarea[data-d="note"]', 'Draft text');
     await page.waitForTimeout(300);
     await page.reload({ waitUntil: 'domcontentloaded' }); await ready(page);
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     assert.equal(await page.inputValue('textarea[data-d="note"]'), 'Draft text');
     await context.close();
   });

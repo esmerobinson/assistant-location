@@ -61,27 +61,27 @@ describe('webkit', { skip: !haveWebkit }, () => {
 
   test('fight: draft survives back, tab and relaunch; saving clears it', async () => {
     const { context, page } = await open();
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     await page.fill('textarea[data-d="note"]', 'She said');
     await page.click('[data-a="chip:apologize"]'); // a change with no input event, after typing
     await page.click('[data-a="back"]');
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     assert.equal(await fieldVal(page, 'note'), 'She said');
     assert.ok(await page.locator('[data-a="chip:apologize"].on').count(), 'chip restored');
     await page.reload(); await page.waitForSelector('.rows .row');
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     assert.equal(await fieldVal(page, 'note'), 'She said', 'survives a relaunch');
     await page.click('.p2.s2 .save');
     await page.waitForSelector('.rows .row');
     assert.deepEqual(await drafts(page), {});
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     assert.equal(await fieldVal(page, 'note'), '');
     await context.close();
   });
 
   test('owning up: failed validation keeps the draft; For-partner choice and kind are restored; save clears', async () => {
     const { context, page } = await open();
-    await page.click('[data-a="row:todo"]');
+    await page.click('[data-a="tab:todo"]');
     await page.evaluate(() => document.querySelector('[data-a="addpick"]').click());
     await page.click('[data-a="newtodo:ownup"]');
     await page.click('[data-a="nfor:them"]');
@@ -105,7 +105,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
 
   test('new to do: X keeps text and choices; save clears; Habit tap beats a drafted Task', async () => {
     const { context, page } = await open();
-    await page.click('[data-a="row:todo"]');
+    await page.click('[data-a="tab:todo"]');
     await page.evaluate(() => document.querySelector('[data-a="addpick"]').click());
     await page.click('[data-a="newtodo:task"]');
     await page.fill('input[data-d="title"]', 'Buy milk');
@@ -123,7 +123,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
 
   test('edit to do: unsaved edit beats the stored row, is keyed per row, and empty discards', async () => {
     const { context, page } = await open((sh) => { sh.rows.todos = { t1: todo('t1') }; });
-    await page.click('[data-a="row:todo"]');
+    await page.click('[data-a="tab:todo"]');
     await page.evaluate(() => document.querySelector('[data-a="tview:t1"]').click());
     await page.fill('textarea[data-d="cmt"]', 'half a comment');
     await page.click('[data-a="back"]');
@@ -148,7 +148,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
   test('new nudge keeps a draft until saved', async () => {
     const { context, page } = await open();
     const nav = (a) => page.evaluate((x) => { document.querySelector('[data-a="' + x + '"]').click(); }, a);
-    await page.click('[data-a="row:nudges"]');
+    await page.click('[data-a="tab:todo"]'); await page.click('[data-a="todoseg:rem"]');
     await nav('nudgenew');
     await page.fill('textarea[data-d="nbody"]', 'Remember this');
     await page.click('[data-a="back"]');
@@ -160,7 +160,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
   });
   test('a draft belongs to one row, never another', async () => {
     const { context, page } = await open((sh) => { sh.rows.todos = { t1: todo('t1'), t2: todo('t2') }; });
-    await page.click('[data-a="row:todo"]');
+    await page.click('[data-a="tab:todo"]');
     await page.evaluate(() => document.querySelector('[data-a="tview:t1"]').click());
     await page.fill('textarea[data-d="cmt"]', 'for t1');
     await page.click('[data-a="back"]');
@@ -171,7 +171,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
 
   test('nothing typed writes no draft, and auth fields never reach disk', async () => {
     const { context, page } = await open();
-    await page.click('[data-a="row:fight"]');
+    await page.click('[data-a="go:fight"]');
     await page.click('[data-a="back"]');
     assert.deepEqual(await drafts(page), {});
     await context.close();

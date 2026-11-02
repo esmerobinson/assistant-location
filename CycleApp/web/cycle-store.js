@@ -80,7 +80,7 @@ var CycleStore = (function () {
   var ORDER = { nudge_sends: 'created_at' };
   var S = { session: null, couple: null, members: [], rows: {}, cursors: {}, outbox: [], priv: null, syncError: null, syncing: false,
     // Writes the server permanently refused, kept whole (never deleted automatically) so the person can read and export the text.
-    deadLetters: [], persistError: null, loaded: false, pushFails: 0, pushNextAt: 0 };
+    deadLetters: [], persistError: null, loaded: false, pushFails: 0, pushNextAt: 0, pushErr: null };
   SHARED.forEach(function (t) { S.rows[t] = {}; });
   var listeners = [];
   function emit() { listeners.forEach(function (f) { f(); }); }
@@ -293,7 +293,13 @@ var CycleStore = (function () {
     for (var i = 0; i < SHARED.length; i++) await pullTable(SHARED[i]);
   }
   // A write the server will never accept (bad data, RLS refusal) as opposed to one worth retrying (auth, timeout, throttle, 5xx, offline).
-  function permanent(e) { return e.status >= 400 && e.status < 500 && [401, 408, 429].indexOf(e.status) < 0; }
+  // Exception: PostgREST answers 404/400 PGRST204/PGRST205 ("column/table not in the schema cache") and Postgres 42703/42P01 (column
+  // or relation does not exist) while a migration is not applied yet or the schema cache has not reloaded. The row is fine and
+  // the server will accept it later, so dead-lettering it would strand a good write; it stays queued and retries with backoff.
+  function permanent(e) {
+    if (!(e.status >= 400 && e.status < 500) || [401, 408, 429].indexOf(e.status) >= 0) return false;
+    return !/PGRST20[45]|42703|42P01|schema cache/.test(e.body || '');
+  }
   function deadLetter(o, why, status) {
     var entry = Object.assign({}, o); delete entry.inflight;
     S.deadLetters.push({ id: uuid(), at: nowIso(), error: why, status: status || null, entry: entry });
@@ -318,7 +324,9 @@ var CycleStore = (function () {
     }
   }
   async function push() {
-    if (Date.now() < S.pushNextAt) return;
+    // Backing off after a retryable failure: skip the network but keep reporting that failure, so sync() does not read
+    // "no error" and clear the error bar while the write is still stuck in the outbox.
+    if (Date.now() < S.pushNextAt) { if (S.pushErr) throw S.pushErr; return; }
     while (S.outbox.length) {
       var o = S.outbox[0];
       o.inflight = true; // patch()/insert() must not fold into an entry whose body is already on the wire
@@ -328,7 +336,9 @@ var CycleStore = (function () {
         o.inflight = false;
         if (!(permanent(e) || e.noRow)) {
           // Worth retrying: stop here (order matters), back off so a dead link is not hammered every poll.
-          S.pushFails++; S.pushNextAt = Date.now() + Math.min(2000 * Math.pow(2, S.pushFails - 1), 300000);
+          // Capped at 30 s (was 300 s): after the server recovers a person must not wait minutes for a queued write.
+          // A foreground, going online, or any new write also resets the wait (retryPush).
+          S.pushFails++; S.pushNextAt = Date.now() + Math.min(2000 * Math.pow(2, S.pushFails - 1), 30000); S.pushErr = e;
           throw e;
         }
         console.error('cycle write refused, kept as not sent:', e);
@@ -337,7 +347,7 @@ var CycleStore = (function () {
         persist(); emit();
         continue;
       }
-      S.pushFails = 0; S.pushNextAt = 0;
+      S.pushFails = 0; S.pushNextAt = 0; S.pushErr = null;
       var i = S.outbox.indexOf(o); if (i >= 0) S.outbox.splice(i, 1);
     }
   }
@@ -353,7 +363,7 @@ var CycleStore = (function () {
       try { await pull(); } catch (e) { pullErr = e; }
       var err = pushErr || pullErr;
       // Only fetch's own network failure is "offline"; a TypeError from our code is a bug and shows.
-      if (!err || err.offline) S.syncError = null;
+      if (!err || err.offline) { S.syncError = null; S.syncErrorStatus = null; }
       else { S.syncError = err.message; S.syncErrorStatus = err.status || null; console.error('cycle sync failed:', err); }
     } finally {
       S.syncing = false; persist(); emit(); reschedule();
@@ -361,12 +371,23 @@ var CycleStore = (function () {
       if (syncAgain) { syncAgain = false; scheduleSync(); }
     }
   }
+  // Ends any backoff so the next push tries now: called on foreground and on every local write.
+  function retryPush() { S.pushNextAt = 0; }
+  // True when the server permanently refused this row's insert: it still sits in S.rows with its text, but was never sent.
+  function notSent(t, id) { return S.deadLetters.some(function (d) { return d.entry.table === t && d.entry.id === id && d.entry.op === 'insert'; }); }
+  // Everything on disk exactly as stored (no JSON.parse), so a blob that will not load can still be taken off the phone.
+  async function rawExport() {
+    var keys = await kv.keys(''), out = {};
+    for (var i = 0; i < keys.length; i++) out[keys[i]] = await kv.get(keys[i]);
+    return JSON.stringify(out, null, 1);
+  }
   function deadLetterText() { return JSON.stringify(S.deadLetters, null, 2); }
 
   // ---- writes -------------------------------------------------------------------------
   function insert(t, row) {
     S.rows[t][row.id] = row;
     S.outbox.push({ op: 'insert', table: t, id: row.id, row: Object.assign({}, row) });
+    retryPush();
     persist(); emit(); scheduleSync(); reschedule();
     return row;
   }
@@ -384,6 +405,7 @@ var CycleStore = (function () {
     else if (last && last.op === 'insert') Object.assign(last.row, cols);
     else if (last && last.op === 'patch' && last === S.outbox[S.outbox.length - 1]) Object.assign(last.patch, cols);
     else S.outbox.push({ op: 'patch', table: t, id: id, patch: cols });
+    retryPush();
     persist(); emit(); scheduleSync(); reschedule();
   }
 
@@ -504,7 +526,7 @@ var CycleStore = (function () {
   async function boot() {
     var s = JSON.parse((await kv.get('session')) || 'null');
     if (s) { S.session = s; await loadUserData(s.user.id); }
-    window.addEventListener('online', function () { S.pushNextAt = 0; sync(); });
+    window.addEventListener('online', function () { retryPush(); sync(); });
     // iOS can kill a backgrounded page without any later event: flush the 50ms debounce the moment the page leaves the screen.
     function flush() { if (S.session) persistNow().catch(function () {}); }
     window.addEventListener('pagehide', flush);
@@ -516,6 +538,6 @@ var CycleStore = (function () {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
     kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
-    api: api, deadLetterText: deadLetterText, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
+    api: api, deadLetterText: deadLetterText, retryPush: retryPush, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
   };
 })();

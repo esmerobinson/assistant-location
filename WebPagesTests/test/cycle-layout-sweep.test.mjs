@@ -73,12 +73,14 @@ const SHARED = {
       item('i-iss-done', { body: 'Please text when you are running late', origin: 'issue', response_type: 'change', status: 'delivered', delivered_at: iso(60), held_until: iso(61) }),
       item('i-iss-hers', { body: 'You promised to call the landlord', origin: 'issue', response_type: 'change', sender_id: HER, recipient_id: ME, status: 'delivered', delivered_at: iso(20), held_until: iso(21) }),
       item('i-held', { body: 'Clean the kitchen before Sunday dinner' }),
+      item('i-drop', { body: 'Stop leaving the washing up until the morning', status: 'dropped', held_until: iso(5) }),
       item('i-ready', { body: 'Pick up the parcel', held_until: iso(1) }),
       item('i-sched', { body: 'Take the recycling out', held_until: null, status: 'delivered', delivered_at: iso(-20) })].map((r) => [r.id, r])),
     todos: Object.fromEntries(TODOS.map((r) => [r.id, r])),
     // View-page thread: a long unbroken word and a long sentence from the partner so wrapping is exercised.
     todo_comments: Object.fromEntries([
       { ...base, id: 'tc1', todo_id: 't-hers', author_id: ME, body: 'Can you do this before Friday, the quote runs out then and the price goes up again', created_at: iso(30) },
+      { ...base, id: 'tc3', todo_id: 't-hers', author_id: ME, body: 'Removed text', created_at: iso(20), deleted_at: iso(19) },
       { ...base, id: 'tc2', todo_id: 't-hers', author_id: HER, body: 'Supercalifragilisticexpialidocious_policy_number_1234567890_ok', created_at: iso(5) },
     ].map((r) => [r.id, r])),
     // Nudged today already, so the habit's view page shows the disabled "Nudged" state.
@@ -86,7 +88,8 @@ const SHARED = {
     todo_events: { e2: { ...base, id: 'e2', todo_id: 't-ownup-done', user_id: HER, kind: 'done', at: iso(6), note: 'I went quiet because I felt judged, and next time I will say so instead of leaving' }, e1: { ...base, id: 'e1', todo_id: 't-habit', user_id: ME, kind: 'tally', at: iso(2), note: null } },
     checkins: {},
     fight_markers: { fm1: { ...base, id: 'fm1', logged_by: ME, at: iso(30), repaired_at: null, hit_self: false, hit_related: false, intensity: 3 },
-      fm2: { ...base, id: 'fm2', logged_by: HER, at: iso(5), repaired_at: null, hit_self: null, hit_related: null, intensity: 2 } },
+      fm2: { ...base, id: 'fm2', logged_by: HER, at: iso(5), repaired_at: null, hit_self: null, hit_related: null, intensity: 2 },
+      fm3: { ...base, id: 'fm3', logged_by: HER, at: iso(29), repaired_at: iso(20), hit_self: true, hit_related: false, hit_count: 1, intensity: 4 } },
     // One challenge per card state, with a long partner name and a long title so the card row is swept at its worst.
     challenges: Object.fromEntries([
       { ...base, id: 'c-new', name: 'No snacking', start: '2026-10-01', for_user: HER, breaks_on: 'tap', accepted_at: null, rule: 'r' },
@@ -101,9 +104,11 @@ const SHARED = {
     fight_notes: { fn1: { ...base, id: 'fn1', fight_marker_id: 'fm1', author_id: ME, body: 'I raised my voice about the dishes' } },
     rewards: { r1: { ...base, id: 'r1', name: 'Breakfast in bed', price: 40, archived: false, art: null }, r2: { ...base, id: 'r2', name: 'Pick the next film', price: 120, archived: false, art: null }, r3: { ...base, id: 'r3', name: 'Breast implants', price: 5, archived: false, art: 'upgrading' }, r4: { ...base, id: 'r4', name: 'Breast implants', price: 10000, archived: false, art: 'cupid' }, r5: { ...base, id: 'r5', name: 'Plain', price: 5, archived: false, art: null }, r6: { ...base, id: 'r6', name: 'Shopping', price: 5, archived: false, art: 'shopper' } },
     redemptions: { rd1: { ...base, id: 'rd1', reward_id: 'r1', requested_by: HER, status: 'pending', price: 40, decided_by: null, decided_at: null } },
-    nudges: { n1: nudge('n1', 'You are doing fine, take a breath'), n2: nudge('n2', 'Done one', { done_at: iso(20) }) },
-    nudge_sends: { s1: { ...base, id: 's1', nudge_id: 'n1', sender_id: HER, recipient_id: ME, body: 'You are doing fine', deliver_at: iso(3), opened_at: null } },
-    nudge_replies: {},
+    nudges: { n1: nudge('n1', 'You are doing fine, take a breath'), n2: nudge('n2', 'Done one', { done_at: iso(20) }), n3: nudge('n3', 'Archived reminder about water', { archived_at: iso(40) }) },
+    nudge_sends: { s1: { ...base, id: 's1', nudge_id: 'n1', sender_id: HER, recipient_id: ME, body: 'You are doing fine', deliver_at: iso(3), opened_at: null },
+      s2: { ...base, id: 's2', nudge_id: 'n1', sender_id: ME, recipient_id: HER, body: 'You are doing fine, take a breath', deliver_at: iso(26), opened_at: iso(25) },
+      s3: { ...base, id: 's3', nudge_id: 'n1', sender_id: ME, recipient_id: HER, body: 'Tomorrow morning reminder', deliver_at: iso(-14), opened_at: null } },
+    nudge_replies: { rp1: { ...base, id: 'rp1', send_id: 's2', author_id: ME, body: 'Removed reply', created_at: iso(24), deleted_at: iso(23) }, rp2: { ...base, id: 'rp2', send_id: 's2', author_id: HER, body: 'Thank you', created_at: iso(23) } },
     nudge_awards: { aw1: { ...base, id: 'aw1', author_id: ME, recipient_id: HER, nudge_id: 'n2', body: 'Done one', points: 30, payout: '3mo', done_at: iso(20), stopped_at: null } },
   },
   cursors: {}, outbox: [],
@@ -119,8 +124,8 @@ const seed = (couple) => ({
 const SCENARIOS = [
   ['auth', { seed: 'auth' }], ['setup', { seed: 'setup' }],
   ['home', []], ['todo', ['tab:todo']],
-  ['actions-add-picker', ['tab:todo', 'addpick']], ['challenge-detail-goal', ['tab:todo', 'challenge:c-goal']], ['challenge-detail-new', ['tab:todo', 'challenge:c-new']],
-  ['challenge-new', ['tab:todo', 'addpick', 'newch']],
+  ['todo-add-picker', ['tab:todo', 'addpick']], ['challenge-detail-goal', ['tab:progress', 'challenge:c-goal']], ['challenge-detail-new', ['tab:progress', 'challenge:c-new']],
+  ['challenge-new', ['tab:progress', 'newch']],
   ['todo-new-task', ['tab:todo', 'addpick', 'newtodo:task']], ['todo-new-task-me', ['tab:todo', 'addpick', 'newtodo:task', 'nfor:me']],
   ['todo-new-habit', ['tab:todo', 'addpick', 'newtodo:task', 'nkind:habit']], ['todo-new-habit-month', ['tab:todo', 'addpick', 'newtodo:task', 'nkind:habit', 'nper:month']],
   ['todo-edit', ['tab:todo', 'etodo:t-mine']], ['todo-edit-habit', ['tab:todo', 'etodo:t-habit']],
@@ -129,17 +134,20 @@ const SCENARIOS = [
   ['todo-detail-from-her', ['tab:todo', 'tview:t-from-her']], ['todo-detail-habit', ['tab:todo', 'tview:t-habit']],
   ['todo-detail-edit', ['tab:todo', 'tview:t-hers', 'etodo:t-hers']],
   ['todo-detail-long-title', ['tab:todo', 'tview:t-late-long']],
-  ['fight', ['row:fight']], ['fight-custom', ['row:fight', 'chip:custom']], ['fight-detail', ['row:fight', 'openfight:fm1']],
-  ['us', ['tab:us']], ['settings', ['tab:us', 'go:settings']], ['points', ['go:points']], ['shop', ['go:points', 'go:shop']],
+  ['fight', ['go:fight']], ['fight-custom', ['go:fight', 'chip:custom']], ['fight-detail', ['go:fight', 'openfight:fm1']],
+  ['more', ['go:more']], ['settings', ['go:more', 'go:settings']], ['points', ['go:points']], ['shop', ['go:points', 'go:shop']],
   ['shop-redeem', ['go:points', 'go:shop', 'reward:r1']], ['shop-redeem-art', ['go:points', 'go:shop', 'reward:r3']], ['shop-redeem-null-art', ['go:points', 'go:shop', 'reward:r5']], ['shop-redeem-shopper', ['go:points', 'go:shop', 'reward:r6']], ['shop-add', ['go:points', 'go:shop', 'addreward']],
-  ['week', ['go:week']], ['cycle', ['tab:us', 'go:cycle']],
-  ['nudges', ['row:nudges']], ['nudge', ['row:nudges', 'nudge:n1']], ['nudge-done', ['row:nudges', 'nudge:n1', 'nudgedone']],
-  ['nudge-incoming', ['nudgein:s1']], ['nudge-new', ['row:nudges', 'nudgenew']],
+  ['week', ['go:week']], ['cycle', ['go:more', 'go:cycle']],
+  ['nudges', ['tab:todo', 'todoseg:rem']], ['nudge', ['tab:todo', 'todoseg:rem', 'nudge:n1']], ['nudge-done', ['tab:todo', 'todoseg:rem', 'nudge:n1', 'nudgedone']],
+  ['nudge-incoming', ['nudgein:s1']], ['nudge-new', ['tab:todo', 'todoseg:rem', 'nudgenew']],
   ['todo-new-later', ['tab:todo', 'addpick', 'newtodo:task', 'nwhen:later']], ['todo-new-later-me', ['tab:todo', 'addpick', 'newtodo:task', 'nfor:me', 'nwhen:later']],
   ['ownup-new', ['tab:todo', 'addpick', 'newtodo:ownup']], ['ownup-new-later', ['tab:todo', 'addpick', 'newtodo:ownup', 'nwhen:later']], ['ownup-edit', ['tab:todo', 'etodo:t-ownup-open']],
   ['ownup-note', ['tab:todo', 'done:t-ownup-open']], ['ownup-detail-hers', ['tview:t-ownup-done']],
-  ['issues', ['row:issue']], ['issue-still', ['row:issue', 'still:i-iss-held']], ['issue-still-ready', ['row:issue', 'still:i-iss-ready']],
-  ['issue-new', ['row:issue', 'issuenew']], ['issue-new-long', ['row:issue', 'issuenew', 'fill:ibody=You said you would plan the weekend and then left it all to me again, and I would like that to change because it keeps happening', 'itype:change']]
+  ['fights', ['tab:fights']], ['fights-16w', ['tab:fights', 'frange:16w']], ['progress', ['tab:progress']], ['dropped', ['go:more', 'go:dropped']],
+  ['todo-done-all', ['tab:todo', 'doneall']], ['rem-sent', ['tab:todo', 'todoseg:rem', 'remview:sent']], ['rem-recv', ['tab:todo', 'todoseg:rem', 'remview:recv']],
+  ['rem-arch', ['tab:todo', 'todoseg:rem', 'remview:arch']], ['shop-edit', ['go:points', 'go:shop', 'shopedit']], ['shop-edit-sheet', ['go:points', 'go:shop', 'shopedit', 'reward:r1']],
+  ['issues', ['go:issues']], ['issue-still', ['go:issues', 'still:i-iss-held']], ['issue-still-ready', ['go:issues', 'still:i-iss-ready']],
+  ['issue-new', ['go:issues', 'issuenew']], ['issue-new-long', ['go:issues', 'issuenew', 'fill:ibody=You said you would plan the weekend and then left it all to me again, and I would like that to change because it keeps happening', 'itype:change']]
 ];
 
 // Runs in the page. Returns violation strings: "<selector> <what> <numbers>".
@@ -268,7 +276,7 @@ describe('layout sweep (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => m.type() === 'error' && !/config\.js/.test(m.text()) && errors.push('console: ' + m.text()));
     await page.goto(URL_, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector(kind === 'auth' ? '[data-a="signin"], input[type="email"]' : kind === 'setup' ? 'input[data-d="name"]' : '[data-a="row:fight"]');
+    await page.waitForSelector(kind === 'auth' ? '[data-a="signin"], input[type="email"]' : kind === 'setup' ? 'input[data-d="name"]' : '[data-a="go:fight"]');
     return { context, page, errors };
   }
   // Fires the action through the app's own delegated click handler from an injected [data-a] element (no tab bar needed,

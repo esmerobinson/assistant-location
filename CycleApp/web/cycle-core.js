@@ -237,11 +237,11 @@ var CycleCore = (function () {
   }
   // A to do that needs a note refuses an empty one (the UI shows this message).
   function requireNote(t, note) { if (t.needs_note && !(note || '').trim()) throw new Error('Note needed'); }
-  // Owner sees "Edited" on a to do their partner edited, until they next log it.
+  // Owner sees "Edited" on a to do their partner edited, until they next log it. An edit inside the author's edit window
+  // still counts: the partner may already have read the old text, and rows edited before the window existed carry it too.
   function isEdited(t, events, me) {
     return t.owner_id === me && t.created_by !== me && !!t.edited_at && !events.some(function (e) { return e.todo_id === t.id && e.user_id === me && ms(e.at) > ms(t.edited_at); });
   }
-
   // rows: {members, items, todos, todo_events, fight_markers, redemptions, challenges: [{id, name, start, breaks_on}], challenge_breaks: [{challenge_id, day}], challenge_days: [{challenge_id, day}]}
   // A challenge's start is the first local day that can pay; no rows.challenges means no challenges.
   // opts: {tz, now, since (YYYY-MM-DD, first day calm days can accrue)}
@@ -419,29 +419,31 @@ var CycleCore = (function () {
     return { earned: arr(earned), lost: arr(lost) };
   }
 
-  // Today's first-open banner: ledger lines for the whole days from lastDay (the local day the banner was last dismissed)
-  // up to but not including today, because today's lines are still moving and stay on Points. lastDay is included: it was
-  // dismissed partway through, so its later lines were never seen. No lastDay (first run) means yesterday only, not the
-  // couple's whole history. Null when today's banner was already dismissed or nothing moved, so no empty card shows.
-  // Repeats merge (three tallies of one habit read +3 once) and the biggest moves sort first, with the label as the
-  // tiebreak so both phones list the same lines.
-  function dailyDigest(led, lastDay) {
-    var today = led.today, start = lastDay || addDays(today, -1);
-    if (start >= today) return null;
-    var inRange = function (d) { return d >= start && d < today; }, merged = {}, net = 0, any = false;
-    function take(pts, label, who) {
-      var k = label + '|' + (who || ''), m = merged[k] || (merged[k] = { pts: 0, label: label, who: who || null });
-      m.pts += pts; net += pts; any = true;
+
+  // ---- fight patterns (shared markers, both partners) ---------------------
+  // days: local YYYY-MM-DD of every fight either partner logged. Calm days are the days from `since` up to
+  // yesterday with no fight, the same rule computeLedger pays +3 for, so the numbers agree with the Points ledger.
+  // streak = calm days in a row ending yesterday (today is not over yet); best = longest such run; last28 = calm days
+  // among the 28 days before today. A `since` after today yields zeros.
+  function calmStats(days, today, since) {
+    var fought = {}; days.forEach(function (d) { fought[d] = true; });
+    var run = 0, best = 0, last28 = 0;
+    for (var d = since; d < today; d = addDays(d, 1)) {
+      run = fought[d] ? 0 : run + 1;
+      if (run > best) best = run;
+      if (!fought[d] && dayDiff(d, today) <= 28) last28++;
     }
-    Object.keys(led.weeks).forEach(function (w) {
-      Object.keys(led.weeks[w].days).forEach(function (d) { if (inRange(d)) led.weeks[w].days[d].lines.forEach(function (l) { take(l.pts, l.label, l.who); }); });
-    });
-    led.spends.forEach(function (s) { if (inRange(s.day)) take(s.pts, 'Redeemed', null); });
-    if (!any) return null;
-    var lines = Object.keys(merged).map(function (k) { return merged[k]; }).filter(function (m) { return m.pts; })
-      .sort(function (a, b) { return Math.abs(b.pts) - Math.abs(a.pts) || a.label.localeCompare(b.label) || String(a.who).localeCompare(String(b.who)); });
-    return { start: start, net: net, lines: lines };
+    return { streak: run, best: best, last28: last28 };
   }
+  // Fights per week for `weeks` weeks ending with the week of `today`: [{start, n}] oldest first.
+  function weeklyFights(days, today, weeks) {
+    var first = addDays(weekStart(today), -7 * (weeks - 1)), out = [];
+    for (var i = 0; i < weeks; i++) out.push({ start: addDays(first, 7 * i), n: 0 });
+    days.forEach(function (d) { var k = Math.floor(dayDiff(first, d) / 7); if (k >= 0 && k < weeks) out[k].n++; });
+    return out;
+  }
+  // May the author still change something they just submitted? True for `windowMin` minutes after `createdAtMs`.
+  function inEditWindow(createdAtMs, nowMs, windowMin) { return nowMs - createdAtMs < windowMin * MIN; }
 
   // ---- cycle phase (private fight log) -----------------------------------
   // fights: [{at (ms), intensity}]. Fight = day of fight, Cool = 1-2 days after,
@@ -510,7 +512,7 @@ var CycleCore = (function () {
     zonedMs: zonedMs, deliverAt: deliverAt, issueHeldUntil: issueHeldUntil, sectionNudges: sectionNudges,
     addMonths: addMonths, splitPayout: splitPayout, awardStatus: awardStatus,
     earnPts: earnPts, missPts: missPts, periodOf: periodOf, habitCount: habitCount, habitMisses: habitMisses, requireNote: requireNote, isEdited: isEdited,
-    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, dailyDigest: dailyDigest, phase: phase, needsYou: needsYou, monthGrid: monthGrid,
+    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, needsYou: needsYou, calmStats: calmStats, weeklyFights: weeklyFights, inEditWindow: inEditWindow, monthGrid: monthGrid,
     // Only a still-held item may offer Send / Edit / Drop; a stale notification can point at a delivered or dropped one.
     isStillHeld: function (i) { return !!i && i.status === 'held' && !i.deleted_at; }
   };
