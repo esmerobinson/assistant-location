@@ -22,9 +22,9 @@ var ui = {
 };
 
 // ---- small helpers -----------------------------------------------------------------------
-// Rows scheduled for a future time are invisible to every reader until then (C.isScheduled). Only these three tables
+// Rows scheduled for a future time are invisible to every reader until then (C.isScheduled). Only these two tables
 // carry scheduled rows; the sender's own view of them goes through scheduledRows().
-var SCHED_TABLES = { items: 1, todos: 1, acks: 1 };
+var SCHED_TABLES = { items: 1, todos: 1 };
 function L(t) { var r = St.list(t); return SCHED_TABLES[t] ? r.filter(function (x) { return !C.isScheduled(x, now()); }) : r; }
 var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 var WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -78,10 +78,9 @@ function fmtWhen(at) {
   var d = C.localDay(at, tz()), t = fmtTime(at).replace(' ', '');
   return (C.dayDiff(today(), d) < 7 ? dayName(d) : fmtDay(d)) + ' ' + t;
 }
-// The sender's own scheduled rows: to dos they created (for me or for the partner) and acks they wrote or requested.
+// The sender's own scheduled rows: to dos they created (for me or for the partner).
 function scheduledTodos() { return St.list('todos').filter(function (t) { return !t.deleted_at && t.created_by === St.me() && C.isScheduled(t, now()); }).sort(function (a, b) { return C.ms(a.created_at) - C.ms(b.created_at); }); }
-function scheduledAcks() { return St.list('acks').filter(function (a) { return !a.deleted_at && (a.author_id === St.me() || a.requested_by === St.me()) && C.isScheduled(a, now()); }).sort(function (a, b) { return C.ms(a.created_at) - C.ms(b.created_at); }); }
-// "When" for a new to do / ack: Now, or Later with a date and time (default tomorrow 9:00). Returns ms, or null for Now.
+// "When" for a new to do: Now, or Later with a date and time (default tomorrow 9:00). Returns ms, or null for Now.
 function laterRow(on, act) {
   return '<div class="frow"><span class="lab0">When</span>' + seg([['now', 'Now'], ['later', 'Later']], on ? 'later' : 'now', act) + '</div>' +
     (on ? '<div class="frow wh"><span class="lab0">At</span>' + dpick('date', 'schD', val('schD', C.addDays(today(), 1))) + dpick('time', 'schT', val('schT', '09:00')) + '</div>' : '');
@@ -162,7 +161,7 @@ function tabbar(active) {
   return '<nav class="tabbar">' + tab('home', 'moon', 'Today') + tab('todo', 'circ', 'Actions', n) + tab('us', 'us', 'Us') + '</nav>';
 }
 function tabFor(r) { return ['todo', 'tododetail', 'challenge', 'newch'].indexOf(r) >= 0 ? 'todo' : ['us', 'points', 'shop', 'settings', 'cycle'].indexOf(r) >= 0 ? 'us' : 'home'; }
-function backLabel() { var p = ui.stack[ui.stack.length - 1]; return { home: 'Today', us: 'Us', cycle: 'Cycle', points: 'Points', todo: 'Actions', settings: 'Settings', nudges: 'Nudges', nudge: 'Nudge', nudgedone: 'Done', acks: 'Talk', kudosnew: 'Talk' }[p && p.route] || 'Today'; }
+function backLabel() { var p = ui.stack[ui.stack.length - 1]; return { home: 'Today', us: 'Us', cycle: 'Cycle', points: 'Points', todo: 'Actions', settings: 'Settings', nudges: 'Nudges', nudge: 'Nudge', nudgedone: 'Done', talk: 'Talk', kudosnew: 'Talk' }[p && p.route] || 'Today'; }
 function back() { var p = ui.stack.pop(); ui.route = p ? p.route : 'home'; ui.d = {}; ui.sheet = null; render(); }
 function go(route, extra) {
   ui.stack.push({ route: ui.route });
@@ -236,10 +235,7 @@ function rowMeta(id) {
     return nudgeTier('esme').nudges.filter(live).length + ' saved';
   }
   if (id === 'todo') return todoCount();
-  if (id === 'ack') {
-    var asked = ackAsked().length, done = liveAcks().filter(function (a) { return a.status === 'done'; }).length;
-    return asked ? asked + ' asked' : done ? String(done) : 'None';
-  }
+  if (id === 'ack') return kudosEntries().length || 'None';
   var f = S.priv.fights.slice().sort(function (a, b) { return b.at - a.at; })[0];
   if (!f) return 'None';
   var d = C.localDay(f.at, tz());
@@ -264,7 +260,7 @@ var ROWLAB = { nudges: 'Nudges', todo: 'Actions', ack: 'Talk', fight: 'Log fight
 SCREEN.home = function () {
   var led = ledger(), t = today();
   var cards = C.needsYou({ me: St.me(), now: now(), tz: tz(), items: L('items'), redemptions: L('redemptions'), members: S.members,
-    nudge_sends: L('nudge_sends'), nudge_replies: L('nudge_replies'), fight_markers: L('fight_markers'), fight_notes: L('fight_notes'), acks: L('acks') });
+    nudge_sends: L('nudge_sends'), nudge_replies: L('nudge_replies'), fight_markers: L('fight_markers'), fight_notes: L('fight_notes'), todos: L('todos'), seen: S.priv.ownupSeen, since: S.priv.ownupSince });
   var html = cards.map(function (n) {
     if (n.type === 'ready') {
       return '<div class="nc pk" data-a="still:' + n.item.id + '"><div class="mid"><p class="s">Still send? &middot; ' + n.count + ' ready</p><p class="x">' + esc(itemTitle(n.item)) + '</p></div><span class="go">Send</span></div>';
@@ -276,11 +272,8 @@ SCREEN.home = function () {
     if (n.type === 'fight') {
       return '<div class="nc" data-a="openfight:' + n.marker.id + '"><div class="mid"><p class="s">' + pnx(nameOf(n.marker.logged_by)) + '</p><p class="x">Add your version</p></div>' + ic('chevr', 'chv') + '</div>';
     }
-    if (n.type === 'ackreq') {
-      return '<div class="nc" data-a="ackedit:' + n.ack.id + '"><div class="mid"><p class="s">' + pnx(nameOf(n.ack.requested_by)) + ' asks</p><p class="x">' + esc(n.ack.title) + '</p></div>' + ic('chevr', 'chv') + '</div>';
-    }
-    if (n.type === 'ackin') {
-      return '<div class="nc" data-a="acks"><div class="mid"><p class="s">From ' + pnx(nameOf(n.ack.author_id)) + '</p><p class="x">' + esc(n.ack.title) + '</p></div>' + ic('chevr', 'chv') + '</div>';
+    if (n.type === 'ownup') {
+      return '<div class="nc" data-a="tview:' + n.todo.id + '"><div class="mid"><p class="s">From ' + pnx(nameOf(n.todo.owner_id)) + '</p><p class="x">' + esc(n.todo.title) + '</p></div>' + ic('chevr', 'chv') + '</div>';
     }
     if (n.type === 'nudge') {
       return '<div class="nc" data-a="nudgein:' + n.send.id + '"><div class="mid"><p class="s">From ' + pnx(nameOf(n.send.sender_id)) + '</p><p class="x">' + esc(n.send.body) + '</p></div>' + ic('chevr', 'chv') + '</div>';
@@ -378,10 +371,10 @@ SCREEN.todo = function () {
     (nowRows.length ? section('Today', nowRows.map(row).join('')) : '') +
     (laterRows.length || !nowRows.length ? section('Open', laterRows.length ? laterRows.map(row).join('') : '<p class="empty">None</p>') : '') + ro, { sheet: sh });
 };
-// The Add picker: Task and Habit open the new-to-do sheet on that type, Challenge opens its own screen.
+// The Add picker: Task, Habit and Owning up open the new-to-do sheet on that type, Challenge opens its own screen.
 function addPick() {
   return sheet('ap', '<div class="bsh"><h3>New</h3><span class="x" data-a="sheet:close">&#x2715;</span></div>' +
-    [['newtodo:task', 'Task'], ['newtodo:habit', 'Habit'], ['newch', 'Challenge']].map(function (o) { return '<div class="opt' + (o[0] === 'newch' ? ' hl' : '') + '" data-a="' + o[0] + '">' + o[1] + ic('chevr', 'chv') + '</div>'; }).join(''));
+    [['newtodo:task', 'Task'], ['newtodo:habit', 'Habit'], ['newtodo:ownup', 'Owning up'], ['newch', 'Challenge']].map(function (o) { return '<div class="opt' + (o[0] === 'newch' ? ' hl' : '') + '" data-a="' + o[0] + '">' + o[1] + ic('chevr', 'chv') + '</div>'; }).join(''));
 }
 function monDay(d) { return MON[+d.split('-')[1] - 1] + ' ' + +d.split('-')[2]; }
 // Big status of a challenge, shared by the Actions cards: Day N, count/goal, Not started, Done or Failed.
@@ -398,11 +391,12 @@ function newTodoSheet() {
     inp('title', 'Title').replace('class="inp"', 'class="inp fill"') +
     '<div class="ta msg"><textarea data-d="desc" placeholder="Description (optional)">' + esc(val('desc')) + '</textarea></div>' +
     (t ? '' : '<div class="frow"><span class="lab0">For</span>' + seg([['me', 'You'], ['them', pn()]], s.who, 'nfor') + '</div>') +
-    '<div class="frow"><span class="lab0">Type</span>' + seg([['task', 'Task'], ['habit', 'Habit']], s.kind, 'nkind') + '</div>' +
-    (s.kind === 'task' ? '<div class="frow"><span class="lab0">Due</span><span class="chip' + (val('due') ? '' : ' on') + '" data-a="nodue">None</span>' + dpick('date', 'due', val('due')) + '</div>' : '') +
+    '<div class="frow"><span class="lab0">Type</span>' + seg([['task', 'Task'], ['habit', 'Habit'], ['ownup', 'Owning up']], s.kind, 'nkind') + '</div>' +
+    (s.kind !== 'habit' ? '<div class="frow"><span class="lab0">Due</span><span class="chip' + (val('due') ? '' : ' on') + '" data-a="nodue">None</span>' + dpick('date', 'due', val('due')) + '</div>' : '') +
     (s.kind === 'habit' ? '<div class="frow"><span class="lab0">Per</span>' + seg([['day', 'Day'], ['week', 'Week'], ['month', 'Month']], s.period, 'nper', 'hs') + '</div><div class="frow"><span class="lab0">Times</span>' + stepper('tgt') + '</div>' : '') +
     '<div class="frow"><span class="lab0">Earn</span>' + stepper('pe') + '</div><div class="frow"><span class="lab0">Lose</span>' + stepper('pm') + '</div>' +
-    '<div class="frow"><span class="lab0">Needs a note</span>' + tgl('nn', 'nnote') + '</div>' +
+    // An owning-up is its note, so the toggle is hidden and savetodo forces needs_note on.
+    (s.kind === 'ownup' ? '' : '<div class="frow"><span class="lab0">Needs a note</span>' + tgl('nn', 'nnote') + '</div>') +
     (t ? '' : laterRow(s.when === 'later', 'nwhen')) +
     (notes.length ? '<p class="lab">Log</p>' + notes.map(function (e) { return '<p class="tdd">' + esc(fmtDay(C.localDay(C.ms(e.at), tz()))) + ' &middot; ' + esc(e.note) + '</p>'; }).join('') : '') +
     (t ? '<div class="acts"><div class="save" data-a="savetodo">Save</div><div class="tdrop" data-a="tododel:' + t.id + '">Delete</div></div>' : '<div class="save" data-a="savetodo">Save</div>'));
@@ -815,42 +809,11 @@ function openSend(id) {
   if (!priv) markRead(idSet(sendsOfNudge(s.nudge_id)));
 }
 
-// ---- Acknowledge ------------------------------------------------------------------------------------------------
-// An acknowledgment is written by its author (author_id): me, or my partner when I asked for it. A request
-// is an Ask of type 'ack' that reaches the partner as an acks row (status 'requested') once the Ask hold is over.
-function liveAcks() { return L('acks').filter(function (a) { return !a.deleted_at; }); }
-function newest(a, b) { return C.ms(b.done_at || b.created_at) - C.ms(a.done_at || a.created_at); }
-// Requests waiting on me to write.
-function ackAsked() { return liveAcks().filter(function (a) { return a.author_id === St.me() && a.status === 'requested'; }).sort(newest); }
-// Opening the list is what reads the partner's acks (read_at is the non-author's to set, the DB guard enforces it).
-function markAcksRead() {
-  liveAcks().filter(function (a) { return a.author_id !== St.me() && a.status === 'done' && !a.read_at; })
-    .forEach(function (a) { St.patch('acks', a.id, { read_at: nowIso() }); });
-}
-function ackRow(a, act, small) {
-  return '<div class="rem c"' + (act ? ' data-a="' + act + ':' + a.id + '"' : '') + '><div><p>' + esc(a.title) + '</p>' + (a.description ? '<p class="tdd">' + esc(a.description) + '</p>' : '') + (small ? '<small>' + small + '</small>' : '') + '</div></div>';
-}
-SCREEN.acks = function () {
-  var all = liveAcks(), me = St.me(), when = function (a) { return fmtDay(C.localDay(C.ms(a.done_at), tz())); };
-  var mine = all.filter(function (a) { return a.author_id === me && a.status === 'done'; }).sort(newest);
-  var theirs = all.filter(function (a) { return a.author_id !== me && a.status === 'done'; });
-  // A request is still an Ask item while held (no acks row until delivery), so show both forms as Asked.
-  var held = L('items').filter(function (i) { return i.kind === 'ask' && i.ask_type === 'ack' && i.sender_id === me && i.status === 'held' && !i.deleted_at; })
-    .map(function (i) { return { title: i.body, description: i.description, status: 'requested', created_at: i.created_at }; });
-  var pend = all.filter(function (a) { return a.requested_by === me && a.status === 'requested'; }).concat(held);
-  function group(label, html) { return html ? '<div class="lst"><p class="lab">' + label + '</p>' + html + '</div>' : ''; }
-  var asked = ackAsked().map(function (a) { return ackRow(a, 'ackedit'); }).join('');
-  var mineH = mine.map(function (a) { return ackRow(a, 'ackedit', when(a)); }).join('');
-  var theirH = theirs.concat(pend).sort(newest).map(function (a) { return ackRow(a, null, a.status === 'done' ? when(a) : 'Asked'); }).join('');
-  var schedH = scheduledAcks().map(function (a) {
-    // Only an ack's author may delete it (acks_guard), so a request to the partner has no Cancel.
-    var own = a.author_id === me;
-    return '<div class="rem c"><div><p>' + esc(a.title) + '</p><small>' + (own ? '' : 'Ask ' + pn() + ' &middot; ') + fmtWhen(C.ms(a.created_at)) + '</small></div>' + (own ? '<span class="elink" data-a="schedackcancel:' + a.id + '">Cancel</span>' : '') + '</div>';
-  }).join('');
-  var body = group('Asked', asked) + group('Scheduled', schedH) + group('Mine', mineH) + group(pnx(pName() + '’s'), theirH);
+// ---- Talk -------------------------------------------------------------------------------------------------------
+// Kudos only. Owning up is a to-do type ('ownup', see the Actions screen and the Home needs-you card), so it has no list here.
+SCREEN.talk = function () {
   function sub(label, act, inner) { return '<section class="list"><p class="lab tsh"><span>' + label + '</span><span class="elink" data-a="' + act + '">Add</span></p>' + (inner || '<p class="empty">None</p>') + '</section>'; }
-  return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Talk</h2></div></header>' +
-    sub('Kudos', 'kudosnew', kudosRows()) + sub('Owning up', 'acknew', body));
+  return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Talk</h2></div></header>' + sub('Kudos', 'kudosnew', kudosRows()));
 };
 
 // Kudos list: given and received between us (items).
@@ -873,19 +836,6 @@ SCREEN.kudosnew = function () {
     inp('ktext', 'Kudos').replace('class="inp"', 'class="inp fill"') +
     '<div class="frow"><span class="lab0">Gift points</span><input class="inp" type="number" inputmode="numeric" min="0" step="1" data-d="kgift" value="' + esc(val('kgift')) + '"></div>' +
     '<div class="save" data-a="kudossave">Send</div>', { tab: false });
-};
-
-// New (From Me / them), fulfil a request (title prefilled, editable) or edit one of mine.
-SCREEN.acknew = function () {
-  var a = ui.aid && S.rows.acks[ui.aid], fulfil = a && a.status === 'requested';
-  if (a && ui.d.atitle == null) { ui.d.atitle = a.title; ui.d.adesc = a.description || ''; }
-  var save = a && !fulfil ? '<div class="pair"><span class="ghost" data-a="ackdel">Delete</span><span class="save" data-a="acksave">Save</span></div>' :
-    '<div class="save" data-a="acksave">' + (!a && ui.afrom === 'them' ? 'Ask ' + pn() : 'Save') + '</div>';
-  return phone('p2 nd', '<header class="hd"><div><h2>' + (a ? (fulfil ? 'Owning up' : 'Edit') : 'New') + '</h2><p class="dl">&nbsp;</p></div><span class="txtbtn" data-a="back">Cancel</span></header>' +
-    inp('atitle', 'Title').replace('class="inp"', 'class="inp fill"') +
-    '<div class="ta msg"><textarea data-d="adesc" placeholder="Description (optional)">' + esc(val('adesc')) + '</textarea></div>' +
-    (a ? '' : '<section><p class="lab">From</p>' + seg([['me', 'Me'], ['them', pn()]], ui.afrom, 'acknfrom') + '</section>') +
-    (a ? '' : laterRow(ui.awhen === 'later', 'awhen')) + save, { tab: false });
 };
 
 // ---- Cycle (private) screen -----------------------------------------------------------------------------
@@ -1094,12 +1044,11 @@ app.addEventListener('input', function (e) {
 });
 
 // ---- actions ---------------------------------------------------------------------------------------------------
-// A delivered ask becomes the partner's to do, or for an 'ack' ask the acknowledgment they must write.
+// A delivered ask becomes the partner's to do (type carried through, so an 'ownup' ask becomes an 'ownup' to do).
 // The row is stamped with the item's delivered_at: now for an ordinary delivery, T for a scheduled one.
 function deliverAsk(item) {
   var at = C.ms(item.delivered_at);
-  if (item.ask_type === 'ack') St.insert('acks', C.askToAck(item, St.uuid(), at));
-  else St.insert('todos', C.askToTodo(item, St.uuid(), at));
+  St.insert('todos', C.askToTodo(item, St.uuid(), at));
 }
 function deliver(item) {
   St.patch('items', item.id, { status: 'delivered', delivered_at: nowIso() });
@@ -1121,6 +1070,11 @@ function todoTally(t, el, note) {
   St.patch('todos', t.id, { tally: t.tally + 1 });
   St.insert('todo_events', { id: St.uuid(), couple_id: S.couple.id, todo_id: t.id, user_id: St.me(), kind: 'tally', at: nowIso(), note: note || null });
   M.play('points', el, C.earnPts(t));
+}
+// Opening a to do the partner owned up to is what clears its Home card. Any other to do is a no-op.
+function markOwnupSeen(id) {
+  var t = S.rows.todos[id], seen = S.priv.ownupSeen;
+  if (t && t.type === 'ownup' && t.owner_id !== St.me() && seen.indexOf(id) < 0) { seen.push(id); St.savePriv(); }
 }
 function todoDone(t, el, note) {
   St.patch('todos', t.id, { done_at: nowIso() });
@@ -1194,7 +1148,7 @@ var ACT = {
   }),
   sharecode: guard(function () { return St.native.shareText('Together code: ' + ui.code); }),
   codedone: function () { ui.code = null; ui.copied = false; ui.d = {}; render(); },
-  row: function (id) { if (ui.reorder) return; if (id === 'ack') ACT.acks(); else go(id === 'fight' ? 'fight' : id); },
+  row: function (id) { if (ui.reorder) return; if (id === 'ack') ACT.talk(); else go(id === 'fight' ? 'fight' : id); },
   reorderdone: function () { ui.reorder = false; render(); },
   decline: guard(function (id) { St.patch('redemptions', id, { status: 'declined', decided_by: St.me(), decided_at: nowIso() }); }),
   approve: guard(function (id) {
@@ -1214,7 +1168,7 @@ var ACT = {
     ui.sheet = { type: 'newtodo', edit: id, kind: t.type, period: t.period || 'week', tgt: t.target || 3, pe: C.earnPts(t), pm: C.missPts(t), pt: true, nn: t.needs_note };
     ui.d = { title: t.title, desc: t.description || '', due: t.due_date || '' }; render();
   },
-  tview: function (id) { go('tododetail', { todoId: id }); },
+  tview: function (id) { markOwnupSeen(id); go('tododetail', { todoId: id }); },
   tnudge: guard(function (id) {
     var t = S.rows.todos[id];
     if (t.owner_id === St.me() || t.done_at || t.deleted_at) throw new Error('Cannot nudge');
@@ -1250,16 +1204,15 @@ var ACT = {
     if (t.item_id) St.patch('items', t.item_id, { deleted_at: nowIso() });
     render();
   }),
-  schedackcancel: guard(function (id) { St.patch('acks', id, { deleted_at: nowIso() }); render(); }),
   nodue: function () { ui.d.due = ''; render(); },
   savetodo: guard(function () {
-    var s = ui.sheet, title = (ui.d.title || '').trim(), habit = s.kind === 'habit'; if (!title) throw new Error('Title needed');
-    var f = { title: title, description: (ui.d.desc || '').trim() || null, type: s.kind, due_date: !habit ? ui.d.due || null : null, target: habit ? s.tgt : null, period: habit ? s.period : null, points_earn: s.pe, points_miss: s.pm, needs_note: s.nn };
+    var s = ui.sheet, title = (ui.d.title || '').trim(), habit = s.kind === 'habit', nn = s.kind === 'ownup' || s.nn; if (!title) throw new Error('Title needed');
+    var f = { title: title, description: (ui.d.desc || '').trim() || null, type: s.kind, due_date: !habit ? ui.d.due || null : null, target: habit ? s.tgt : null, period: habit ? s.period : null, points_earn: s.pe, points_miss: s.pm, needs_note: nn };
     var at = !s.edit && s.when === 'later' ? laterMs() : null;
     if (at !== null && s.who === 'me' && at <= now()) throw new Error('Pick a future time');
     if (s.edit) St.patch('todos', s.edit, Object.assign(f, { edited_at: nowIso() }));
     else if (s.who === 'them') {
-      var ask = { at: at, body: title, description: f.description, ask_type: s.kind, due_date: f.due_date, target: f.target, period: f.period, points_earn: s.pe, points_miss: s.pm, needs_note: s.nn };
+      var ask = { at: at, body: title, description: f.description, ask_type: s.kind, due_date: f.due_date, target: f.target, period: f.period, points_earn: s.pe, points_miss: s.pm, needs_note: nn };
       if (St.partner()) sendItem('ask', ask); else { S.priv.queued.push(ask); St.savePriv(); }
     }
     else St.insert('todos', Object.assign({ id: St.uuid(), couple_id: S.couple.id, owner_id: St.me(), created_by: St.me(), item_id: null, fight_marker_id: null, tally: 0, done_at: null, edited_at: null, created_at: at !== null ? new Date(at).toISOString() : nowIso(), updated_at: nowIso(), deleted_at: null }, f));
@@ -1420,27 +1373,8 @@ var ACT = {
   }),
   nudgein: function (id) { openSend(id); go('nudgein', { sendId: id }); },
   replyopen: function (id) { openSend(id); go('nudgein', { sendId: id }); },
-  // ---- Acknowledge ----
-  acks: function () { markAcksRead(); go('acks'); },
-  acknew: function () { go('acknew', { aid: null, afrom: 'me', awhen: 'now' }); },
-  ackedit: function (id) { go('acknew', { aid: id }); },
-  acknfrom: function (v) { ui.afrom = v; render(); },
-  // Self-written acks are not held (like fight notes); asking the partner goes through the normal Ask hold.
-  acksave: guard(function () {
-    var title = (ui.d.atitle || '').trim(), desc = (ui.d.adesc || '').trim() || null, a = ui.aid && S.rows.acks[ui.aid];
-    if (!title) { M.play('jiggle', document.querySelector('.inp')); throw new Error('Title needed'); }
-    var at = !a && ui.awhen === 'later' ? laterMs() : null;
-    if (at !== null && ui.afrom === 'me' && at <= now()) throw new Error('Pick a future time');
-    if (a) St.patch('acks', a.id, a.status === 'requested' ? { title: title, description: desc, status: 'done', done_at: nowIso() } : { title: title, description: desc });
-    else if (ui.afrom === 'them') {
-      if (!St.partner()) throw new Error('No partner yet');
-      sendItem('ask', { at: at, body: title, description: desc, ask_type: 'ack' });
-    }
-    else St.insert('acks', { id: St.uuid(), couple_id: S.couple.id, author_id: St.me(), requested_by: null, item_id: null, title: title, description: desc,
-      status: 'done', done_at: at !== null ? new Date(at).toISOString() : nowIso(), read_at: null, created_at: at !== null ? new Date(at).toISOString() : nowIso(), updated_at: nowIso(), deleted_at: null });
-    draftSent();
-    back();
-  }),
+  // ---- Talk ----
+  talk: function () { go('talk'); },
   // ---- Kudos ----
   kudosnew: function () { go('kudosnew'); },
   kudossave: guard(function () {
@@ -1453,7 +1387,6 @@ var ACT = {
     draftSent();
     back();
   }),
-  ackdel: guard(function () { St.patch('acks', ui.aid, { deleted_at: nowIso() }); draftSent(); back(); }),
   day: function (d) { ui.cyc.sel = d; render(); },
   mon: function (n) { var c = ui.cyc, m = c.m + +n; c.y += m < 1 ? -1 : m > 12 ? 1 : 0; c.m = m < 1 ? 12 : m > 12 ? 1 : m; render(); }
 };
@@ -1599,10 +1532,11 @@ function applyRoute(r) {
   if (m) { ui.stack = []; ui.route = 'todo'; ui.sheet = stillHeld(m[1]) ? { type: 'still', id: m[1] } : null; ui.d = {}; render(); }
   else if ((m = /^nudge\/(.+)$/.exec(r))) { ui.stack = []; ui.route = 'nudgein'; ui.sendId = m[1]; ui.d = {}; ui.sheet = null; openSend(m[1]); render(); }
   else if ((m = /^challenge\/(.+)$/.exec(r))) { ui.stack = [{ route: 'todo' }]; ui.route = 'challenge'; ui.chId = m[1]; ui.d = {}; ui.sheet = null; render(); }
-  else if ((m = /^todo\/(.+)$/.exec(r))) { ui.stack = [{ route: 'todo' }]; ui.route = 'tododetail'; ui.todoId = m[1]; ui.d = {}; ui.sheet = null; render(); }
+  else if ((m = /^todo\/(.+)$/.exec(r))) { markOwnupSeen(m[1]); ui.stack = [{ route: 'todo' }]; ui.route = 'tododetail'; ui.todoId = m[1]; ui.d = {}; ui.sheet = null; render(); }
   else if (r === 'today') tab('home'); // a reminder scheduled by an older build
   else if (r === 'log-followup' || r === 'todo') tab('todo');
-  else if (r === 'acks') { tab('home'); ACT.acks(); }
+  // 'acks' is the route notifications delivered before owning up became a to do carry; it opens Talk.
+  else if (r === 'acks') { tab('home'); ACT.talk(); }
   else throw new Error('unknown route ' + r);
 }
 window.cycleNative = {

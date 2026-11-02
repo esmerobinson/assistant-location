@@ -145,8 +145,8 @@ var CycleCore = (function () {
   function ms(v) { return typeof v === 'number' ? v : Date.parse(v); }
 
   // ---- scheduled rows -----------------------------------------------------
-  // A scheduled to do / ack / ask is written at once but stamped with its future time T in its natural timestamp
-  // (items: delivered_at, todos and acks: created_at). Until T it is invisible to both partners: every reader of
+  // A scheduled to do / ask is written at once but stamped with its future time T in its natural timestamp
+  // (items: delivered_at, todos: created_at). Until T it is invisible to both partners: every reader of
   // those tables goes through this predicate.
   function isScheduled(row, now) { return ms(row.delivered_at || row.created_at) > now; }
   // A partner-bound schedule cannot beat the hold on that kind of item: T is at least now + hold.
@@ -187,17 +187,6 @@ var CycleCore = (function () {
     };
   }
 
-  // A delivered ask of type 'ack' is a request for an acknowledgment, not a to do: the recipient becomes the
-  // author and must write it (status 'requested' until they do). item_id links back to the Ask that carried it.
-  function askToAck(item, id, now) {
-    if (item.kind !== 'ask' || item.ask_type !== 'ack') throw new Error('askToAck needs an ack ask');
-    return {
-      id: id, couple_id: item.couple_id, author_id: item.recipient_id, requested_by: item.sender_id, item_id: item.id,
-      title: item.body, description: item.description || null, status: 'requested', done_at: null, read_at: null,
-      created_at: new Date(now).toISOString(), updated_at: new Date(now).toISOString(), deleted_at: null
-    };
-  }
-
   // ---- points ledger ----------------------------------------------------
   // Log fight's "Did she hit herself?" answer, as the Fight line's detail. Both partners read the same
   // ledger, so the follow-up names whoever logged the fight rather than saying "me" / "you".
@@ -207,8 +196,9 @@ var CycleCore = (function () {
   }
 
   // ---- habit goals: N logs per day / week / month ---------------------------------------------------------------
-  // Per-todo points; null = the rule default (task 3 earned / 3 lost, habit 1 / 0).
-  var DEF_PTS = { task: [3, 3], habit: [1, 0] };
+  // Per-todo points; null = the rule default (task 3 earned / 3 lost, habit 1 / 0). An 'ownup' to do scores like a task;
+  // a migrated one stores explicit 0 / 0, which `== null` keeps distinct from the default.
+  var DEF_PTS = { task: [3, 3], habit: [1, 0], ownup: [3, 3] };
   function earnPts(t) { return t.points_earn == null ? DEF_PTS[t.type][0] : t.points_earn; }
   function missPts(t) { return t.points_miss == null ? DEF_PTS[t.type][1] : t.points_miss; }
   // {start, end} (inclusive local days) of the day / Mon-first week / calendar month containing `day`.
@@ -462,7 +452,7 @@ var CycleCore = (function () {
   }
 
   // ---- needs you ---------------------------------------------------------
-  // s: {me, now, tz, items, redemptions, nudge_sends, nudge_replies, fight_markers, fight_notes, acks}
+  // s: {me, now, tz, items, redemptions, nudge_sends, nudge_replies, fight_markers, fight_notes, todos, seen, since}
   function needsYou(s) {
     var out = [];
     var ready = s.items.filter(function (i) {
@@ -486,14 +476,12 @@ var CycleCore = (function () {
     s.fight_markers.filter(function (m) { return m.logged_by !== s.me && !m.repaired_at && !mine[m.id]; })
       .sort(function (a, b) { return ms(b.at) - ms(a.at); })
       .forEach(function (m) { out.push({ type: 'fight', marker: m }); });
-    // an acknowledgment my partner asked me to write, then ones they wrote that I have not opened yet
-    var live = s.acks.filter(function (a) { return !a.deleted_at && !isScheduled(a, s.now); });
-    live.filter(function (a) { return a.author_id === s.me && a.status === 'requested'; })
-      .sort(function (a, b) { return ms(b.created_at) - ms(a.created_at); })
-      .forEach(function (a) { out.push({ type: 'ackreq', ack: a }); });
-    live.filter(function (a) { return a.author_id !== s.me && a.status === 'done' && !a.read_at; })
-      .sort(function (a, b) { return ms(b.done_at) - ms(a.done_at); })
-      .forEach(function (a) { out.push({ type: 'ackin', ack: a }); });
+    // An owning-up the other person finished that I have not opened yet. `seen` (ids I opened) is private on-device;
+    // `since` is when this install first ran, so rows finished before it (e.g. migrated acknowledgments) never pop up.
+    s.todos.filter(function (t) {
+      return t.type === 'ownup' && t.owner_id !== s.me && t.done_at && !t.deleted_at && !isScheduled(t, s.now) && ms(t.done_at) >= s.since && s.seen.indexOf(t.id) < 0;
+    }).sort(function (a, b) { return ms(b.done_at) - ms(a.done_at); })
+      .forEach(function (t) { out.push({ type: 'ownup', todo: t }); });
     return out;
   }
 
@@ -509,7 +497,7 @@ var CycleCore = (function () {
   return {
     localDay: localDay, addDays: addDays, dayDiff: dayDiff, dow: dow, weekStart: weekStart,
     appendSpeech: appendSpeech, dueInfo: dueInfo, holdMinutes: holdMinutes, heldUntil: heldUntil, countdown: countdown, heldLabel: heldLabel, durText: durText, ms: ms,
-    isScheduled: isScheduled, scheduleAt: scheduleAt, buildItem: buildItem, askToTodo: askToTodo, askToAck: askToAck,
+    isScheduled: isScheduled, scheduleAt: scheduleAt, buildItem: buildItem, askToTodo: askToTodo,
     zonedMs: zonedMs, deliverAt: deliverAt, sectionNudges: sectionNudges,
     addMonths: addMonths, splitPayout: splitPayout, awardStatus: awardStatus,
     earnPts: earnPts, missPts: missPts, periodOf: periodOf, habitCount: habitCount, habitMisses: habitMisses, requireNote: requireNote, isEdited: isEdited,

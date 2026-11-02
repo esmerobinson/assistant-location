@@ -21,13 +21,12 @@ const seed = () => ({
   ['shared.' + UID]: {
     couple: { id: 'c1', tz: TZ, created_at: '2026-01-01T00:00:00Z', hold_ask_min: 60, hold_focus_min: 0, hold_truth_min: 0, hold_kudos_min: 0 },
     members,
-    rows: { items: {}, todos: {}, todo_events: {}, checkins: {}, fight_markers: {}, fight_notes: {}, rewards: {}, redemptions: {}, acks: {} },
+    rows: { items: {}, todos: {}, todo_events: {}, checkins: {}, fight_markers: {}, fight_notes: {}, rewards: {}, redemptions: {} },
     cursors: {}, outbox: [],
   },
   ['priv.' + UID]: { fights: [], affirmations: [], prefs: {} },
 });
 const item = (id, o) => ({ id, couple_id: 'c1', sender_id: PID, recipient_id: UID, kind: 'kudos', body: id, ask_type: null, status: 'delivered', delivered_at: ago(5), created_at: ago(5), updated_at: ago(5), deleted_at: null, opened_at: null, kept: null, ...o });
-const ack = (id, o) => ({ id, couple_id: 'c1', author_id: PID, requested_by: null, item_id: null, title: id, description: null, status: 'done', done_at: ago(2), read_at: null, created_at: ago(3), updated_at: ago(2), deleted_at: null, ...o });
 const ledgerRows = (items) => ({ members, items, todos: [], todo_events: [], fight_markers: [], redemptions: [], nudge_sends: [], nudge_awards: [], challenges: [] });
 // Total Kudos points the ledger pays for these item rows.
 const kudosPts = (items) => {
@@ -61,24 +60,16 @@ describe('webkit', { skip: !haveWebkit }, () => {
   const rowsOf = async (page, t) => Object.values((await read(page, 'shared.' + UID)).rows[t]);
   const openKudos = async (page) => { await page.click('[data-a="row:ack"]'); await page.click('[data-a="kudosnew"]'); };
 
-  test('Acknowledge is renamed Talk everywhere, with Kudos and Owning up subsections', async () => {
+  test('Acknowledge is renamed Talk everywhere, with Kudos only', async () => {
     const { context, page } = await open();
     assert.match(await page.textContent('[data-id="ack"]'), /Talk/);
     await page.click('[data-a="row:ack"]');
     assert.equal(await page.textContent('h2'), 'Talk');
-    assert.deepEqual(await page.$$eval('main > section > .lab', (els) => els.map((e) => e.textContent.replace('Add', ''))), ['Kudos', 'Owning up']);
+    assert.deepEqual(await page.$$eval('main > section > .lab', (els) => els.map((e) => e.textContent.replace('Add', ''))), ['Kudos']);
     await page.click('[data-a="kudosnew"]');
     await page.click('[data-a="back"]');
     assert.match(await page.textContent('.hd .back'), /Today/);
-    await page.click('[data-a="acknew"]');
-    await page.fill('input[data-d="atitle"]', 'I go meta');
-    await page.click('[data-a="acksave"]');
-    await page.waitForSelector('.nd .rem');
-    await page.click('[data-a="kudosnew"]');
-    await page.click('[data-a="kudossave"]').catch(() => {});
-    await page.click('[data-a="back"]');
-    await page.click('[data-a="back"]');
-    assert.doesNotMatch(await page.textContent('body'), /Acknowledge/);
+    assert.doesNotMatch(await page.textContent('body'), /Acknowledge|Owning up/);
     await context.close();
   });
 
@@ -129,7 +120,6 @@ describe('webkit', { skip: !haveWebkit }, () => {
   test('Kudos lists received and given kudos with gift points; legacy No points kept; her old shared self-kudos is not shown', async () => {
     const { context, page } = await open((sh, priv) => {
       sh.rows.items = Object.fromEntries([item('You were patient'), item('Thanks for the soup', { sender_id: UID, recipient_id: PID, points: false }), item('Great job', { sender_id: UID, recipient_id: PID, gift_points: 5 })].map((r) => [r.id, r]));
-      sh.rows.acks = Object.fromEntries([ack('I went quiet')].map((r) => [r.id, r]));
       priv.kudos = [{ id: 'p1', body: 'I got up and went for a walk', created_at: ago(1) }];
     });
     await page.click('[data-a="row:ack"]');
@@ -138,9 +128,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     assert.ok(kud.some((t) => /You were patient.*From Her/.test(t)));
     assert.ok(kud.some((t) => /Thanks for the soup.*To Her · No points/.test(t)));
     assert.ok(kud.some((t) => /Great job.*To Her · 5 points/.test(t)));
-    const own = await page.$$eval('main > section:nth-of-type(2) .rem', (els) => els.map((e) => e.textContent));
-    assert.equal(own.length, 1);
-    assert.match(own[0], /I went quiet/);
+    assert.equal(await page.$('main > section:nth-of-type(2)'), null, 'Kudos is the only section');
     if (process.env.TALK_SHOTS) {
       await page.screenshot({ path: path.join(process.env.TALK_SHOTS, '1-talk.png') });
       await page.click('[data-a="kudosnew"]');

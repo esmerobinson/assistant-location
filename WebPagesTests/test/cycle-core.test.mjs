@@ -263,7 +263,7 @@ test('needsYou: ready held, approvals for the non-requester, unread partner focu
     { id: 'p3', send_id: 's2', author_id: ME, read_at: null, created_at: iso('2026-10-22', 12), deleted_at: null },
     { id: 'p4', send_id: 's2', author_id: YOU, read_at: iso('2026-10-22', 13), created_at: iso('2026-10-22', 12), deleted_at: null }
   ];
-  const n = C.needsYou({ me: ME, now, tz: TZ, items, redemptions, nudge_sends: sends, nudge_replies: replies, fight_markers: [], fight_notes: [], acks: [] });
+  const n = C.needsYou({ me: ME, now, tz: TZ, items, redemptions, nudge_sends: sends, nudge_replies: replies, fight_markers: [], fight_notes: [], todos: [], seen: [], since: 0 });
   assert.deepEqual(n.map((x) => x.type), ['ready', 'approve', 'nudge', 'reply']);
   assert.equal(n[0].count, 1);
   assert.equal(n[1].redemption.id, 'r1');
@@ -274,7 +274,7 @@ test('needsYou: ready held, approvals for the non-requester, unread partner focu
 
 test('needsYou: a partner-logged unrepaired fight needs my version until I write a note', () => {
   const now = at('2026-10-22', 21);
-  const base = { me: ME, now, tz: TZ, items: [], redemptions: [], nudge_sends: [], nudge_replies: [], acks: [] };
+  const base = { me: ME, now, tz: TZ, items: [], redemptions: [], nudge_sends: [], nudge_replies: [], todos: [], seen: [], since: 0 };
   const mk = (id, by, extra) => ({ id, logged_by: by, at: iso('2026-10-22', 9), repaired_at: null, ...extra });
   const fights = [mk('f1', YOU), mk('f2', ME), mk('f3', YOU, { repaired_at: iso('2026-10-22', 10) }), mk('f4', YOU)];
   const note = (id, by) => ({ id: 'n' + id, fight_marker_id: id, author_id: by });
@@ -425,30 +425,34 @@ test('Edited shows for the owner until they next log it', () => {
   assert.equal(C.isEdited(t, [], YOU), false); // the editor never sees it
   assert.equal(C.isEdited(todo({ owner_id: ME, created_by: ME, edited_at: iso('2026-10-22', 12) }), [], ME), false);
 });
-test('askToAck: recipient authors a requested ack, sender requested it, item linked', () => {
+test('askToTodo carries an ownup ask through as an ownup to do, and the ledger scores 0 points as 0, not the task default', () => {
   const couple = { id: 'c', hold_ask_min: 0, hold_focus_min: 0, hold_truth_min: 0, hold_kudos_min: 0 };
-  const item = C.buildItem({ id: 'i', couple, me: ME, to: YOU, kind: 'ask', ask_type: 'ack', body: 'I go meta', description: 'It escalates', now: 1000 });
-  assert.deepEqual([item.points_earn, item.points_miss, item.target, item.period], [null, null, null, null]);
-  const a = C.askToAck(item, 'a1', 1000);
-  assert.deepEqual([a.author_id, a.requested_by, a.item_id, a.title, a.description, a.status, a.done_at, a.read_at], [YOU, ME, 'i', 'I go meta', 'It escalates', 'requested', null, null]);
-  assert.throws(() => C.askToAck({ ...item, ask_type: 'task' }, 'a2', 1000), /needs an ack ask/);
+  const item = C.buildItem({ id: 'i', couple, me: ME, to: YOU, kind: 'ask', ask_type: 'ownup', body: 'I go meta', description: 'It escalates', needs_note: true, now: 1000 });
+  const t = C.askToTodo(item, 't1', 1000);
+  assert.deepEqual([t.type, t.owner_id, t.created_by, t.item_id, t.needs_note, t.title], ['ownup', YOU, ME, 'i', true, 'I go meta']);
+  // Default (null) points score like a task; an explicit 0 / 0 (a migrated acknowledgment) stays 0.
+  assert.deepEqual([C.earnPts(t), C.missPts(t)], [3, 3]);
+  assert.deepEqual([C.earnPts({ ...t, points_earn: 0, points_miss: 0 }), C.missPts({ ...t, points_earn: 0, points_miss: 0 })], [0, 0]);
+  const done = { ...t, owner_id: ME, due_date: '2026-10-20', done_at: iso('2026-10-22', 10), created_at: iso('2026-10-19', 9) };
+  const run = (todo) => C.computeLedger({ members: [{ user_id: ME, name: 'Me' }], items: [], todos: [todo], todo_events: [], fight_markers: [], redemptions: [], nudge_sends: [], nudge_awards: [], challenges: [] }, { tz: TZ, now: at('2026-10-23', 12), since: '2026-10-22' });
+  const lines = (l) => Object.values(l.weeks).flatMap((w) => Object.values(w.days)).flatMap((d) => d.lines).filter((x) => /To do/.test(x.label));
+  assert.deepEqual(lines(run(done)).map((x) => [x.label, x.pts]), [['To do overdue', -3]], 'late ownup pays the task miss, no on-time earn');
+  assert.deepEqual(lines(run({ ...done, due_date: '2026-10-22' })).map((x) => [x.label, x.pts]), [['To do on time', 3]]);
+  assert.deepEqual(lines(run({ ...done, points_earn: 0, points_miss: 0 })).map((x) => x.pts), [], 'migrated 0 / 0 scores nothing');
 });
 
-test('needsYou: a requested ack to me, then partner acks I have not read; own, read, deleted and done-by-me excluded', () => {
+test('needsYou: a card for an ownup the partner finished and I have not opened; own, open, seen, deleted, pre-install and scheduled excluded', () => {
   const now = at('2026-10-22', 21);
-  const ack = (id, author, extra) => ({ id, author_id: author, requested_by: author === ME ? YOU : null, status: 'done', created_at: iso('2026-10-22', 9), done_at: iso('2026-10-22', 10), read_at: null, deleted_at: null, title: id, ...extra });
-  const acks = [
-    ack('req', ME, { status: 'requested', done_at: null }),
-    ack('reqdel', ME, { status: 'requested', done_at: null, deleted_at: iso('2026-10-22', 11) }),
-    ack('reqher', YOU, { status: 'requested', done_at: null }),
-    ack('in1', YOU), ack('in2', YOU, { done_at: iso('2026-10-22', 12) }),
-    ack('inread', YOU, { read_at: iso('2026-10-22', 13) }), ack('indel', YOU, { deleted_at: iso('2026-10-22', 13) }),
-    ack('mine', ME, { requested_by: null }),
+  const ownup = (id, owner, extra) => ({ id, type: 'ownup', owner_id: owner, created_by: owner, created_at: iso('2026-10-22', 9), done_at: iso('2026-10-22', 10), deleted_at: null, title: id, ...extra });
+  const todos = [
+    ownup('in1', YOU), ownup('in2', YOU, { done_at: iso('2026-10-22', 12) }),
+    ownup('open', YOU, { done_at: null }), ownup('mine', ME), ownup('seen', YOU), ownup('del', YOU, { deleted_at: iso('2026-10-22', 11) }),
+    ownup('old', YOU, { done_at: iso('2026-10-20', 10) }), ownup('later', YOU, { created_at: iso('2026-10-25', 9), done_at: iso('2026-10-25', 9) }),
+    { ...ownup('task', YOU), type: 'task' },
   ];
-  const n = C.needsYou({ me: ME, now, tz: TZ, items: [], redemptions: [], nudge_sends: [], nudge_replies: [], fight_markers: [], fight_notes: [], acks });
-  assert.deepEqual(n.map((x) => x.type + ':' + x.ack.id), ['ackreq:req', 'ackin:in2', 'ackin:in1']);
+  const n = C.needsYou({ me: ME, now, tz: TZ, items: [], redemptions: [], nudge_sends: [], nudge_replies: [], fight_markers: [], fight_notes: [], todos, seen: ['seen'], since: Date.parse(iso('2026-10-21', 0)) });
+  assert.deepEqual(n.map((x) => x.type + ':' + x.todo.id), ['ownup:in2', 'ownup:in1']);
 });
-
 
 test('no-hitting challenge pays its streak day number; only a hit resets it', () => {
   const fm = (id, d, hit = false, h = 15) => ({ id, at: iso(d, h), logged_by: ME, hit_self: hit });

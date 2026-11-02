@@ -50,6 +50,9 @@ const TODOS = [
   td('t-late-long', { title: 'Can you tell me what you are doing for the whole of next weekend so that I can plan around it please', owner_id: HER, created_by: ME, due_date: '2026-10-15' }),
   td('t-hers', { title: 'Renew the car insurance', owner_id: HER, created_by: ME, due_date: '2026-10-25' }),
   td('t-hers-h', { title: 'Run', owner_id: HER, created_by: ME, type: 'habit', target: 2, period: 'day' }),
+  // Owning up: one open of mine, one she finished with a long note (Home card + view page).
+  td('t-ownup-open', { title: 'I went quiet when you asked about Friday and left the room', type: 'ownup', needs_note: true, points_earn: 0, points_miss: 0 }),
+  td('t-ownup-done', { title: 'I interrupted you at dinner and brushed off what you said', type: 'ownup', owner_id: HER, created_by: HER, needs_note: true, done_at: iso(6) }),
   // Scheduled: stamped with a future time, so they show only under the To do screen's "Scheduled" section until then.
   td('t-sched-me', { title: 'Renew the passport before the trip in March', created_at: iso(-44) }),
   td('t-sched-her', { title: 'Take the recycling out', owner_id: HER, created_by: ME, item_id: 'i-sched', created_at: iso(-20) }),
@@ -71,7 +74,7 @@ const SHARED = {
     ].map((r) => [r.id, r])),
     // Nudged today already, so the habit's view page shows the disabled "Nudged" state.
     todo_nudges: { tn1: { ...base, id: 'tn1', todo_id: 't-hers-h', sender_id: ME, created_at: iso(1) } },
-    todo_events: { e1: { ...base, id: 'e1', todo_id: 't-habit', user_id: ME, kind: 'tally', at: iso(2), note: null } },
+    todo_events: { e2: { ...base, id: 'e2', todo_id: 't-ownup-done', user_id: HER, kind: 'done', at: iso(6), note: 'I went quiet because I felt judged, and next time I will say so instead of leaving' }, e1: { ...base, id: 'e1', todo_id: 't-habit', user_id: ME, kind: 'tally', at: iso(2), note: null } },
     checkins: {},
     fight_markers: { fm1: { ...base, id: 'fm1', logged_by: ME, at: iso(30), repaired_at: null, hit_self: false, hit_related: false, intensity: 3 },
       fm2: { ...base, id: 'fm2', logged_by: HER, at: iso(5), repaired_at: null, hit_self: null, hit_related: null, intensity: 2 } },
@@ -93,19 +96,13 @@ const SHARED = {
     nudge_sends: { s1: { ...base, id: 's1', nudge_id: 'n1', sender_id: HER, recipient_id: ME, body: 'You are doing fine', deliver_at: iso(3), opened_at: null } },
     nudge_replies: {},
     nudge_awards: { aw1: { ...base, id: 'aw1', author_id: ME, recipient_id: HER, nudge_id: 'n2', body: 'Done one', points: 30, payout: '3mo', done_at: iso(20), stopped_at: null } },
-    acks: {
-      a1: { ...base, id: 'a1', author_id: HER, requested_by: null, item_id: null, title: 'I went quiet', description: null, status: 'done', done_at: iso(4), read_at: null },
-      a2: { ...base, id: 'a2', author_id: HER, requested_by: ME, item_id: null, title: 'Ask me about Friday', description: null, status: 'open', done_at: null, read_at: null },
-      // Scheduled: mine (acknowledgement written for later) and one I asked of her for later.
-      a3: { ...base, id: 'a3', author_id: ME, requested_by: null, item_id: null, title: 'I was short with you at dinner', description: null, status: 'done', done_at: iso(-30), read_at: null, created_at: iso(-30) },
-      a4: { ...base, id: 'a4', author_id: HER, requested_by: ME, item_id: null, title: 'Say sorry about the late text', description: null, status: 'requested', done_at: null, read_at: null, created_at: iso(-50) } },
   },
   cursors: {}, outbox: [],
 };
 const seed = (couple) => ({
   session: { access_token: 't', refresh_token: 'r', expires_at: 4102444800, user: { id: ME, email: 'me@x.test' } },
   ['shared.' + ME]: couple ? SHARED : { couple: null, members: [], rows: {}, cursors: {}, outbox: [] },
-  ['priv.' + ME]: { fights: [{ id: 'f1', at: iso(30), intensity: 3 }, { id: 'f2', at: iso(24 * 20), intensity: 2 }], affirmations: [], prefs: {},
+  ['priv.' + ME]: { fights: [{ id: 'f1', at: iso(30), intensity: 3 }, { id: 'f2', at: iso(24 * 20), intensity: 2 }], affirmations: [], prefs: {}, ownupSeen: [], ownupSince: 0,
     queued: [{ body: 'Pick up milk on the way home' }], nudges: [], nudge_sends: [], kudos: [{ id: 'pk1', body: 'I walked away instead of arguing', created_at: iso(8) }] },
 });
 
@@ -130,8 +127,9 @@ const SCENARIOS = [
   ['nudges', ['row:nudges']], ['nudge', ['row:nudges', 'nudge:n1']], ['nudge-done', ['row:nudges', 'nudge:n1', 'nudgedone']],
   ['nudge-incoming', ['nudgein:s1']], ['nudge-new', ['row:nudges', 'nudgenew']],
   ['todo-new-later', ['tab:todo', 'addpick', 'newtodo:task', 'nwhen:later']], ['todo-new-later-me', ['tab:todo', 'addpick', 'newtodo:task', 'nfor:me', 'nwhen:later']],
-  ['ack-new-later', ['row:ack', 'acknew', 'awhen:later']],
-  ['acks', ['row:ack']], ['kudos-new', ['row:ack', 'kudosnew']], ['kudos-new-long', ['row:ack', 'kudosnew', 'fill:ktext=Thank you for cooking when I was exhausted this week', 'fill:kgift=2147483647']], ['ack-new', ['row:ack', 'acknew']], ['ack-request', ['row:ack', 'ackedit:a2']],
+  ['ownup-new', ['tab:todo', 'addpick', 'newtodo:ownup']], ['ownup-new-later', ['tab:todo', 'addpick', 'newtodo:ownup', 'nwhen:later']], ['ownup-edit', ['tab:todo', 'etodo:t-ownup-open']],
+  ['ownup-note', ['tab:todo', 'done:t-ownup-open']], ['ownup-detail-hers', ['tview:t-ownup-done']],
+  ['talk', ['row:ack']], ['kudos-new', ['row:ack', 'kudosnew']], ['kudos-new-long', ['row:ack', 'kudosnew', 'fill:ktext=Thank you for cooking when I was exhausted this week', 'fill:kgift=2147483647']],
 ];
 
 // Runs in the page. Returns violation strings: "<selector> <what> <numbers>".

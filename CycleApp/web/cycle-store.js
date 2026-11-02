@@ -68,11 +68,11 @@ var CycleStore = (function () {
   };
 
   // ---- state ---------------------------------------------------------------
-  var SHARED = ['items', 'todos', 'todo_events', 'fight_markers', 'rewards', 'redemptions', 'nudges', 'nudge_sends', 'nudge_replies', 'nudge_awards', 'fight_notes', 'acks', 'challenges', 'challenge_breaks', 'challenge_days', 'todo_comments', 'todo_nudges', 'challenge_nudges'];
+  var SHARED = ['items', 'todos', 'todo_events', 'fight_markers', 'rewards', 'redemptions', 'nudges', 'nudge_sends', 'nudge_replies', 'nudge_awards', 'fight_notes', 'challenges', 'challenge_breaks', 'challenge_days', 'todo_comments', 'todo_nudges', 'challenge_nudges'];
   // Pull strategy per table: cursor column, or null = re-pull everything each sync.
   // nudge_sends MUST be re-pulled whole: the recipient's RLS hides a send until deliver_at, and when it
   // becomes visible its updated_at is old (it was stamped at insert), so an updated_at cursor would skip it forever.
-  var CURSOR = { items: 'updated_at', todos: 'updated_at', rewards: 'updated_at', redemptions: 'updated_at', todo_events: 'at', fight_markers: null, nudges: 'updated_at', nudge_sends: null, nudge_replies: 'updated_at', nudge_awards: 'updated_at', fight_notes: 'updated_at', acks: 'updated_at', challenges: 'updated_at', challenge_breaks: 'updated_at', challenge_days: 'updated_at', todo_comments: 'updated_at', todo_nudges: 'updated_at', challenge_nudges: 'updated_at' };
+  var CURSOR = { items: 'updated_at', todos: 'updated_at', rewards: 'updated_at', redemptions: 'updated_at', todo_events: 'at', fight_markers: null, nudges: 'updated_at', nudge_sends: null, nudge_replies: 'updated_at', nudge_awards: 'updated_at', fight_notes: 'updated_at', challenges: 'updated_at', challenge_breaks: 'updated_at', challenge_days: 'updated_at', todo_comments: 'updated_at', todo_nudges: 'updated_at', challenge_nudges: 'updated_at' };
   // Sort column for tables with no cursor (the default is `at`).
   var ORDER = { nudge_sends: 'created_at' };
   var S = { session: null, couple: null, members: [], rows: {}, cursors: {}, outbox: [], priv: null, syncError: null, syncing: false };
@@ -173,6 +173,9 @@ var CycleStore = (function () {
     SHARED.forEach(function (t) { if (!S.rows[t]) S.rows[t] = {}; });
     S.priv = JSON.parse((await kv.get('priv.' + uid)) || 'null') || emptyPriv();
     migrateAffirmations();
+    // Owning-ups the partner finished that I opened (private, on-device). `since` is when this install first ran: rows
+    // finished before it (the acknowledgments the migration turned into to dos) are history and never raise a card.
+    if (!S.priv.ownupSeen) { S.priv.ownupSeen = []; S.priv.ownupSince = Date.now(); persist(); }
   }
   // One-time: the self-set affirmations become Me nudges (oldest first, so they keep their order), then
   // the field is deleted so this never runs twice.
@@ -332,7 +335,7 @@ var CycleStore = (function () {
   }
   // ---- remote push ---------------------------------------------------------------------------
   // Native hands over the APNs token (cycleNative.pushToken); the box stores it for this account so the
-  // partner's new to dos / acknowledgments reach this phone while the app is closed. Registered once per
+  // partner's new to dos reach this phone while the app is closed. Registered once per
   // token + account per launch, only after sync shows a couple (the box rejects non-members).
   var pushRegistered = null;
   function setPushToken(t) { S.pushToken = t; if (S.couple) registerPush(); }
@@ -360,7 +363,7 @@ var CycleStore = (function () {
       if (i.sender_id === me() && i.status === 'held' && !i.deleted_at)
         out.push({ id: 'held-' + i.id, at: Math.max(C.ms(i.held_until), now + 1000), title: 'Still send?', body: i.kind.charAt(0).toUpperCase() + i.kind.slice(1), route: 'held/' + i.id });
     });
-    // A to do I scheduled for myself appears for me at T. One my partner scheduled (or an ack either way) reaches
+    // A to do I scheduled for myself appears for me at T. One my partner scheduled reaches
     // me as a remote push from the box at T, so a local notification here would be a duplicate.
     list('todos').forEach(function (t) {
       if (t.owner_id === me() && t.created_by === me() && !t.deleted_at && !t.done_at && C.isScheduled(t, now))

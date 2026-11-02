@@ -153,7 +153,7 @@ describe('actions tab (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_W
     const { context, page } = await open(seed({}));
     await page.click('.hd [data-a="addpick"]');
     assert.equal(await page.textContent('.bs h3'), 'New');
-    assert.deepEqual(await page.$$eval('.bs .opt', (e) => e.map((x) => x.textContent)), ['Task', 'Habit', 'Challenge']);
+    assert.deepEqual(await page.$$eval('.bs .opt', (e) => e.map((x) => x.textContent)), ['Task', 'Habit', 'Owning up', 'Challenge']);
     await page.click('.bs [data-a="newtodo:task"]');
     assert.equal(await page.textContent('.bs h3'), 'New to do');
     assert.equal(await page.$eval('[data-a="nkind:task"]', (e) => e.classList.contains('on')), true);
