@@ -238,6 +238,10 @@
     }
 }
 
++ (BOOL)isCancellation:(NSError *)error {
+    return [error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled;
+}
+
 #pragma mark Loading
 
 - (void)loadLiveRequest:(NSURLRequest *)request {
@@ -401,13 +405,18 @@
     }];
 }
 
-- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation {
+- (BOOL)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
     if (navigation && navigation == _liveNavigation) _liveNavigation = nil;
+    return [GLOfflineShellLoader isCancellation:error];
 }
 
 - (BOOL)webView:(WKWebView *)webView
     didFailProvisionalNavigation:(WKNavigation *)navigation
                        withError:(NSError *)error {
+    if ([GLOfflineShellLoader isCancellation:error]) {
+        if (navigation == _liveNavigation) _liveNavigation = nil;
+        return YES;
+    }
     if (!navigation) return NO;
     if ([_superseded containsObject:navigation]) {
         [_superseded removeObject:navigation];

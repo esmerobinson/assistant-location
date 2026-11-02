@@ -776,9 +776,10 @@ static void *GLWebCanGoBackContext = &GLWebCanGoBackContext;
 - (void)webView:(WKWebView *)webView
     didFailNavigation:(WKNavigation *)navigation
              withError:(NSError *)error {
-    [self.shellLoader webView:webView didFailNavigation:navigation];
+    BOOL consumed = [self.shellLoader webView:webView didFailNavigation:navigation withError:error];
     [self.loadingIndicator stopAnimating];
     [self.refreshControl endRefreshing];
+    if (consumed) return;
     [self showErrorWithMessage:[self unreachableMessageForError:error initialLoad:NO]];
 }
 

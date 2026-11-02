@@ -93,7 +93,7 @@ static NSURL *GLTempDir(void) {
 @property(nonatomic) NSInteger finished;
 @property(nonatomic) NSInteger shellShown;
 @property(nonatomic, strong) NSError *liveFailure;
-/// Provisional failures the loader did NOT consume: the host would have put
+/// Failures the loader did NOT consume: the host would have put
 /// its error view up for each of these.
 @property(nonatomic) NSInteger hostErrorViews;
 @end
@@ -130,7 +130,8 @@ static NSURL *GLTempDir(void) {
     if (![self.loader webView:webView didFailProvisionalNavigation:navigation withError:error]) self.hostErrorViews++;
 }
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-    [self.loader webView:webView didFailNavigation:navigation];
+    NSLog(@"[harness] failure: %@", error);
+    if (![self.loader webView:webView didFailNavigation:navigation withError:error]) self.hostErrorViews++;
 }
 - (void)offlineShellLoaderDidShowShell:(GLOfflineShellLoader *)loader { self.shellShown++; }
 - (void)offlineShellLoader:(GLOfflineShellLoader *)loader didFailLiveLoad:(NSError *)error { self.liveFailure = error; }
@@ -616,6 +617,47 @@ static NSURL *GLTempDir(void) {
     for (NSString *path in _server.requestedPaths) {
         XCTAssertFalse([self isLiveRequestPath:path], @"foreground did a live load: %@", _server.requestedPaths);
     }
+}
+
+// A new deploy changes the shell while the old one is still loading (a slow picture keeps its navigation open): replacing
+// it cancels that navigation with -999, which put "Couldn't reach Listen" over a working page.
+- (void)testShellReplacedMidLoadShowsNoError {
+    NSString *slowShell = @"<!doctype html><html><body>shell v1<img src=\"/slow\"></body></html>";
+    NSError *error = nil;
+    XCTAssertTrue([_cache storeShellData:[slowShell dataUsingEncoding:NSUTF8StringEncoding]
+                              forPageURL:[self liveURL] error:&error], @"%@", error);
+    _shellVersion = @"v2";
+    __weak typeof(self) weakSelf = self;
+    _server.handler = ^GLTestHTTPResponse *(NSString *method, NSString *path) {
+        GLOfflineShellTests *s = weakSelf;
+        if ([path hasPrefix:@"/slow"]) [NSThread sleepForTimeInterval:3];
+        if ([path hasPrefix:@"/shell.html"]) return [GLTestHTTPResponse html:GLShellPage(s->_shellVersion)];
+        return [GLTestHTTPResponse status:200 contentType:@"text/plain" body:@"ok"];
+    };
+    GLShellHarness *cold = [self newHarness];
+    cold.loader.prefersSavedShell = YES;
+    [cold.loader loadPreferringSavedShell:[NSURLRequest requestWithURL:[self liveURL]]];
+    XCTAssertEqualObjects(GLPollJS(cold.webView, @"document.body.innerText.indexOf('shell v1') >= 0", @YES, 5), @YES);
+    XCTAssertEqual(cold.finished, 0, @"the first shell finished, so nothing was replaced mid-load");
+    XCTAssertTrue(GLWaitFor(15, ^BOOL { return [[self->_cache cachedHTMLForPageURL:[self liveURL]] isEqual:GLShellPage(@"v2")]; }));
+    [cold.loader swapToLiveIfReachable];
+    XCTAssertEqualObjects(GLPollJS(cold.webView, @"document.body.innerText.indexOf('shell v2') >= 0", @YES, 15), @YES);
+    GLSpin(1);
+    XCTAssertEqual(cold.hostErrorViews, 0, @"a replaced navigation reached the host's error view");
+    XCTAssertNil(cold.liveFailure);
+}
+
+// The contract both hosts rely on, for navigations the loader did not start too (a nil navigation, a history move);
+// a real failure still reaches the host.
+- (void)testCancellationIsConsumedAndARealFailureIsNot {
+    GLShellHarness *h = [self newHarness];
+    NSError *cancelled = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
+    NSError *lost = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNetworkConnectionLost userInfo:nil];
+    XCTAssertTrue([h.loader webView:h.webView didFailNavigation:nil withError:cancelled]);
+    XCTAssertTrue([h.loader webView:h.webView didFailProvisionalNavigation:nil withError:cancelled]);
+    XCTAssertFalse([h.loader webView:h.webView didFailNavigation:nil withError:lost]);
+    XCTAssertFalse([h.loader webView:h.webView didFailProvisionalNavigation:nil withError:lost]);
+    XCTAssertNil(h.liveFailure);
 }
 
 #pragma mark probe (asserts nothing; logs real framework behaviour for the next round)
