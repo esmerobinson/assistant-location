@@ -2235,7 +2235,7 @@ const START_QUEUE = 'gl-session-pending-starts-v1';
 const REPLY_QUEUE = 'gl-session-pending-replies-v1';
 
 async function startPageWithStartRoute(handler, opts = {}) {
-  const context = await browser.newContext();
+  const context = await browser.newContext({ hasTouch: !!opts.hasTouch });
   await context.addInitScript(buildMockBridgeScript(baseConfig()));
   if (opts.beforeNav) await opts.beforeNav(context);
   await routeProjects(context);
@@ -4185,5 +4185,213 @@ test('clarify from a Sending row: a Failed row has no Clarify chip', async () =>
   const row = page.locator('.gl-row-failed', { hasText: 'refused prompt' });
   await row.waitFor();
   assert.deepEqual(await row.locator('button').allTextContents(), ['Retry', 'Edit', 'Discard']);
+  await context.close();
+});
+
+// --- clarify mic: same gesture as the launcher and reply mics (tap-tap sends, hold = Insert / Cancel) ---
+
+const CLARIFY_LAUNCHES = 'gl-session-voice-clarify-launches-v1';
+const clarifyLaunchRecords = (page) => page.evaluate((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')), CLARIFY_LAUNCHES);
+
+/** A page whose Start succeeded, with the card's clarify box showing; records clarify bodies. */
+async function startedClarifyPage(opts = {}) {
+  const r = await startPageWithStartRoute(OK_START, { hasTouch: !!opts.hasTouch, beforeNav: opts.beforeNav });
+  const bodies = await routeClarify(r.context, (route) => OK_JSON(route, 200, { delivered: 'live' }));
+  await pressStart(r.page, 'build the thing');
+  await waitFor(() => r.calls.length === 1, 'the start');
+  // Answered, not just sent: a reload that interrupts the answer leaves the Start queued, and clarifications wait for it.
+  await drained(r.page, 'gl-session-pending-starts-v1');
+  return { ...r, bodies };
+}
+
+async function recordClarify(page) {
+  await page.click('#session-clarify-record-btn');
+  await page.waitForSelector('#session-clarify-record-btn.recording');
+}
+
+test('clarify mic: tap-tap SENDS typed + transcript to that Start; box clears at once, launcher prompt untouched, recording acked', async () => {
+  const { context, page, calls, bodies } = await startedClarifyPage();
+  await page.fill('#session-clarify-text', 'before');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  assert.equal(await page.locator('#session-record-btn.recording').count(), 0, 'only the clarify mic goes red');
+  await page.click('#session-clarify-record-btn');
+  // Committed before any answer: box empty, a durable record naming the Start, nothing sent yet.
+  assert.equal(await page.inputValue('#session-clarify-text'), '');
+  const recs = await clarifyLaunchRecords(page);
+  assert.equal(recs.length, 1);
+  assert.equal(recs[0].startKey, calls[0].idempotencyKey);
+  assert.equal(recs[0].prefix, 'before');
+  assert.equal(bodies.length, 0);
+  await page.evaluate(() => window.__glMock.replyNow('voiceStop', { text: 'a fake voice transcript' }));
+  await waitFor(() => bodies.length === 1, 'the voice clarification');
+  assert.equal(bodies[0].text, 'before a fake voice transcript');
+  assert.equal(bodies[0].startKey, calls[0].idempotencyKey);
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  await page.waitForFunction(() => /Clarification sent into the running session/.test(document.getElementById('session-clarify-status').textContent));
+  await page.waitForFunction((k) => localStorage.getItem(k) === null, CLARIFY_LAUNCHES);
+  await context.close();
+});
+
+test('clarify mic: hold + Insert puts the transcript in the clarify box and sends nothing', async () => {
+  const { context, page, bodies } = await startedClarifyPage({ hasTouch: true });
+  await page.fill('#session-clarify-text', 'before');
+  await recordClarify(page);
+  const { touch, target } = await holdMic(page, 'session-clarify');
+  await touch('touchMove', target);
+  await page.waitForSelector('#session-clarify-insert-target.armed');
+  await touch('touchEnd');
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'before a fake voice transcript');
+  await page.waitForTimeout(300);
+  assert.equal(bodies.length, 0, 'insert must not send');
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  assert.deepEqual(await clarifyLaunchRecords(page), []);
+  await context.close();
+});
+
+test('clarify mic: hold + Cancel discards the audio, nothing transcribed or sent, typed text kept', async () => {
+  const { context, page, bodies } = await startedClarifyPage({ hasTouch: true });
+  await page.fill('#session-clarify-text', 'keep me');
+  await recordClarify(page);
+  const { touch, cancel } = await holdMic(page, 'session-clarify');
+  await touch('touchMove', cancel);
+  await page.waitForSelector('#session-clarify-cancel-target.armed');
+  await touch('touchEnd');
+  await page.waitForFunction(() => window.__glCallLog.some((c) => c.method === 'voiceCancel'));
+  assert.equal((await callsTo(page, 'voiceStop')).length, 0);
+  assert.equal(await page.inputValue('#session-clarify-text'), 'keep me');
+  await page.waitForTimeout(300);
+  assert.equal(bodies.length, 0);
+  await context.close();
+});
+
+test('clarify mic: a recording native never heard of after a reload fails loudly and keeps the typed text visible', async () => {
+  const { context, page, bodies } = await startedClarifyPage();
+  await page.fill('#session-clarify-text', 'typed');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  await page.reload();
+  await page.waitForFunction(() => /not saved before the app closed.*typed/.test(document.getElementById('gl-error-text').textContent));
+  assert.equal(bodies.length, 0);
+  assert.deepEqual(await clarifyLaunchRecords(page), []);
+  await context.close();
+});
+
+test('clarify mic: a transcript that arrives by poll before voiceStop answers is matched by launchId and reaches that Start, never the prompt', async () => {
+  const { context, page, calls, bodies } = await startedClarifyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#session-clarify-text', 'typed');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  assert.ok(launchId, 'native is told which record owns the recording');
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'polled words', launchId }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await waitFor(() => bodies.length === 1, 'the clarification');
+  assert.equal(bodies[0].text, 'typed polled words');
+  assert.equal(bodies[0].startKey, calls[0].idempotencyKey);
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  await context.close();
+});
+
+test('clarify mic, queued stop then page reload: the transcript still reaches the right Start, never the prompt', async () => {
+  const { context, page, calls, bodies } = await startedClarifyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#session-clarify-text', 'typed');
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v9' } });
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting' && r.voiceId === 'v9'), CLARIFY_LAUNCHES);
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await page.reload();
+  await page.waitForFunction(() => !!document.getElementById('session-project-pill').dataset.ready);
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'after reload', launchId }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await waitFor(() => bodies.length === 1, 'the clarification after reload');
+  assert.equal(bodies[0].text, 'typed after reload');
+  assert.equal(bodies[0].startKey, calls[0].idempotencyKey);
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  await context.close();
+});
+
+test('clarify mic: the card moving to a newer Start mid-recording still sends to the Start that dictated it', async () => {
+  const { context, page, calls, bodies } = await startedClarifyPage();
+  await recordClarify(page);
+  await pressStart(page, 'a second session');
+  await waitFor(() => calls.length === 2, 'the second start');
+  await page.fill('#session-clarify-text', 'for the newer one');
+  await page.click('#session-clarify-record-btn');
+  await waitFor(() => bodies.length === 1, 'the clarification');
+  assert.equal(bodies[0].startKey, calls[0].idempotencyKey, 'addressed to the first Start');
+  assert.equal(bodies[0].text, 'a fake voice transcript', "the newer card's typed text is not swept in");
+  assert.equal(await page.inputValue('#session-clarify-text'), 'for the newer one');
+  await context.close();
+});
+
+test('clarify mic, empty transcript: typed text comes back to the box with an error, nothing sent', async () => {
+  const { context, page, bodies } = await startedClarifyPage();
+  await page.fill('#session-clarify-text', 'typed');
+  await page.evaluate(() => window.__glMock.configure({ responses: { voiceStop: { code: 'empty_transcript' } } }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'typed');
+  assert.match(await page.locator('#gl-error-text').textContent(), /Didn't catch anything/);
+  assert.equal(bodies.length, 0);
+  assert.deepEqual(await clarifyLaunchRecords(page), []);
+  await context.close();
+});
+
+test('clarify mic: a Start retried while its clarification is transcribing: the clarification follows the retried key', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { context, page, calls } = await startPageWithStartRoute(async (route, n) => {
+    if (n === 1) { await gate; return OK_JSON(route, 400, { error: 'refused' }); }
+    return OK_START(route);
+  });
+  const bodies = await routeClarify(context, (route) => OK_JSON(route, 200, { delivered: 'live' }));
+  await pressStart(page, 'build the thing');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  release();
+  const row = page.locator('.gl-row-failed', { hasText: 'build the thing' });
+  await row.waitFor();
+  await row.locator('button', { hasText: 'Retry' }).click();
+  await waitFor(() => calls.length === 2, 'the retried start');
+  assert.notEqual(calls[1].idempotencyKey, calls[0].idempotencyKey, 'premise: a retry rekeys');
+  await page.evaluate(() => window.__glMock.replyNow('voiceStop', { text: 'late words' }));
+  await waitFor(() => bodies.length === 1, 'the clarification');
+  assert.equal(bodies[0].startKey, calls[1].idempotencyKey);
+  await context.close();
+});
+
+test('clarify mic: disabled while the launcher mic records', async () => {
+  const { context, page } = await startedClarifyPage();
+  await page.click('#session-record-btn');
+  await page.waitForSelector('#session-record-btn.recording');
+  assert.equal(await page.locator('#session-clarify-record-btn').isDisabled(), true);
+  await context.close();
+});
+
+test('launcher mic stops a clarify recording without starting a session', async () => {
+  const { context, page, calls } = await startedClarifyPage();
+  await recordClarify(page);
+  await page.click('#session-record-btn');
+  await page.waitForFunction(() => window.__glCallLog.some((c) => c.method === 'voiceStop'));
+  await page.waitForFunction(() => document.getElementById('session-clarify-text').value === 'a fake voice transcript');
+  assert.equal(calls.length, 1, 'never auto-started a session');
+  await context.close();
+});
+
+test('reply mic: voiceStop names the launch, so a transcript polled before it answers still reaches that reply', async () => {
+  const { context, page, h } = await recordingReplyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await page.click('#detail-record-btn');
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  assert.ok(launchId, 'voiceStop carries the reply launch id');
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'polled words', launchId }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await waitFor(() => h.replies.length === 1, 'the reply');
+  assert.equal(h.replies[0].text, 'polled words');
   await context.close();
 });
