@@ -389,7 +389,8 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
   const openFight = async (page) => { await page.click('[data-a="tab:fights"]'); await page.click('[data-a="openfight:fm"]'); await page.waitForSelector('.fd textarea'); };
   const fightSeed = () => seed({ rows: { fight_markers: [mine] }, priv: { fights: [{ id: 'fm', at: Date.parse(mine.at), intensity: 3 }] } });
   test('B10 dictated text survives a re-render and a reload; an interrupted recording keeps what was heard', async () => {
-    const { context, page } = await open({ sd: fightSeed(), native: {} });
+    // Offline: fight_markers is pulled whole, so the empty mock server would otherwise drop the seeded marker as deleted.
+    const { context, page } = await open({ sd: fightSeed(), native: {}, offline: true });
     await ready(page); await openFight(page);
     await page.fill('.fd textarea', 'typed first');
     await page.click('.fd .mic');
