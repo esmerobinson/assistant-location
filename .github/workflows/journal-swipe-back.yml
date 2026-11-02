@@ -36,21 +36,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The name axis is filtered by the matrix_only input; the include
-        # entries add the runner/runtime for whichever names survive.
-        name: ${{ fromJSON(inputs.matrix_only == '' && '["ios26","ios27"]' || format('["{0}"]', inputs.matrix_only)) }}
-        include:
-          - name: ios26
-            runner: macos-15
-            runtime_prefix: "com.apple.CoreSimulator.SimRuntime.iOS-26"
-            xcode: ""
-          - name: ios27
-            runner: xcode-27
-            runtime_prefix: "com.apple.CoreSimulator.SimRuntime.iOS-27-0"
-            # Probe run 41340102697: the xcode-27 image has Xcode 27.0/27.1/
-            # 27.2 RC and only iOS 27.0 and 27.1 runtimes. 27.0 matches the
-            # phone (iOS 27.0.1).
-            xcode: "/Applications/Xcode_27.0.app"
+        # matrix_only filters which legs run: include entries are built whole
+        # from JSON (an include entry whose name is missing from an axis would
+        # run as its own extra job). Xcode_27.0.app matches the phone (iOS
+        # 27.0.1); probe run 41340102697: the xcode-27 image has iOS 27.0/27.1.
+        include: ${{ fromJSON(inputs.matrix_only == 'ios26' && '[{"name":"ios26","runner":"macos-15","runtime_prefix":"com.apple.CoreSimulator.SimRuntime.iOS-26","xcode":""}]' || inputs.matrix_only == 'ios27' && '[{"name":"ios27","runner":"xcode-27","runtime_prefix":"com.apple.CoreSimulator.SimRuntime.iOS-27-0","xcode":"/Applications/Xcode_27.0.app"}]' || '[{"name":"ios26","runner":"macos-15","runtime_prefix":"com.apple.CoreSimulator.SimRuntime.iOS-26","xcode":""},{"name":"ios27","runner":"xcode-27","runtime_prefix":"com.apple.CoreSimulator.SimRuntime.iOS-27-0","xcode":"/Applications/Xcode_27.0.app"}]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -90,6 +80,8 @@ jobs:
             p.build_configurations.each { |c| c.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "15.0" }
             p.targets.each { |t| t.build_configurations.each { |c| v = c.build_settings["IPHONEOS_DEPLOYMENT_TARGET"]; c.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "15.0" if v && v.to_f < 15.0 } }
             p.save'
+          # Xcode 27 rejects AFNetworking importing a private SDK header
+          grep -rl "netinet6/in6.h" Pods --include=*.m --include=*.h | xargs sed -i "" "s#<netinet6/in6.h>#<netinet/in.h>#"
 
       - name: Boot simulator
         if: ${{ !inputs.probe_only }}
