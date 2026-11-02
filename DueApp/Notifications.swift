@@ -85,7 +85,7 @@ enum Notifications {
     /// Identifiers a notification tap can come back with that are ours (not the default tap or dismiss).
     static var actionIds: Set<String> { Set(cachedActions.map { $0["id"]! }) }
 
-    struct Nag { let id: String; let reminderId: String; let at: Date; let dueAt: Double; let title: String; let timeSensitive: Bool }
+    struct Nag { let id: String; let reminderId: String; let at: Date; let dueAt: Double; let title: String; let timeSensitive: Bool; let link: String? }
 
     /// Make the pending set equal the given nags (nearest first). Existing alerts for still-wanted nags are kept untouched;
     /// a nag whose time has passed never gets a new alert (only its already-pending one survives).
@@ -95,7 +95,7 @@ enum Notifications {
         let nags: [Nag] = raw.map {
             Nag(id: $0["id"] as! String, reminderId: $0["reminderId"] as! String,
                 at: Date(timeIntervalSince1970: ($0["at"] as! Double) / 1000), dueAt: $0["dueAt"] as! Double, title: $0["title"] as! String,
-                timeSensitive: ($0["level"] as? String) == "timeSensitive")
+                timeSensitive: ($0["level"] as? String) == "timeSensitive", link: $0["link"] as? String)
         }
         let wanted = Array(nags.sorted { $0.at < $1.at }.prefix(maxPending))
         queue.async {
@@ -116,7 +116,8 @@ enum Notifications {
             let now = Date()
             for n in wanted {
                 let fire = n.at.addingTimeInterval(grace)
-                if let existing = have[n.id], existing.content.body == n.title { continue }
+                // the link is compared too: one added or changed after scheduling must reach the pending backup
+                if let existing = have[n.id], existing.content.body == n.title, existing.content.userInfo["link"] as? String == n.link { continue }
                 if n.at <= now { continue }
                 let c = UNMutableNotificationContent()
                 c.title = "Due"
@@ -125,6 +126,7 @@ enum Notifications {
                 c.categoryIdentifier = category
                 c.threadIdentifier = n.reminderId
                 c.userInfo = ["reminderId": n.reminderId, "nagId": n.id, "dueAt": n.dueAt]
+                if let link = n.link { c.userInfo["link"] = link }
                 if n.timeSensitive { c.interruptionLevel = .timeSensitive }
                 let req = UNNotificationRequest(identifier: n.id, content: c,
                                                 trigger: UNTimeIntervalNotificationTrigger(timeInterval: max(1, fire.timeIntervalSince(now)), repeats: false))

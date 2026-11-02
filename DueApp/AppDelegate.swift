@@ -89,6 +89,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
         let action = response.actionIdentifier
+        // Body tap on a reminder with a link: go to the link's target. The reminder stays open, so it keeps nagging until marked done.
+        if action == UNNotificationDefaultActionIdentifier, let link = info["link"] as? String, let url = URL(string: link) {
+            UIApplication.shared.open(url) { opened in
+                if !opened { Registration.report("linkFailed", link) } // e.g. target app not installed: Due is left open
+                completionHandler()
+            }
+            return
+        }
         guard let reminderId = info["reminderId"] as? String, Notifications.actionIds.contains(action) else { return completionHandler() }
         var bg = UIBackgroundTaskIdentifier.invalid
         bg = UIApplication.shared.beginBackgroundTask { UIApplication.shared.endBackgroundTask(bg) }
