@@ -133,7 +133,9 @@
 //   which is a different, longer-form capture). Requests mic permission
 //   first if not yet determined.
 //
-// - `voiceStop {launchId}` -> `{text, id}` for a real transcript, `{code:
+// - `voiceStop {launchId, lang}` (`lang: "multi"` = Portuguese-practice todos,
+//   an English speaker attempting Portuguese: code-switching transcription
+//   instead of en-US) -> `{text, id}` for a real transcript, `{code:
 //   "empty_transcript", id}` for genuinely-silent audio, `{code: "failed", id,
 //   error}` when the box refused it, `{code: "queued", id}` when the box is
 //   unreachable or answering 5xx/429/408 (retried automatically), or a

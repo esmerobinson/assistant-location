@@ -53,6 +53,7 @@ static NSInteger const kTodosOpenAddMaxAttempts = 40;
 @property(nonatomic, weak) UITabBarController *tabBarController;
 - (void)installOnTabBarButtonView:(UIView *)buttonView;
 - (void)openAddTodo;
+- (void)openPracticeEntry:(NSString *)entryId;
 @end
 
 @implementation TodosTabBarInteractionHandler
@@ -104,6 +105,28 @@ static NSInteger const kTodosOpenAddMaxAttempts = 40;
     [self attemptOpenAddTodoOn:(GLWebModuleViewController *)todos attemptsLeft:kTodosOpenAddMaxAttempts];
 }
 
+// Same retry as -openAddTodo: a tap from a killed app reaches a page that is
+// still booting, and the sheet must not silently fail to open. Pages older than
+// the openPractice global use up the retries and stay on the todo list.
+- (void)openPracticeEntry:(NSString *)entryId {
+    UIViewController *todos = self.todosViewController;
+    if (self.tabBarController.selectedViewController != todos) {
+        [GLModuleRegistry showModuleWithIdentifier:todos.restorationIdentifier];
+    }
+    [self attemptOpenPractice:entryId on:(GLWebModuleViewController *)todos attemptsLeft:kTodosOpenAddMaxAttempts];
+}
+
+- (void)attemptOpenPractice:(NSString *)entryId on:(GLWebModuleViewController *)todos attemptsLeft:(NSInteger)attemptsLeft {
+    __weak typeof(self) weakSelf = self;
+    [todos callWebFunctionIfDefined:@"openPractice" withJSONArgument:@{@"id": entryId} completion:^(BOOL ran) {
+        if (ran || attemptsLeft <= 1) return;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kTodosOpenAddRetryInterval * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [weakSelf attemptOpenPractice:entryId on:todos attemptsLeft:attemptsLeft - 1];
+        });
+    }];
+}
+
 // Interval x attempts = ~8s of patience, measured against nothing: a guess
 // sized to a cold WKWebView load over the tailnet.
 - (void)attemptOpenAddTodoOn:(GLWebModuleViewController *)todos attemptsLeft:(NSInteger)attemptsLeft {
@@ -121,6 +144,12 @@ static NSInteger const kTodosOpenAddMaxAttempts = 40;
 
 // Kept alive for the process's lifetime — see the class comment above.
 static TodosTabBarInteractionHandler *todosTabBarHandler;
+
+// A practice-push tap that arrived before the tab bar was installed. On a cold
+// launch the notification delegate can fire first, so without this the tap would
+// open the app but never the sheet. Drained in
+// +moduleDidInstallTabBarItemForViewController:inTabBarController:.
+static NSString *pendingPracticeEntryId;
 
 // File-static rather than an ivar: +moduleTabWasSelectedForViewController:
 // inTabBarController: is a CLASS method (see GLModule.h -- the registry
@@ -152,6 +181,14 @@ static NSTimeInterval const kTodosDoubleTapWindow = 0.4;
     return [[TodosViewController alloc] init];
 }
 
++ (void)openPracticeEntry:(NSString *)entryId {
+    if (todosTabBarHandler.todosViewController == nil) {
+        pendingPracticeEntryId = entryId;
+        return;
+    }
+    [todosTabBarHandler openPracticeEntry:entryId];
+}
+
 // Wires the long-press "Add Todo" context menu onto this module's own tab
 // bar button — see TodosTabBarInteractionHandler above for what it calls.
 // Double-tap is wired separately, via +moduleTabWasSelectedForViewController:
@@ -170,6 +207,14 @@ static NSTimeInterval const kTodosDoubleTapWindow = 0.4;
     // Load-bearing: view controllers in a tab bar only get -viewDidLoad (and so
     // -loadPage) when first shown.
     [viewController loadViewIfNeeded];
+
+    if (pendingPracticeEntryId != nil) {
+        NSString *entryId = pendingPracticeEntryId;
+        pendingPracticeEntryId = nil;
+        // Next run-loop turn: the launch's own default-tab selection comes after
+        // this install and would otherwise switch away from Todos again.
+        dispatch_async(dispatch_get_main_queue(), ^{ [todosTabBarHandler openPracticeEntry:entryId]; });
+    }
 
     NSUInteger itemIndex = [tabs.tabBar.items indexOfObject:viewController.tabBarItem];
     if (itemIndex == NSNotFound) {

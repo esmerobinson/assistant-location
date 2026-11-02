@@ -3,6 +3,7 @@
 #import "EsmeViewController.h"
 #import "GLEsmeReminderScheduling.h"
 #import "GLModuleRegistry.h"
+#import "TodosModule.h"
 #import <UserNotifications/UserNotifications.h>
 
 // How many days ahead +scheduleDailyReminder keeps topped up. Well clear of
@@ -46,6 +47,12 @@ static NSString *const kEsmeStartCheckinNotification = @"GLEsmeStartCheckin";
           withCompletionHandler:(void (^)(void))completionHandler {
     if ([GLEsmeReminderScheduling isReminderIdentifier:response.notification.request.identifier]) {
         [[NSNotificationCenter defaultCenter] postNotificationName:kEsmeStartCheckinNotification object:nil];
+    }
+    // APNs custom key from the todo-sorter Portuguese-practice job. Handled here
+    // because this is the process's single notification delegate (see above).
+    id practiceEntry = response.notification.request.content.userInfo[@"todoPractice"];
+    if ([practiceEntry isKindOfClass:[NSString class]]) {
+        [TodosModule openPracticeEntry:practiceEntry];
     }
     completionHandler();
 }

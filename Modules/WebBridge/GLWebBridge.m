@@ -610,7 +610,9 @@ NSString *const GLWebBridgeWillOpenModuleNotification = @"GLWebBridgeWillOpenMod
     NSError *enqueueError = nil;
     GLDurableOutbox *outbox = [GLDurableOutbox shared];
     NSString *itemID = [outbox enqueueKind:@"session-voice"
-                                       path:@"/sessions/transcribe"
+                                       // Baked into the queued item's path so audio recorded offline
+                                       // still gets the code-switching transcriber on replay.
+                                       path:([params[@"lang"] isEqual:@"multi"] ? @"/sessions/transcribe?lang=multi" : @"/sessions/transcribe")
                                     headers:@{@"Content-Type": @"audio/m4a"}
                                        body:audio
                                        meta:@{@"launchId": [params[@"launchId"] isKindOfClass:[NSString class]] ? params[@"launchId"] : @""}
