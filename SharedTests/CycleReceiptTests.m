@@ -30,11 +30,14 @@
 - (void)testOnlyHttpsIsAccepted {
     for (NSString *bad in @[@"http://box.example/cycle/push/delivered", @"ftp://box.example/x", @"//box.example/x", @"box.example/x"]) {
         NSError *error = nil;
-        XCTAssertNil([self parse:@{@"receipt": @{@"id": @"a", @"url": bad}} error:&error], @"accepted %@", bad);
+        // Parsed outside the macro: a comma inside a dictionary literal splits XCTAssert's arguments.
+        CycleReceipt *parsed = [self parse:@{@"receipt": @{@"id": @"a", @"url": bad}} error:&error];
+        XCTAssertNil(parsed, @"accepted %@", bad);
         XCTAssertNotNil(error, @"a rejected url must say why (%@)", bad);
     }
     NSError *error = nil;
-    XCTAssertNotNil([self parse:@{@"receipt": @{@"id": @"a", @"url": @"HTTPS://box.example/x"}} error:&error], @"scheme case must not matter: %@", error);
+    CycleReceipt *upper = [self parse:@{@"receipt": @{@"id": @"a", @"url": @"HTTPS://box.example/x"}} error:&error];
+    XCTAssertNotNil(upper, @"scheme case must not matter: %@", error);
 }
 
 - (void)testMalformedReceiptsAreErrorsNotCrashes {
