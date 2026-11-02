@@ -1934,6 +1934,59 @@ test('assistant text is escaped, fenced blocks and inline code are formatted, to
   await context.close();
 });
 
+test('assistant markdown renders as formatting with no raw syntax left over', async () => {
+  const text = [
+    '**The Add button isn\'t shipped.** Costs **$3/month**, see `logins.json` and **`bold.code`**.',
+    '',
+    '## Add button',
+    'First line with *emphasis* and a [doc](https://example.com/a_b).',
+    'Second line https://example.com/x*y*z',
+    '',
+    '- bullet **one**',
+    '  - nested',
+    '1. numbered',
+    '',
+    '---',
+    '',
+    '| Plan | Cost |',
+    '|---|---:|',
+    '| **Azure** | $3 |',
+    '| Full | $23 |',
+    '',
+    'After table.',
+    '```js',
+    '**not bold** # not heading',
+    '```',
+  ].join('\n');
+  const { context, page } = await openDetailPage({ messages: [{ uuid: 'a', role: 'assistant', text, tools: [], at: 'x' }] });
+  const msg = page.locator('.gl-msg-assistant .gl-msg-text');
+  assert.deepEqual(await msg.locator('strong').allTextContents(), ['The Add button isn\'t shipped.', '$3/month', 'bold.code', 'one', 'Azure']);
+  assert.equal(await msg.locator('strong code').textContent(), 'bold.code');
+  assert.equal(await msg.locator('.gl-md-h2').textContent(), 'Add button');
+  assert.equal(await msg.locator('em').textContent(), 'emphasis');
+  assert.equal(await msg.locator('a', { hasText: 'doc' }).getAttribute('href'), 'https://example.com/a_b');
+  assert.equal(await msg.locator('a').nth(1).getAttribute('href'), 'https://example.com/x*y*z', 'a URL is never split by italics');
+  assert.deepEqual(await msg.locator('.gl-md-li').evaluateAll((els) => els.map((e) => [e.children[0].textContent, e.children[1].textContent, e.style.marginLeft])),
+    [['•', 'bullet one', '0px'], ['•', 'nested', '16px'], ['1.', 'numbered', '0px']]);
+  assert.equal(await msg.locator('hr').count(), 1);
+  assert.deepEqual(await msg.locator('tr').evaluateAll((rows) => rows.map((r) => [...r.children].map((c) => c.tagName + ':' + c.textContent))),
+    [['TH:Plan', 'TH:Cost'], ['TD:Azure', 'TD:$3'], ['TD:Full', 'TD:$23']]);
+  assert.equal(await msg.locator('.gl-md-p').last().textContent(), 'After table.', 'the line after a table is not swallowed');
+  assert.equal(await msg.locator('.gl-codeblock').textContent(), '**not bold** # not heading', 'fences stay literal');
+  const outside = await msg.evaluate((el) => { const c = el.cloneNode(true); c.querySelector('.gl-codeblock').remove(); return c.textContent; });
+  assert.doesNotMatch(outside, /\*\*|##|\|---/, 'no raw markdown left: ' + outside);
+  await context.close();
+});
+
+test('text that only resembles markdown stays literal', async () => {
+  const text = 'Compute 2 * 3 * 4 and a*b*c, plus snake_case_name and **unclosed.\nA | pipe line\nnext line';
+  const { context, page } = await openDetailPage({ messages: [{ uuid: 'a', role: 'assistant', text, tools: [], at: 'x' }] });
+  const msg = page.locator('.gl-msg-assistant .gl-msg-text');
+  assert.equal(await msg.textContent(), text);
+  assert.equal(await msg.locator('em, strong, table, .gl-md-li').count(), 0);
+  await context.close();
+});
+
 test('detail view opens scrolled to the bottom', async () => {
   const many = Array.from({ length: 40 }, (_, i) => ({ uuid: 'u' + i, role: i % 2 ? 'assistant' : 'user', text: 'line ' + i + ' lorem ipsum dolor sit amet', tools: [], at: 'x' }));
   const { context, page } = await openDetailPage({ messages: many });
