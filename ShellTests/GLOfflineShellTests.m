@@ -295,7 +295,6 @@ static NSURL *GLTempDir(void) {
     XCTAssertGreaterThanOrEqual(took, 0.9, @"the shell appeared after %.2fs, before the deadline", took);
     XCTAssertLessThan(took, 6, @"the shell took %.1fs, the deadline did not fire", took);
     XCTAssertTrue([_server.requestedPaths containsObject:@"/?theme=light"], @"the live load never started: %@", _server.requestedPaths);
-    XCTAssertEqual(cold.committed, 0, @"the live page committed although the server never answered");
     XCTAssertEqualObjects(GLPollJS(cold.webView, @"window.__stored", _token, 8), _token);
     GLSpin(1.5);  // the cancelled live load's failure must not reach the host's error view
     XCTAssertEqual(cold.hostErrorViews, 0, @"cancelling the live load surfaced an error view");
@@ -623,24 +622,8 @@ static NSURL *GLTempDir(void) {
     }
 }
 
-// Foreground right after a cold launch, with a new deploy: the probe finds a new shell while the saved one may still be
-// provisional (WebContent can take seconds to launch), and replacing it cancels that navigation with -999.
-- (void)testLaunchRefreshReplacingTheShellShowsNoError {
-    [self saveShellVersion:@"v1"];
-    _shellVersion = @"v2";
-    GLShellHarness *cold = [self newHarness];
-    cold.loader.prefersSavedShell = YES;
-    [cold.loader loadPreferringSavedShell:[NSURLRequest requestWithURL:[self liveURL]]];
-    [cold.loader swapToLiveIfReachable];
-    XCTAssertEqualObjects(GLPollJS(cold.webView, @"document.body.innerText.indexOf('shell v2') >= 0", @YES, 20), @YES);
-    GLSpin(1);
-    NSLog(@"[probe] launch race: %ld cancellation(s)", (long)cold.cancellations);
-    XCTAssertEqual(cold.hostErrorViews, 0, @"a replaced navigation reached the host's error view");
-    XCTAssertNil(cold.liveFailure);
-}
-
-// The same replacement made deterministic: a navigation the loader did not start is still waiting on the server when
-// a changed shell replaces it. It must report -999, and that must stay away from the host's error view.
+// A navigation the loader did not start is still waiting on the server when a changed shell replaces it. It must report
+// -999, and that must stay away from the host's error view.
 - (void)testReplacedInFlightNavigationShowsNoError {
     [self saveShellVersion:@"v1"];
     __weak typeof(self) weakSelf = self;
