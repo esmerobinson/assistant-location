@@ -241,16 +241,20 @@
   .gl-icon-btn svg { width: 18px; height: 18px; display: block; }
   .gl-icon-btn:disabled { opacity: 0.5; }
   #session-record-btn.recording { background: var(--gl-danger); color: #fff; }
-  #session-record-btn { position: relative; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
-  /* Hold targets: pop out below the mic after a long press while recording.
+  /* Both mics (launcher and reply row) share the hold gesture, so they share
+     the touch rules that keep iOS from selecting/calling-out on a long press. */
+  #session-record-btn, #detail-record-btn { position: relative; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
+  /* Hold targets: pop out after a long press while recording.
      Dragging the thumb onto Insert and releasing stops the recording and
      INSERTS the transcript into the composer (a plain tap stops and
      auto-sends); onto Cancel stops it and throws the audio away. */
-  #session-hold-targets {
-    position: absolute; right: 0; top: calc(100% + 10px);
-    display: flex; gap: 10px; z-index: 5;
-  }
-  #session-hold-targets[hidden] { display: none; }
+  .gl-hold-targets { position: absolute; display: flex; gap: 10px; z-index: 5; }
+  .gl-hold-targets[hidden] { display: none; }
+  /* Launcher mic sits at the top of the screen: targets pop BELOW it, right-aligned. */
+  #session-hold-targets { right: 0; top: calc(100% + 10px); }
+  /* Reply mic sits at the bottom of the screen, on the left of the row: targets pop ABOVE the row, left-aligned (both 96px targets + gap = 202px, well inside a 390px screen). */
+  #detail-hold-targets { left: 0; bottom: calc(100% + 10px); }
+  #detail-composer .gl-reply-row { position: relative; }
   .gl-hold-target {
     min-width: 96px; height: 52px; padding: 0 16px; border-radius: 26px;
     background: var(--gl-accent); color: #fff; font-weight: 600; font-size: 15px;
@@ -258,8 +262,8 @@
     box-shadow: 0 4px 14px rgba(0,0,0,0.35);
     white-space: nowrap; -webkit-user-select: none; user-select: none; pointer-events: none;
   }
-  #session-cancel-target { background: var(--gl-surface); color: var(--gl-text); border: 1px solid rgba(127, 127, 127, 0.3); }
-  .gl-hold-target.armed, #session-cancel-target.armed { transform: scale(1.12); background: var(--gl-danger); color: #fff; }
+  #session-cancel-target, #detail-cancel-target { background: var(--gl-surface); color: var(--gl-text); border: 1px solid rgba(127, 127, 127, 0.3); }
+  .gl-hold-target.armed, #session-cancel-target.armed, #detail-cancel-target.armed { transform: scale(1.12); background: var(--gl-danger); color: #fff; }
   /* Recording/transcribing status text -- right-aligned under the composer
      so it reads as attached to the mic icon above it without needing its
      own full-width row (the old .gl-record-row this replaces). */
@@ -619,7 +623,7 @@
       <button id="session-record-btn" class="gl-icon-btn" type="button" aria-label="Dictate" aria-pressed="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
       </button>
-      <div id="session-hold-targets" hidden aria-hidden="true">
+      <div id="session-hold-targets" class="gl-hold-targets" hidden aria-hidden="true">
         <div id="session-cancel-target" class="gl-hold-target">Cancel ✕</div>
         <div id="session-insert-target" class="gl-hold-target">Insert ↵</div>
       </div>
@@ -683,6 +687,10 @@
       <button id="detail-record-btn" class="gl-icon-btn" type="button" aria-label="Dictate" aria-pressed="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
       </button>
+      <div id="detail-hold-targets" class="gl-hold-targets" hidden aria-hidden="true">
+        <div id="detail-cancel-target" class="gl-hold-target">Cancel ✕</div>
+        <div id="detail-insert-target" class="gl-hold-target">Insert ↵</div>
+      </div>
       <textarea id="detail-reply" rows="1" placeholder="Reply…"></textarea>
       <button id="detail-send" class="gl-btn" type="button">Send</button>
     </div>
@@ -1537,20 +1545,188 @@
     try { localStorage.removeItem(LEGACY_AUTOSEND_KEY); } catch (e) {}
   }
 
-  // autoSend (optional) = {project, prefix, attachmentIds}: the transcript is
-  // appended to `prefix` and the session started as soon as it arrives, with
-  // the composer already free for the next draft.
-  function stopVoiceCapture(autoSend, launchId) {
+  // Reply launches: the reply-row mic's equivalent of a voice launch. Tapping
+  // stop empties the reply box at once, so the typed text, the screenshots
+  // and WHICH SESSION dictated it must outlive the page until the transcript
+  // arrives (it can be minutes late when the box is unreachable, and the
+  // detail may be closed or the page reloaded meanwhile). Kept in localStorage
+  // under its own key (launcher launches render as Recent rows; these do not),
+  // matched to native's recording by launchId, or by voiceId on an older native.
+  // Record: {localId, sessionId, voiceId, prefix, model, shots:[{localId,
+  // fileName}], status: transcribing | waiting | delivered | failed, error, at}.
+  // `delivered` = the reply is already in PENDING_REPLIES_KEY (which sends by
+  // sessionId, needing no open detail) and we are only waiting to ack native's
+  // recording, so a late poll cannot treat it as a loose dictation.
+  var REPLY_LAUNCHES_KEY = 'gl-session-voice-reply-launches-v1';
+  function readReplyLaunches() {
+    try { return JSON.parse(localStorage.getItem(REPLY_LAUNCHES_KEY) || '{}'); } catch (e) { return {}; }
+  }
+  function writeReplyLaunches(all) {
+    try {
+      if (Object.keys(all).length) localStorage.setItem(REPLY_LAUNCHES_KEY, JSON.stringify(all));
+      else localStorage.removeItem(REPLY_LAUNCHES_KEY);
+      return true;
+    } catch (e) { return false; }
+  }
+  function updateReplyLaunch(localId, patch) {
+    var all = readReplyLaunches();
+    if (!all[localId]) return;
+    Object.keys(patch).forEach(function (k) { all[localId][k] = patch[k]; });
+    writeReplyLaunches(all);
+  }
+  function removeReplyLaunch(localId) {
+    var all = readReplyLaunches();
+    delete all[localId];
+    writeReplyLaunches(all);
+  }
+  function replyLaunchForVoice(r) {
+    var all = readReplyLaunches();
+    return all[r.launchId] || Object.keys(all).map(function (k) { return all[k]; }).filter(function (l) { return l.voiceId === r.id; })[0] || null;
+  }
+  function openDetailFor(sessionId) { return detail && detail.sessionId === sessionId ? detail : null; }
+
+  /** The optimistic bubble for a reply launch in an open detail (made if missing, e.g. after the detail was reopened). */
+  function replyLaunchBubble(d, rec) {
+    var entry = d.local.filter(function (l) { return l.key === rec.localId; })[0];
+    if (!entry) {
+      entry = { text: '', draft: '', status: 'pending', key: rec.localId, baseline: 0, model: rec.model, pending: rec.shots.map(function (a) { return { localId: a.localId, id: null }; }) };
+      d.local.push(entry);
+    }
+    if (!entry.text) entry.text = rec.prefix ? rec.prefix + ' …' : 'Transcribing…'; // placeholder until the transcript exists
+    return entry;
+  }
+
+  /** The reply-row mic's stop tap: commit at once (box emptied, pending bubble), send when the transcript arrives. */
+  function stopAndSendReply() {
+    var d = voiceDetail; // the detail that dictated this, even if the user has since moved on
+    // The composer holds this detail's draft only while that detail is the open one.
+    var live = detail === d;
+    var shots = live ? d.attachments.slice() : [];
+    var rec = {
+      localId: randomIdempotencyKey(), sessionId: d.sessionId, voiceId: null,
+      prefix: live ? replyEl.value.trim() : '', model: live ? replyModelEl.value : '',
+      shots: shots.map(function (a) { return { localId: a.localId, fileName: a.fileName }; }),
+      status: 'transcribing', error: null, at: Date.now()
+    };
+    // Durable FIRST: nothing is cleared until the record that can restore it is on disk.
+    var all = readReplyLaunches();
+    all[rec.localId] = rec;
+    if (!writeReplyLaunches(all)) {
+      showError("Couldn't save the reply on this device, so nothing was sent or cleared.", 'reply');
+      return;
+    }
+    if (live) {
+      replyEl.value = '';
+      replyEl.dispatchEvent(new Event('input')); // drops the saved draft: the record owns the text now
+      replyModelEl.value = '';
+      d.attachments = []; // blobs stay in IndexedDB: the record points at them
+      shots.forEach(function (a) { if (a.objectUrl) { try { URL.revokeObjectURL(a.objectUrl); } catch (e) { /* ignore */ } } });
+      renderReplyThumbs();
+      replyLaunchBubble(d, rec);
+      renderDetail(true);
+    }
+    stopVoiceCapture(null, null, rec);
+  }
+
+  /** The transcript exists: queue "typed + transcript" (+ screenshots) as a reply to the dictating session. */
+  function deliverReplyLaunch(localId, transcript, voiceId) {
+    var rec = readReplyLaunches()[localId];
+    if (!rec) return;
+    if (rec.status === 'delivered') { // already queued in an earlier page life; only the ack is missing
+      ackVoice(voiceId).then(function () { removeReplyLaunch(localId); }, function () {});
+      return;
+    }
+    var text = [rec.prefix, transcript].filter(Boolean).join(' ');
+    // The screenshot blobs must be on disk before the queued reply can refer to them (none pending after a reload: already written).
+    Promise.all(rec.shots.map(function (a) { return storedWrites[a.localId]; })).then(function () {
+      var pending = rec.shots.map(function (a) { return { localId: a.localId, id: null }; });
+      var d = openDetailFor(rec.sessionId);
+      if (!d) {
+        // No bubble to retry from: leave the text as that session's reply draft too, like queueReply, so a send the box refuses is recoverable.
+        try { localStorage.setItem(REPLY_DRAFT_PREFIX + rec.sessionId, text); } catch (e) { /* storage unavailable */ }
+      }
+      if (!enqueue(PENDING_REPLIES_KEY, { sessionId: rec.sessionId, text: text, key: rec.localId, model: rec.model, pending: pending })) {
+        failReplyLaunch(localId, "Couldn't save the reply on this device, so it was not sent.", voiceId);
+        return;
+      }
+      updateReplyLaunch(localId, { status: 'delivered', voiceId: voiceId });
+      if (d) {
+        var entry = replyLaunchBubble(d, rec);
+        entry.text = text;
+        entry.draft = text;
+        entry.baseline = d.messages.filter(function (m) { return m.role === 'user' && m.text === text; }).length;
+        renderDetail(true);
+      }
+      flushReplies();
+      // The reply is durable now, so native may drop the recording; the record goes with it.
+      ackVoice(voiceId).then(function () { removeReplyLaunch(localId); }, function () {});
+    }, function () {
+      failReplyLaunch(localId, "Couldn't keep the screenshot on this device, so the reply was not sent.", voiceId);
+    });
+  }
+
+  /** Transcription failed: the typed text and screenshots go back to that reply box (now, or when the session is next opened). */
+  function failReplyLaunch(localId, msg, voiceId) {
+    var rec = readReplyLaunches()[localId];
+    if (!rec) return;
+    updateReplyLaunch(localId, { status: 'failed', error: msg });
+    // The audio cannot be re-attached to a reply, and the text is being restored: native can drop the recording.
+    if (voiceId || rec.voiceId) ackVoice(voiceId || rec.voiceId).catch(function () {});
+    var d = openDetailFor(rec.sessionId);
+    if (d) restoreFailedReplyLaunches(d);
+    else showError(msg + ' Your reply text is back in that session\'s reply box.');
+  }
+
+  /** Puts failed reply launches of an open detail back in its box (prefix, screenshots) and says why. */
+  function restoreFailedReplyLaunches(d) {
+    var all = readReplyLaunches();
+    Object.keys(all).forEach(function (k) {
+      var rec = all[k];
+      if (rec.sessionId !== d.sessionId || rec.status !== 'failed') return;
+      d.local = d.local.filter(function (l) { return l.key !== rec.localId; });
+      replyEl.value = [rec.prefix, replyEl.value.trim()].filter(Boolean).join(' ');
+      replyEl.dispatchEvent(new Event('input'));
+      rec.shots.forEach(function (a) { d.attachments.push({ localId: a.localId, fileName: a.fileName, objectUrl: null }); });
+      if (rec.model) replyModelEl.value = rec.model;
+      removeReplyLaunch(rec.localId);
+      renderReplyThumbs();
+      renderDetail(true);
+      showError(rec.error + ' Your reply is back in the box.', 'reply');
+    });
+  }
+
+  /** Reopening a session: bring back what its voice replies in flight left behind (pending bubbles, failures). */
+  function reconcileReplyLaunches(d) {
+    var all = readReplyLaunches();
+    Object.keys(all).forEach(function (k) {
+      var rec = all[k];
+      if (rec.sessionId === d.sessionId && (rec.status === 'transcribing' || rec.status === 'waiting')) replyLaunchBubble(d, rec);
+    });
+    restoreFailedReplyLaunches(d);
+  }
+
+  // Two ways to "send" a stopped recording, both of which free the composer at
+  // once and finish later (however late the transcript is):
+  //   autoSend (+ launchId) = {project, prefix, attachmentIds}: launcher mic; the
+  //     transcript is appended to `prefix` and a session is started.
+  //   replyRec = a reply launch (see stopAndSendReply): reply-row mic; the
+  //     transcript is appended to its typed prefix and sent as a reply to the
+  //     session that dictated it, through the durable reply queue.
+  // With neither, the transcript is inserted into the composer (hold + Insert,
+  // or a recording left running after its detail was closed).
+  function stopVoiceCapture(autoSend, launchId, replyRec) {
     if (!recording) return;
     var toReply = voiceTarget === 'reply';
     var targetDetail = toReply ? voiceDetail : null;
-    setRecordingUI(false, autoSend ? '' : 'Transcribing…');
+    setRecordingUI(false, autoSend ? '' : replyRec ? 'Transcribing, then sending…' : 'Transcribing…');
     if (autoSend) {
       // The launch id becomes the Start's key, so a clarification typed now waits for that Start.
       setConfirmation('Starting', 'Transcribing, then starting the session…', false, launchId);
     }
     // A send that went wrong stays in Recent as a Failed row (with the clip, when native has it) -- never back in the composer, never a toast.
     function failLaunch(msg, voiceId) {
+      // A reply's failure puts its typed text and screenshots back in that reply box instead.
+      if (replyRec) { failReplyLaunch(replyRec.localId, msg, voiceId); return; }
       confirmationEl.classList.add('gl-hidden');
       updateVoiceLaunch(launchId, { status: 'failed', error: msg, voiceId: voiceId || null });
     }
@@ -1569,7 +1745,7 @@
       // voiceStopWithReply:).
       if (code === 'empty_transcript' || code === 'failed') {
         var why = code === 'failed' ? res.error : "Didn't catch anything";
-        if (autoSend) { failLaunch(why, res.id); return; }
+        if (autoSend || replyRec) { failLaunch(why, res.id); return; }
         showError(why + (code === 'failed' ? '' : ' — try again.'));
         if (res.id) ackVoice(res.id).catch(function () {});
         return;
@@ -1582,20 +1758,24 @@
           updateVoiceLaunch(launchId, { voiceId: res.id, status: 'waiting' });
           confirmationEl.classList.add('gl-hidden');
         }
+        // Same for a reply: its record (session id, typed prefix, screenshots) waits on disk for the transcript.
+        if (replyRec) updateReplyLaunch(replyRec.localId, { voiceId: res.id, status: 'waiting' });
         // The box was unreachable. Native saved the recording and retries it
         // by itself; pollVoice() delivers the transcript once it exists.
-        if (targetDetail && res.id) voiceReplyDetails[res.id] = targetDetail;
+        if (targetDetail && res.id && !replyRec) voiceReplyDetails[res.id] = targetDetail;
         pollVoice();
         return;
       }
       if (!text) {
-        if (autoSend) failLaunch('Transcription failed', res.id); else showError('Transcription failed.');
+        if (autoSend || replyRec) failLaunch('Transcription failed', res.id); else showError('Transcription failed.');
         return;
       }
       // A concurrent pollVoice may already have started this one.
       if (handledVoice[res.id]) return;
       handledVoice[res.id] = true;
-      if (autoSend) {
+      if (replyRec) {
+        deliverReplyLaunch(replyRec.localId, text, res.id);
+      } else if (autoSend) {
         // The recording stays until this Start is confirmed (flushStarts acks it).
         startSessionWith(autoSend.project, [autoSend.prefix, text].filter(Boolean).join(' '), autoSend.attachmentIds, false, autoSend.pendingIds, autoSend.autoSkill, res.id, launchId);
       } else {
@@ -1604,9 +1784,12 @@
       }
     }).catch(function (err) {
       setVoiceStatus('', toReply);
-      if (!autoSend) { showError('Transcription failed: ' + err.message); return; }
+      if (!autoSend && !replyRec) { showError('Transcription failed: ' + err.message); return; }
       // A timeout leaves native still working on the recording; pollVoice picks it up by launchId. Any other error means native has nothing to retry.
-      if (err.message === 'timeout') { updateVoiceLaunch(launchId, { status: 'waiting' }); pollVoice(); } else failLaunch('Transcription failed: ' + err.message);
+      if (err.message === 'timeout') {
+        if (replyRec) updateReplyLaunch(replyRec.localId, { status: 'waiting' }); else updateVoiceLaunch(launchId, { status: 'waiting' });
+        pollVoice();
+      } else failLaunch('Transcription failed: ' + err.message);
     });
   }
 
@@ -1629,6 +1812,8 @@
       (res.pending || []).forEach(function (r) {
         var launch = launchForVoice(r);
         if (launch && (launch.voiceId !== r.id || launch.status !== 'waiting')) updateVoiceLaunch(launch.localId, { voiceId: r.id, status: 'waiting', error: null });
+        var rl = replyLaunchForVoice(r);
+        if (rl && (rl.status === 'transcribing' || rl.status === 'waiting') && (rl.voiceId !== r.id || rl.status !== 'waiting')) updateReplyLaunch(rl.localId, { voiceId: r.id, status: 'waiting' });
       });
       res.ready.forEach(function (r) {
         if (handledVoice[r.id] || voiceOwnedByStart(r.id)) return;
@@ -1637,6 +1822,9 @@
         if (launch) {
           var snap = launch.snap;
           startSessionWith(snap.project, [snap.prefix, r.text].filter(Boolean).join(' '), snap.attachmentIds, false, snap.pendingIds, snap.autoSkill, r.id, launch.localId);
+        } else if (replyLaunchForVoice(r)) {
+          // Dictated for a reply: goes to that session, never to the launcher prompt.
+          deliverReplyLaunch(replyLaunchForVoice(r).localId, r.text, r.id);
         } else {
           insertVoiceText(r.text, voiceReplyDetails[r.id]);
           delete voiceReplyDetails[r.id];
@@ -1644,6 +1832,11 @@
         }
       });
       res.failed.forEach(function (r) {
+        var rl = replyLaunchForVoice(r);
+        if (rl) {
+          if (rl.status === 'transcribing' || rl.status === 'waiting') failReplyLaunch(rl.localId, 'Transcription failed: ' + r.error, r.id);
+          return;
+        }
         var launch = launchForVoice(r);
         if (launch) {
           if (launch.status !== 'failed' || launch.error !== r.error) updateVoiceLaunch(launch.localId, { voiceId: r.id, status: 'failed', error: r.error });
@@ -1660,6 +1853,11 @@
         var l = all[k];
         if (nativeKnowsLaunches && l.status === 'transcribing' && !l.voiceId && l.at < pageStartedAt) updateVoiceLaunch(k, { status: 'failed', error: 'The recording was not saved before the app closed' });
       });
+      var allReplies = readReplyLaunches();
+      Object.keys(allReplies).forEach(function (k) {
+        var l = allReplies[k];
+        if (nativeKnowsLaunches && l.status === 'transcribing' && !l.voiceId && l.at < pageStartedAt) failReplyLaunch(k, 'The recording was not saved before the app closed.');
+      });
       if (res.waiting > 0 && !recording) {
         recordStatusEl.textContent = 'Voice note saved. It transcribes when the box is reachable.';
         voiceWaitingShown = true;
@@ -1675,33 +1873,18 @@
     });
   }
 
-  // Tap = send, hold-drag = insert. While recording, a plain tap stops and
-  // auto-sends (see stopVoiceCapture's autoSend; falls back to inserting when
-  // no project is chosen or an upload is in flight). Holding the mic ~450ms
-  // pops an Insert target out below it; releasing over the target stops the
-  // recording and just inserts the transcript into the composer; releasing
-  // over Cancel beside it stops and discards the audio. Releasing anywhere
-  // else dismisses the targets and keeps recording.
-  var holdTargetsEl = document.getElementById('session-hold-targets');
-  var insertTargetEl = document.getElementById('session-insert-target');
-  var cancelTargetEl = document.getElementById('session-cancel-target');
+  // Both mics share this gesture: a tap toggles (start; while recording, stop
+  // and SEND -- see stopVoiceCapture's autoSend / replyRec); holding the mic
+  // ~450ms while recording pops Insert and Cancel targets out; releasing over
+  // Insert stops the recording and just inserts the transcript into the
+  // composer, over Cancel stops and discards the audio, anywhere else
+  // dismisses the targets and keeps recording.
   var LONG_PRESS_MS = 450;
-  var holdTimer = null;
-  var holdActive = false;     // the hold targets are showing for the current press
-  var suppressNextClick = false;
 
   function overTarget(el, x, y) {
     var r = el.getBoundingClientRect();
     // Forgiving, a thumb is not a pixel; sideways only up to half the 10px gap between the two targets.
     return x >= r.left - 5 && x <= r.right + 5 && y >= r.top - 14 && y <= r.bottom + 14;
-  }
-  function endHold() {
-    clearTimeout(holdTimer);
-    holdTimer = null;
-    holdActive = false;
-    holdTargetsEl.hidden = true;
-    insertTargetEl.classList.remove('armed');
-    cancelTargetEl.classList.remove('armed');
   }
 
   function cancelVoiceCapture() {
@@ -1709,6 +1892,59 @@
     setRecordingUI(false, '');
     GLBridge.call('voiceCancel', {}).catch(function (err) {
       showError('Could not cancel the recording: ' + err.message);
+    });
+  }
+
+  /**
+   * Wires the tap + hold-drag gesture onto a mic button. Hold state is per
+   * mic (closure), so the two mics cannot cross-arm each other's targets.
+   * opts: targetsEl/insertEl/cancelEl (the popped-out targets), canHold()
+   * (is there a recording this mic may hold-control), onTap() (a plain tap).
+   */
+  function attachMicHold(btn, opts) {
+    var holdTimer = null;
+    var holdActive = false;     // the hold targets are showing for the current press
+    var suppressNextClick = false;
+    function endHold() {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+      holdActive = false;
+      opts.targetsEl.hidden = true;
+      opts.insertEl.classList.remove('armed');
+      opts.cancelEl.classList.remove('armed');
+    }
+    btn.addEventListener('pointerdown', function (e) {
+      if (!opts.canHold()) return;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(function () {
+        holdTimer = null;
+        if (!opts.canHold()) return;
+        holdActive = true;
+        opts.targetsEl.hidden = false;
+        if (navigator.vibrate) { try { navigator.vibrate(10); } catch (err) { /* ignore */ } }
+      }, LONG_PRESS_MS);
+      try { btn.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    });
+    btn.addEventListener('pointermove', function (e) {
+      if (!holdActive) return;
+      opts.insertEl.classList.toggle('armed', overTarget(opts.insertEl, e.clientX, e.clientY));
+      opts.cancelEl.classList.toggle('armed', overTarget(opts.cancelEl, e.clientX, e.clientY));
+    });
+    btn.addEventListener('pointerup', function (e) {
+      var wasHold = holdActive;
+      var insert = holdActive && overTarget(opts.insertEl, e.clientX, e.clientY);
+      var cancel = holdActive && overTarget(opts.cancelEl, e.clientX, e.clientY);
+      endHold();
+      if (!wasHold) return; // short press: the click handler below owns it
+      suppressNextClick = true; // a long press must not also fire the toggle
+      if (insert) stopVoiceCapture();
+      else if (cancel) cancelVoiceCapture();
+    });
+    btn.addEventListener('pointercancel', endHold);
+    btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    btn.addEventListener('click', function () {
+      if (suppressNextClick) { suppressNextClick = false; return; }
+      opts.onTap();
     });
   }
 
@@ -1731,44 +1967,19 @@
     stopVoiceCapture(snapshot, launchId);
   }
 
-  recordBtn.addEventListener('pointerdown', function (e) {
-    if (!recording) return;
-    clearTimeout(holdTimer);
-    holdTimer = setTimeout(function () {
-      holdTimer = null;
-      if (!recording) return;
-      holdActive = true;
-      holdTargetsEl.hidden = false;
-      if (navigator.vibrate) { try { navigator.vibrate(10); } catch (err) { /* ignore */ } }
-    }, LONG_PRESS_MS);
-    try { recordBtn.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-  });
-  recordBtn.addEventListener('pointermove', function (e) {
-    if (!holdActive) return;
-    insertTargetEl.classList.toggle('armed', overTarget(insertTargetEl, e.clientX, e.clientY));
-    cancelTargetEl.classList.toggle('armed', overTarget(cancelTargetEl, e.clientX, e.clientY));
-  });
-  recordBtn.addEventListener('pointerup', function (e) {
-    var wasHold = holdActive;
-    var insert = holdActive && overTarget(insertTargetEl, e.clientX, e.clientY);
-    var cancel = holdActive && overTarget(cancelTargetEl, e.clientX, e.clientY);
-    endHold();
-    if (!wasHold) return; // short press: the click handler below owns it
-    suppressNextClick = true; // a long press must not also fire the toggle
-    if (insert) stopVoiceCapture();
-    else if (cancel) cancelVoiceCapture();
-  });
-  recordBtn.addEventListener('pointercancel', endHold);
-  recordBtn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-
-  recordBtn.addEventListener('click', function () {
-    if (suppressNextClick) { suppressNextClick = false; return; }
-    // A reply-box recording left running when the detail was closed: stop it
-    // (its transcript goes to the prompt, see insertVoiceText), never auto-send.
-    if (recording && voiceTarget === 'reply') { stopVoiceCapture(); return; }
-    if (!recording) startVoiceCapture();
-    else if (selectedProject === null) stopVoiceCapture();
-    else stopAndSend();
+  attachMicHold(recordBtn, {
+    targetsEl: document.getElementById('session-hold-targets'),
+    insertEl: document.getElementById('session-insert-target'),
+    cancelEl: document.getElementById('session-cancel-target'),
+    canHold: function () { return recording; },
+    onTap: function () {
+      // A reply-box recording left running when the detail was closed: stop it
+      // (its transcript goes to the prompt, see insertVoiceText), never auto-send.
+      if (recording && voiceTarget === 'reply') { stopVoiceCapture(); return; }
+      if (!recording) startVoiceCapture();
+      else if (selectedProject === null) stopVoiceCapture();
+      else stopAndSend();
+    }
   });
 
   // Exposed for native to call via GLWebModuleViewController's
@@ -3407,6 +3618,7 @@
     try { draft = localStorage.getItem(replyDraftKey()) || ''; } catch (e) { draft = ''; }
     replyEl.value = draft;
     renderReplyThumbs();
+    reconcileReplyLaunches(detail);
     renderDetailHeader();
     var cached = transcriptCache[detail.sessionId];
     if (cached) applyTranscript(detail, cached, 0, false);
@@ -3565,9 +3777,16 @@
       showError('Up to ' + MAX_ATTACHMENTS + ' screenshots — ' + (files.length - toAdd.length) + ' skipped.', 'reply');
     }
   });
-  detailRecordBtn.addEventListener('click', function () {
-    if (!recording) startVoiceCapture('reply');
-    else if (voiceTarget === 'reply') stopVoiceCapture();
+  // Same gesture as the launcher mic: tap-tap sends the reply, hold + Insert inserts, hold + Cancel discards.
+  attachMicHold(detailRecordBtn, {
+    targetsEl: document.getElementById('detail-hold-targets'),
+    insertEl: document.getElementById('detail-insert-target'),
+    cancelEl: document.getElementById('detail-cancel-target'),
+    canHold: function () { return recording && voiceTarget === 'reply'; },
+    onTap: function () {
+      if (!recording) startVoiceCapture('reply');
+      else if (voiceTarget === 'reply') stopAndSendReply();
+    }
   });
   replyEl.addEventListener('input', function () {
     if (!detail) return;

@@ -799,7 +799,7 @@ test("loadProjects()/loadRecent() clear a stale error banner on the NEXT success
 });
 
 test('REGRESSION PROOF: without gl-bridge.js\'s per-call timeout option, a 6s-delayed voiceStop reply is dropped as a false "timeout"', async () => {
-  const context = await browser.newContext();
+  const context = await browser.newContext({ hasTouch: true });
   await context.addInitScript(buildMockBridgeScript(baseConfig({
     voiceStop: { text: 'delayed transcript' },
   })));
@@ -813,7 +813,8 @@ test('REGRESSION PROOF: without gl-bridge.js\'s per-call timeout option, a 6s-de
   await page.click('#session-record-btn'); // start
   await page.waitForSelector('#session-record-btn.recording');
   const t0 = Date.now();
-  await page.click('#session-record-btn'); // stop -> voiceStop, delayed 6s by the mock
+  // A tap-stop now auto-sends, so reach the insert path (which fills the prompt) with the real gesture: hold + Insert.
+  await stopViaInsert(page); // -> voiceStop, delayed 6s by the mock
   await page.waitForFunction(
     () => document.getElementById('session-prompt').value.indexOf('delayed transcript') !== -1,
     { timeout: 15000 }
@@ -1501,15 +1502,16 @@ async function slidePage(startBodies, { holdProjects = false } = {}) {
   return { context, page };
 }
 
-async function holdMic(page) {
-  const box = await page.locator('#session-record-btn').boundingBox();
+/** Long-presses a mic ('session' = launcher, 'detail' = reply row) while recording; returns touch helpers and the target centres. */
+async function holdMic(page, mic = 'session') {
+  const box = await page.locator(`#${mic}-record-btn`).boundingBox();
   const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const cdp = await page.context().newCDPSession(page);
   const touch = (type, pt) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pt ? [{ x: pt.x, y: pt.y }] : [] });
   await touch('touchStart', from);
-  await page.waitForSelector('#session-hold-targets:not([hidden])');
-  const t = await page.locator('#session-insert-target').boundingBox();
-  const c = await page.locator('#session-cancel-target').boundingBox();
+  await page.waitForSelector(`#${mic}-hold-targets:not([hidden])`);
+  const t = await page.locator(`#${mic}-insert-target`).boundingBox();
+  const c = await page.locator(`#${mic}-cancel-target`).boundingBox();
   return { touch, from, target: { x: t.x + t.width / 2, y: t.y + t.height / 2 }, cancel: { x: c.x + c.width / 2, y: c.y + c.height / 2 } };
 }
 
@@ -1898,7 +1900,7 @@ async function routeDetail(context, sess, opts = {}) {
 
 async function openDetailPage(opts = {}) {
   const sess = SESS(opts.sess);
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: !!opts.hasTouch });
   await context.addInitScript(buildMockBridgeScript(baseConfig()));
   await routeProjects(context);
   await routeRecent(context, [sess]);
@@ -3567,19 +3569,210 @@ test('interactive session: reply attach and dictate buttons are disabled with th
   await context.close();
 });
 
-test('reply dictation: tap mic to record, tap again to stop, transcript is INSERTED into the reply box (not sent, launcher prompt untouched)', async () => {
+// --- reply mic: same gesture as the launcher mic (tap-tap sends, hold = Insert / Cancel) ---
+
+const REPLY_LAUNCHES = 'gl-session-voice-reply-launches-v1';
+const replyLaunches = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{}'), REPLY_LAUNCHES);
+const mockVoice = (page, responses) => page.evaluate((r) => window.__glMock.configure({ responses: r }), responses);
+const pollNow = (page) => page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+
+async function recordingReplyPage(opts = {}) {
+  const r = await openDetailPage(opts);
+  await r.page.click('#detail-record-btn');
+  await r.page.waitForSelector('#detail-record-btn.recording');
+  return r;
+}
+
+test('reply dictation: tap-tap stops, transcribes and SENDS typed + transcript as a reply; box clears at once, launcher prompt untouched', async () => {
   const { context, page, h } = await openDetailPage();
   await page.fill('#detail-reply', 'before');
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] })); // hold the transcript back to see the pending state
   await page.click('#detail-record-btn');
-  assert.equal(await page.locator('#detail-record-btn').evaluate((el) => el.classList.contains('recording')), true);
-  assert.equal(await page.locator('#detail-send').isDisabled(), false);
+  await page.waitForSelector('#detail-record-btn.recording');
   await page.click('#detail-record-btn');
-  await page.waitForFunction(() => document.getElementById('detail-reply').value.includes('a fake voice transcript'));
-  assert.equal(await page.inputValue('#detail-reply'), 'before a fake voice transcript');
-  assert.equal(h.replies.length, 0, 'no auto-send');
+  // Committed before any answer: box empty, a pending bubble with the typed text, a durable record naming the session.
+  assert.equal(await page.inputValue('#detail-reply'), '');
+  await page.waitForSelector('.gl-bubble.pending');
+  assert.equal(await page.locator('.gl-bubble.pending').textContent(), 'before …');
+  const rec = Object.values(await replyLaunches(page));
+  assert.equal(rec.length, 1);
+  assert.equal(rec[0].sessionId, 'sess-uuid-1');
+  assert.equal(rec[0].prefix, 'before');
+  assert.equal(h.replies.length, 0);
+  await page.evaluate(() => window.__glMock.replyNow('voiceStop', { text: 'a fake voice transcript' }));
+  await waitFor(() => h.replies.length === 1, 'the voice reply');
+  assert.equal(h.replies[0].text, 'before a fake voice transcript');
   assert.equal(await page.inputValue('#session-prompt'), '');
-  const calls = await page.evaluate(() => window.__glCallLog.map((c) => c.method));
-  assert.ok(calls.includes('voiceStart') && calls.includes('voiceStop'));
+  await page.waitForFunction(() => document.querySelector('.gl-bubble.pending') === null || document.querySelector('.gl-bubble:not(.pending)'));
+  assert.ok((await callsTo(page, 'voiceAck')).length >= 1, 'recording acked once the reply is durable');
+  await page.waitForFunction((k) => localStorage.getItem(k) === null, REPLY_LAUNCHES);
+  await context.close();
+});
+
+test('reply dictation: typed text and attached screenshots both go with the voice reply', async () => {
+  const uploads = [];
+  const { context, page, h } = await openDetailPage({ beforeNav: (c) => routeUpload(c, uploads) });
+  await page.fill('#detail-reply', 'see this');
+  await page.setInputFiles('#detail-attach-input', fakeImage('one.png'));
+  await page.waitForSelector('#detail-thumbs .gl-thumb');
+  await page.click('#detail-record-btn');
+  await page.waitForSelector('#detail-record-btn.recording');
+  await page.click('#detail-record-btn');
+  assert.equal(await page.locator('#detail-thumbs .gl-thumb').count(), 0, 'screenshots leave the composer with the send');
+  await waitFor(() => h.replies.length === 1, 'the voice reply');
+  assert.equal(h.replies[0].text, 'see this a fake voice transcript');
+  assert.deepEqual(h.replies[0].attachments, ['id-one.png']);
+  await context.close();
+});
+
+test('reply dictation: hold + Insert puts the transcript in the reply box and sends nothing', async () => {
+  const { context, page, h } = await recordingReplyPage({ hasTouch: true });
+  await page.fill('#detail-reply', 'before');
+  const { touch, target } = await holdMic(page, 'detail');
+  await touch('touchMove', target);
+  await page.waitForSelector('#detail-insert-target.armed');
+  await touch('touchEnd');
+  await page.waitForFunction(() => document.getElementById('detail-reply').value === 'before a fake voice transcript');
+  await page.waitForTimeout(300);
+  assert.equal(h.replies.length, 0, 'insert must not send');
+  assert.equal(await page.locator('#detail-record-btn').evaluate((el) => el.classList.contains('recording')), false);
+  assert.deepEqual(await replyLaunches(page), {});
+  await context.close();
+});
+
+test('reply dictation: hold + Cancel discards the audio (voiceCancel), no transcription, nothing sent, typed text kept', async () => {
+  const { context, page, h } = await recordingReplyPage({ hasTouch: true });
+  await page.fill('#detail-reply', 'keep me');
+  const { touch, cancel } = await holdMic(page, 'detail');
+  await touch('touchMove', cancel);
+  await page.waitForSelector('#detail-cancel-target.armed');
+  await touch('touchEnd');
+  await page.waitForFunction(() => window.__glCallLog.some((c) => c.method === 'voiceCancel'));
+  await page.waitForSelector('#detail-hold-targets', { state: 'hidden' });
+  assert.equal((await callsTo(page, 'voiceStop')).length, 0);
+  assert.equal(await page.inputValue('#detail-reply'), 'keep me');
+  await page.waitForTimeout(300);
+  assert.equal(h.replies.length, 0);
+  await context.close();
+});
+
+test('reply dictation: releasing the hold elsewhere dismisses the targets and keeps recording', async () => {
+  const { context, page, h } = await recordingReplyPage({ hasTouch: true });
+  const { touch } = await holdMic(page, 'detail');
+  await touch('touchMove', { x: 380, y: 100 });
+  await touch('touchEnd');
+  await page.waitForSelector('#detail-hold-targets', { state: 'hidden' });
+  assert.equal(await page.locator('#detail-record-btn').evaluate((el) => el.classList.contains('recording')), true);
+  assert.equal((await callsTo(page, 'voiceStop')).length, 0);
+  assert.equal((await callsTo(page, 'voiceCancel')).length, 0);
+  assert.equal(h.replies.length, 0);
+  await context.close();
+});
+
+test('reply hold targets pop ABOVE the mic, left-aligned and fully on screen at 390x844', async () => {
+  const { context, page } = await recordingReplyPage({ hasTouch: true });
+  const { touch } = await holdMic(page, 'detail');
+  const mic = await page.locator('#detail-record-btn').boundingBox();
+  for (const id of ['detail-insert-target', 'detail-cancel-target']) {
+    const b = await page.locator('#' + id).boundingBox();
+    assert.ok(b.y + b.height <= mic.y, `${id} sits above the mic`);
+    assert.ok(b.x >= 0 && b.x + b.width <= 390 && b.y >= 0, `${id} is fully on screen`);
+  }
+  if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
+  await touch('touchEnd');
+  await context.close();
+});
+
+test('reply dictation, queued stop: the late transcript from voicePending is sent to the session that dictated it, even after the detail was closed', async () => {
+  const { context, page, h } = await recordingReplyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#detail-reply', 'typed');
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v9' }, voicePending: { ready: [], failed: [], pending: [], waiting: 1 } });
+  await page.click('#detail-record-btn');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting' && r.voiceId === 'v9'), REPLY_LAUNCHES);
+  assert.equal(await page.inputValue('#detail-reply'), '');
+  await page.waitForSelector('.gl-bubble.pending');
+  await page.click('#gl-back-btn'); // leave the session before the transcript exists
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'late words', launchId }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await waitFor(() => h.replies.length === 1, 'the late reply');
+  assert.equal(h.replies[0].text, 'typed late words');
+  assert.equal(await page.inputValue('#session-prompt'), '', 'never the launcher prompt');
+  await pollNow(page);
+  await page.waitForTimeout(300);
+  assert.equal(h.replies.length, 1, 'sent once');
+  assert.ok((await callsTo(page, 'voiceAck')).some((p) => p.id === 'v9'));
+  await context.close();
+});
+
+test('reply dictation, queued stop then page reload: the transcript still reaches the right session', async () => {
+  const { context, page, h } = await recordingReplyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#detail-reply', 'typed');
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v9' } });
+  await page.click('#detail-record-btn');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting'), REPLY_LAUNCHES);
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await page.reload();
+  await page.waitForFunction(() => !!document.getElementById('session-project-pill').dataset.ready);
+  await mockVoice(page, { voicePending: { ready: [{ id: 'v9', text: 'after reload', launchId }], failed: [], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await waitFor(() => h.replies.length === 1, 'the reply after reload');
+  assert.equal(h.replies[0].text, 'typed after reload');
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  await context.close();
+});
+
+test('reply dictation, empty transcript: typed text and screenshots come back to the reply box with an error, nothing sent', async () => {
+  const uploads = [];
+  const { context, page, h } = await openDetailPage({ beforeNav: (c) => routeUpload(c, uploads) });
+  await page.fill('#detail-reply', 'do not lose me');
+  await page.setInputFiles('#detail-attach-input', fakeImage('keep.png'));
+  await page.waitForSelector('#detail-thumbs .gl-thumb');
+  await mockVoice(page, { voiceStop: { code: 'empty_transcript' } });
+  await page.click('#detail-record-btn');
+  await page.waitForSelector('#detail-record-btn.recording');
+  await page.click('#detail-record-btn');
+  await page.waitForFunction(() => document.getElementById('detail-reply').value === 'do not lose me');
+  assert.equal(await page.locator('#detail-thumbs .gl-thumb').count(), 1, 'screenshot restored');
+  assert.match(await page.locator('#gl-error-text').textContent(), /Didn't catch anything/);
+  assert.equal(await page.locator('.gl-bubble.pending').count(), 0);
+  assert.deepEqual(await replyLaunches(page), {});
+  // The restored screenshot is still sendable: its blob was kept.
+  await page.click('#detail-send');
+  await waitFor(() => h.replies.length === 1, 'the manual reply');
+  assert.equal(h.replies[0].text, 'do not lose me');
+  assert.deepEqual(h.replies[0].attachments, ['id-keep.png']);
+  await context.close();
+});
+
+test('reply recording left running when the detail is closed: stopping it from the launcher mic inserts the transcript in the prompt, sends nothing', async () => {
+  const { context, page, h } = await recordingReplyPage();
+  await page.click('#gl-back-btn');
+  await page.waitForSelector('#gl-launcher', { state: 'visible' }); // the launcher mic does not show the reply's recording state, but its tap stops it
+  await page.click('#session-record-btn');
+  await page.waitForFunction(() => document.getElementById('session-prompt').value === 'a fake voice transcript');
+  await page.waitForTimeout(300);
+  assert.equal(h.replies.length, 0, 'no reply auto-sent');
+  assert.deepEqual(await replyLaunches(page), {});
+  assert.equal(await page.evaluate(() => localStorage.getItem('gl-session-voice-launches-v1')), null, 'no launcher launch either');
+  assert.ok((await callsTo(page, 'voiceAck')).length >= 1, 'recording acked after the insert');
+  await context.close();
+});
+
+test('reply dictation, failed transcription while the detail is closed: the text waits and is restored when the session is reopened', async () => {
+  const { context, page } = await recordingReplyPage({ beforeNav: (c) => c.addInitScript(HOLD_TIMERS) });
+  await page.fill('#detail-reply', 'still mine');
+  await mockVoice(page, { voiceStop: { code: 'queued', id: 'v7' } });
+  await page.click('#detail-record-btn');
+  await page.waitForFunction((k) => Object.values(JSON.parse(localStorage.getItem(k) || '{}')).some((r) => r.status === 'waiting'), REPLY_LAUNCHES);
+  await page.click('#gl-back-btn');
+  const launchId = (await callsTo(page, 'voiceStop'))[0].launchId;
+  await mockVoice(page, { voicePending: { ready: [], failed: [{ id: 'v7', error: 'asr down', launchId }], pending: [], waiting: 0 } });
+  await pollNow(page);
+  await page.waitForFunction(() => /asr down/.test(document.getElementById('gl-error-text').textContent));
+  await page.click('#session-recent-list .gl-row');
+  await page.waitForFunction(() => document.getElementById('detail-reply').value === 'still mine');
+  assert.deepEqual(await replyLaunches(page), {});
   await context.close();
 });
 
