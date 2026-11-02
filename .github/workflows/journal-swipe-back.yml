@@ -25,7 +25,7 @@ on:
         default: ""
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.tests }}-${{ inputs.matrix_only }}
   cancel-in-progress: true
 
 jobs:
@@ -77,6 +77,19 @@ jobs:
       - name: Install pods
         if: ${{ !inputs.probe_only }}
         run: pod install
+
+      # Xcode 27 rejects pod targets below iOS 15.0 (baseline run
+      # 41340445410: FMDB 4.3, AFNetworking 9.0, Pods-Overland 11.0 -> "range
+      # of supported deployment target versions is 15.0 to 27.0.x"). Raise
+      # them for the iOS 27 leg only; the app's own target is unchanged.
+      - name: Raise Pods deployment target (iOS 27 leg)
+        if: ${{ !inputs.probe_only && matrix.name == 'ios27' }}
+        run: |
+          ruby -rxcodeproj -e '
+            p = Xcodeproj::Project.open("Pods/Pods.xcodeproj")
+            p.build_configurations.each { |c| c.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "15.0" }
+            p.targets.each { |t| t.build_configurations.each { |c| v = c.build_settings["IPHONEOS_DEPLOYMENT_TARGET"]; c.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "15.0" if v && v.to_f < 15.0 } }
+            p.save'
 
       - name: Boot simulator
         if: ${{ !inputs.probe_only }}

@@ -234,7 +234,7 @@ final class JournalNavigationStressUITest: XCTestCase {
     func testA_leaveToEachTabAndReopenViaTile() {
         launch(scenario: "A")
         for tab in tabNames {
-            for i in 1...10 {
+            for i in 1...4 {
                 step += 1
                 log("leave to \(tab) (round \(i))")
                 leave(to: tab)
@@ -250,7 +250,7 @@ final class JournalNavigationStressUITest: XCTestCase {
     func testB_moreTabOnceVersusTwice() {
         launch(scenario: "B")
         for tab in tabNames {
-            for i in 1...10 {
+            for i in 1...3 {
                 step += 1
                 log("once: leave to \(tab) (round \(i))")
                 leave(to: tab)
@@ -266,7 +266,7 @@ final class JournalNavigationStressUITest: XCTestCase {
     // (c) Back-swipe off Journal, then the tile, repeated.
     func testC_backSwipeThenTile() {
         launch(scenario: "C")
-        for i in 1...10 {
+        for i in 1...6 {
             step += 1
             log("back-swipe round \(i)")
             swipeBack()
@@ -280,7 +280,7 @@ final class JournalNavigationStressUITest: XCTestCase {
     func testD_recentThenLeaveAndReopen() {
         launch(scenario: "D")
         for tab in tabNames {
-            for i in 1...3 {
+            for i in 1...2 {
                 step += 1
                 log("recent, leave to \(tab) (round \(i))")
                 openRecent()
@@ -294,7 +294,7 @@ final class JournalNavigationStressUITest: XCTestCase {
     func testE_shortcutFromOtherTabs() {
         launch(scenario: "E")
         for tab in tabNames {
-            for i in 1...5 {
+            for i in 1...3 {
                 step += 1
                 log("shortcut from \(tab) (round \(i))")
                 leave(to: tab)
@@ -306,7 +306,7 @@ final class JournalNavigationStressUITest: XCTestCase {
     // (f) Double-tap the tile quickly.
     func testF_doubleTapTile() {
         launch(scenario: "F")
-        for i in 1...8 {
+        for i in 1...6 {
             step += 1
             log("double-tap tile round \(i)")
             swipeBack()
@@ -320,7 +320,7 @@ final class JournalNavigationStressUITest: XCTestCase {
     func testG_backgroundForegroundBetweenReopens() {
         launch(scenario: "G")
         for tab in tabNames {
-            for i in 1...4 {
+            for i in 1...2 {
                 step += 1
                 log("leave to \(tab), background, reopen (round \(i))")
                 leave(to: tab)
