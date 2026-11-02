@@ -120,6 +120,7 @@ var PLAIN = [
   [/rate limit|too many/i, 'Wait a minute'],
   [/mic off/i, 'Mic off'],
   [/join_couple/, 'Wrong code'],
+  [/unexpected reply/i, 'Unexpected reply'], // a 2xx that was not PostgREST's (captive portal, proxy): the write was NOT delivered
   [/failed to fetch|load failed|networkerror|internet connection|network request failed/i, 'No connection']
 ];
 function plain(e) {
@@ -140,6 +141,14 @@ function guard(fn) {
     return Promise.resolve().then(function () { return fn.apply(null, args); }).catch(function (e) { console.error('cycle action failed:', e); showErr(plain(e)); });
   };
 }
+// Last line of defence: anything that escapes a guard still reaches the person instead of vanishing into the console.
+window.addEventListener('error', function (e) { showErr(plain(e.error || e.message)); });
+window.addEventListener('unhandledrejection', function (e) { showErr(plain(e.reason)); });
+// Shown when boot or a screen throws. Nothing here touches storage, so the person's data stays exactly as it was.
+function errScreen(home) {
+  return '<div class="phone"><div class="scr"><main class="errscreen"><h2>Something went wrong</h2><p>Your data is safe.</p>' +
+    '<div class="save" data-a="retry">Retry</div>' + (home ? '<p class="ghost" data-a="gohome">Home</p>' : '') + '</main></div></div>';
+}
 
 // ---- layout pieces -------------------------------------------------------------------------------
 // opts.band=false for screens whose mockup has no pink band (Log fight, Settings).
@@ -147,10 +156,12 @@ function guard(fn) {
 function phone(cls, inner, o) {
   o = o || {};
   var band = o.band === false ? '' : '<div class="band" aria-hidden="true"></div>';
-  var err = ui.err || S.syncError;
+  var dl = S.deadLetters.length, shown = ui.err || S.persistError || (S.syncError && plain({ message: S.syncError, status: S.syncErrorStatus }));
+  // Refused writes sit in S.deadLetters until the person reads/exports them; the bar opens that list when nothing more urgent shows.
+  var err = shown || (dl ? dl + (dl === 1 ? ' change' : ' changes') + ' not sent' : null), dlBar = !shown && dl;
   var off = !navigator.onLine || (S.outbox && S.outbox.length) ? '<span class="off' + (o.band === false ? ' nb' : '') + '">Offline</span>' : '';
   return '<div class="phone ' + cls + (o.tab === false ? ' nt' : '') + '"><div class="scr">' + band + off + '<div class="status"></div><main>' + inner + '</main></div>' +
-    (o.tab === false ? '' : tabbar(tabFor(ui.route))) + (o.sheet || '') + (err ? '<div class="errbar' + (o.sheet ? ' top' : '') + '" role="alert">' + esc(err) + '</div>' : '') + '</div>';
+    (o.tab === false ? '' : tabbar(tabFor(ui.route))) + (o.sheet || '') + (err ? '<div class="errbar' + (o.sheet ? ' top' : '') + '" role="alert"' + (dlBar ? ' data-a="deadletters"' : '') + '>' + esc(err) + '</div>' : '') + '</div>';
 }
 function tabbar(active) {
   // Badge: open to-dos the partner created for me (what an Ask turns into).
@@ -468,6 +479,14 @@ SCREEN.fight = function () {
 // Notes are append-only and shared: both people read the same time-ordered list and can only add.
 function fightNotes(id) { return L('fight_notes').filter(function (n) { return n.fight_marker_id === id; }).sort(function (a, b) { return C.ms(a.created_at) - C.ms(b.created_at); }); }
 function noteStamp(ms) { return fmtDay(C.localDay(ms, tz())) + ' &middot; ' + fmtTime(ms); }
+// Writes the server refused, shown as plain text (never deleted here) with an export control.
+SCREEN.deadletters = function () {
+  return phone('p2 dl', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Not sent</h2></div></header>' +
+    '<div class="dlist">' + S.deadLetters.map(function (d) {
+      return '<div class="card"><p class="meta">' + esc(d.entry.table) + ' &middot; ' + esc(d.entry.op) + ' &middot; ' + esc(fmtStamp(d.at)) + '</p><p class="meta">' + esc(d.error) + '</p><pre>' + esc(JSON.stringify(d.entry.row || d.entry.patch, null, 1)) + '</pre></div>';
+    }).join('') + '</div><div class="save" data-a="dlexport">Export</div>');
+};
+function fmtStamp(iso) { return new Date(iso).toLocaleString(); }
 SCREEN.fightdetail = function () {
   var mk = S.rows.fight_markers[ui.fightId], notes = fightNotes(mk.id), mine = notes.some(function (n) { return n.author_id === St.me(); });
   var old = mk.logged_by === St.me() ? S.priv.fights.filter(function (f) { return f.id === mk.id; })[0] : null;
@@ -985,11 +1004,18 @@ function render() {
   var sc = document.querySelector('.scr'), top = sc ? sc.scrollTop : 0, name = currentScreen(), key = name + (ui.sheet ? 's' : '');
   // A tapped control must not close the keyboard: hand focus to the field's twin after the swap (else .scr grows and clamps scrollTop).
   var fa = document.activeElement, fk = typing() && fa.getAttribute('data-d'), fs = fk && fa.selectionStart, fe = fk && fa.selectionEnd;
-  var html = SCREEN[name]();
-  // Sheets are rendered inside the owning screen (so they inherit its family CSS); screens that
-  // host sheets read ui.sheet themselves. Everything else shows the sheet via the shared hook below.
-  if (ui.notif && S.session) html = html.replace(/<\/div>$/, notifSheet() + '</div>');
-  if (ui.sheet && name !== 'todo' && name !== 'tododetail' && name !== 'shop' && name !== 'challenge') html = html.replace(/<\/div>$/, sheetFor() + '</div>');
+  var html;
+  try {
+    html = SCREEN[name]();
+    // Sheets are rendered inside the owning screen (so they inherit its family CSS); screens that
+    // host sheets read ui.sheet themselves. Everything else shows the sheet via the shared hook below.
+    if (ui.notif && S.session) html = html.replace(/<\/div>$/, notifSheet() + '</div>');
+    if (ui.sheet && name !== 'todo' && name !== 'tododetail' && name !== 'shop' && name !== 'challenge') html = html.replace(/<\/div>$/, sheetFor() + '</div>');
+  } catch (e) {
+    // A screen that cannot draw (e.g. a row it expects is missing) must not blank the app or poison every later render.
+    console.error('cycle screen failed:', name, e);
+    html = errScreen(true);
+  }
   app.innerHTML = html;
   // Before scrollTop is restored below: a box still at its min height would make .scr too short and clamp it.
   app.querySelectorAll('.ta.nt textarea').forEach(fitNote);
@@ -1035,7 +1061,11 @@ function sheetFor() { return ui.sheet.type === 'still' ? stillSheet() : ''; }
 function typing() { var a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA'); }
 window.addEventListener('online', function () { if (ui.ready) render(); });
 window.addEventListener('offline', function () { if (ui.ready) render(); });
-St.on(function () { if (S.priv && S.priv.queued.length && St.partner()) flushQueued(); if (!ui.ready) return; if (typing()) ui.dirty = true; else render(); });
+St.on(function () {
+  if (S.priv && S.priv.queued.length && St.partner()) {
+    try { flushQueued(); } catch (e) { console.error('cycle queued asks not sent:', e); showErr(plain(e)); }
+  }
+  if (!ui.ready) return; if (typing()) ui.dirty = true; else render(); });
 document.addEventListener('focusout', function () { setTimeout(function () { if (ui.dirty && !typing()) { ui.dirty = false; render(); } }, 0); });
 app.addEventListener('input', function (e) {
   var k = e.target.getAttribute('data-d'); if (!k) return;
@@ -1061,17 +1091,28 @@ function deliver(item) {
   St.patch('items', item.id, { status: 'delivered', delivered_at: nowIso() });
   if (item.kind === 'ask') deliverAsk(S.rows.items[item.id]);
 }
-function sendItem(kind, o) {
-  var item = C.buildItem({ id: St.uuid(), couple: S.couple, me: St.me(), to: St.partner().user_id, kind: kind, gift_points: o.gift_points, body: o.body, description: o.description, ask_type: o.ask_type, due_date: o.due_date, target: o.target, period: o.period, points_earn: o.points_earn, points_miss: o.points_miss, needs_note: o.needs_note, origin: o.origin, response_type: o.response_type, fight_marker_id: o.fight_marker_id, held_until: o.held_until, now: now(), at: o.at != null ? C.scheduleAt(S.couple, kind, o.at, now()) : null });
+// Builds an outgoing item without writing anything, so a caller can validate every piece before the first insert.
+// Throws when there is no partner to send to.
+function buildAsk(kind, o) {
+  if (!St.partner()) throw new Error('Partner not joined');
+  return C.buildItem({ id: St.uuid(), couple: S.couple, me: St.me(), to: St.partner().user_id, kind: kind, gift_points: o.gift_points, body: o.body, description: o.description, ask_type: o.ask_type, due_date: o.due_date, target: o.target, period: o.period, points_earn: o.points_earn, points_miss: o.points_miss, needs_note: o.needs_note, origin: o.origin, response_type: o.response_type, fight_marker_id: o.fight_marker_id, held_until: o.held_until, now: now(), at: o.at != null ? C.scheduleAt(S.couple, kind, o.at, now()) : null });
+}
+// Writes a built item (and, for an ask that is already delivered, the partner's to do).
+function sendBuilt(item) {
   St.insert('items', item);
-  if (item.status === 'delivered' && kind === 'ask') deliverAsk(item);
+  if (item.status === 'delivered' && item.kind === 'ask') deliverAsk(item);
   return item;
 }
+function sendItem(kind, o) { return sendBuilt(buildAsk(kind, o)); }
 function celebrate(item, el) { M.play(item.status === 'held' ? 'hold' : item.kind === 'kudos' ? 'kudos' : 'send', el); St.native.haptic('success'); }
 // Asks saved before the partner joined go out through the normal Ask hold the moment they appear.
 function flushQueued() {
-  var q = S.priv.queued; S.priv.queued = []; St.savePriv();
-  q.forEach(function (o) { sendItem('ask', o); });
+  // Build everything first: if any ask cannot be built the queue stays intact (it used to be emptied before sending, so one
+  // bad entry lost them all). The queue is cleared BEFORE the inserts because insert() emits, and the store listener
+  // would call flushQueued again and send every ask twice.
+  var items = S.priv.queued.map(function (o) { return buildAsk('ask', o); });
+  S.priv.queued = []; St.savePriv();
+  items.forEach(sendBuilt);
 }
 function todoTally(t, el, note) {
   St.patch('todos', t.id, { tally: t.tally + 1 });
@@ -1096,17 +1137,21 @@ function todoDone(t, el, note) {
 }
 function logFight() {
   var d = ui.d, id = St.uuid(), at = whenMs('when'), chips = d.chips || {}, el = document.querySelector('.p2.s2 .save'), note = (d.note || '').trim();
-  St.insert('fight_markers', { id: id, couple_id: S.couple.id, logged_by: St.me(), at: new Date(at).toISOString(), repaired_at: null,
+  // All-or-nothing: validate and build every row first, insert only at the end. A throw half way (no partner to ask)
+  // used to leave the marker and note queued while the screen stayed up, so the retry wrote them a second time.
+  var marker = { id: id, couple_id: S.couple.id, logged_by: St.me(), at: new Date(at).toISOString(), repaired_at: null,
     // Shared on purpose: the partner sees these on the Points ledger's Fight line. null = not answered;
     // hit_related is false only when the "not related" box is checked after a Yes (the DB rejects it otherwise), else null.
     hit_self: ynVal(d.hit), hit_related: d.hit === 'yes' && d.hitNot ? false : null,
     // How many times, >= 1 after a Yes; null otherwise (the DB rejects any other combination).
-    hit_count: d.hit === 'yes' ? d.hitN || 1 : null });
+    hit_count: d.hit === 'yes' ? d.hitN || 1 : null };
   // The first note is shared immediately and deliberately skips the hold; only the asks wait.
-  if (note) St.insert('fight_notes', { id: St.uuid(), couple_id: S.couple.id, fight_marker_id: id, author_id: St.me(), body: note, created_at: new Date(at).toISOString() });
-  [['apologize', 'Apologize'], ['reflect', 'Reflect'], ['custom', (d.customTitle || '').trim()]].forEach(function (c) {
-    if (chips[c[0]] && c[1]) sendItem('ask', { body: c[1], ask_type: 'task', origin: 'fight', response_type: c[0], fight_marker_id: id });
-  });
+  var noteRow = note ? { id: St.uuid(), couple_id: S.couple.id, fight_marker_id: id, author_id: St.me(), body: note, created_at: new Date(at).toISOString() } : null;
+  var asks = [['apologize', 'Apologize'], ['reflect', 'Reflect'], ['custom', (d.customTitle || '').trim()]].filter(function (c) { return chips[c[0]] && c[1]; })
+    .map(function (c) { return buildAsk('ask', { body: c[1], ask_type: 'task', origin: 'fight', response_type: c[0], fight_marker_id: id }); });
+  St.insert('fight_markers', marker);
+  if (noteRow) St.insert('fight_notes', noteRow);
+  asks.forEach(sendBuilt);
   // Intensity is the only part that stays on this phone.
   S.priv.fights.push({ id: id, at: at, logged_at: Date.now(), intensity: d.int || 3 });
   St.savePriv();
@@ -1122,6 +1167,14 @@ function saveNote() {
 }
 
 var ACT = {
+  retry: function () { if (ui.ready) render(); else location.reload(); },
+  gohome: function () { tab('home'); },
+  deadletters: function () { go('deadletters'); },
+  // Hands the unsent rows to the share sheet (native) or the clipboard (browser) so the text can be kept elsewhere.
+  dlexport: guard(function () {
+    var text = St.deadLetterText();
+    return St.hasNative ? St.native.share({ filename: 'cycle-not-sent.json', text: text }) : St.native.copy(text);
+  }),
   back: back,
   go: function (r) { go(r); },
   tab: tab,
@@ -1286,7 +1339,8 @@ var ACT = {
   broke: function () { ui.sheet = { type: 'broke' }; ui.d = {}; render(); },
   brsave: guard(function () {
     var c = ledger().challenges.filter(function (x) { return x.id === ui.chId; })[0];
-    if (c.broken_today) return;
+    // Saying nothing here lost the typed note with no explanation (the day was already broken, e.g. from another phone).
+    if (c.broken_today) throw new Error('Already logged today');
     St.insert('challenge_breaks', { couple_id: S.couple.id, id: St.uuid(), challenge_id: ui.chId, day: today(), note: (ui.d.brnote || '').trim() || null, by: St.me(), created_at: nowIso(), updated_at: nowIso() });
     draftSent(); ui.sheet = null; ui.d = {}; render();
   }),
@@ -1294,7 +1348,8 @@ var ACT = {
   chlogsave: guard(function () {
     var note = (ui.d.chlognote || '').trim(); if (!note) throw new Error('Note needed');
     var c = ledger().challenges.filter(function (x) { return x.id === ui.chId; })[0];
-    if (c.logged_today || c.status !== 'active') return;
+    if (c.logged_today) throw new Error('Already logged today');
+    if (c.status !== 'active') throw new Error('Not active');
     return stopRec().then(function () {
       // (challenge_id, day) is unique on the server: a day deleted earlier is revived in place, not inserted again.
       var old = St.list('challenge_days').filter(function (x) { return x.challenge_id === ui.chId && x.day === today(); })[0];
@@ -1414,9 +1469,19 @@ app.addEventListener('click', function (e) {
   if (!el || el.tagName === 'INPUT') return;
   if (ui.suppressClick) { ui.suppressClick = false; return; }
   var a = el.getAttribute('data-a'), i = a.indexOf(':'), name = i < 0 ? a : a.slice(0, i), arg = i < 0 ? undefined : a.slice(i + 1);
-  if (!ACT[name]) throw new Error('no action ' + name);
-  ACT[name](arg);
+  // One action+argument runs at a time: a second tap while the first is unfinished (queued behind its guard, or awaiting
+  // the bridge) used to run the whole action again and double-write (two "done" events for one check).
+  if (busy[a]) return;
+  busy[a] = true;
+  function fail(err) { console.error('cycle action failed:', err); showErr(plain(err)); }
+  var r;
+  try {
+    if (!ACT[name]) throw new Error('no action ' + name);
+    r = ACT[name](arg);
+  } catch (err) { delete busy[a]; fail(err); return; }
+  Promise.resolve(r).then(null, fail).then(function () { delete busy[a]; });
 });
+var busy = {};
 
 // ---- Home reorder: long-press a row, then drag ------------------------------------------------------------------
 (function () {
@@ -1531,9 +1596,22 @@ function canBack() { return !!(S.session && S.couple && !ui.sheet && (ui.stack.l
 // cycleNative exists from the first script tick so the shell can call route() at any time;
 // routes that arrive before boot finishes wait in routeQ and apply once the UI is ready.
 var routeQ = [];
-function applyRoute(r) {
+// Does the row a deep link names exist on this phone yet? A push can arrive before the poll has pulled its row.
+function routeRowExists(kind, id) {
+  if (kind === 'nudge') return !!findSend(id);
+  if (kind === 'challenge') return ledger().challenges.some(function (x) { return x.id === id; });
+  if (kind === 'fight') return !!S.rows.fight_markers[id];
+  return !!S.rows.todos[id];
+}
+function applyRoute(r, synced) {
   if (!S.session || !S.couple) return;
   var m = /^held\/(.+)$/.exec(r);
+  var rm = /^(nudge|challenge|fight|todo)\/(.+)$/.exec(r);
+  if (rm && !routeRowExists(rm[1], rm[2])) {
+    // Sync once and retry; a row that still is not here means a stale link, so land on Today instead of a screen that throws.
+    if (synced) { tab('home'); return; }
+    return St.syncNow().then(function () { return applyRoute(r, true); });
+  }
   if (m) { ui.stack = []; ui.route = 'todo'; ui.sheet = stillHeld(m[1]) ? { type: 'still', id: m[1] } : null; ui.d = {}; render(); }
   else if ((m = /^nudge\/(.+)$/.exec(r))) { ui.stack = []; ui.route = 'nudgein'; ui.sendId = m[1]; ui.d = {}; ui.sheet = null; openSend(m[1]); render(); }
   else if ((m = /^challenge\/(.+)$/.exec(r))) { ui.stack = [{ route: 'todo' }]; ui.route = 'challenge'; ui.chId = m[1]; ui.d = {}; ui.sheet = null; render(); }
@@ -1546,8 +1624,8 @@ function applyRoute(r) {
   else throw new Error('unknown route ' + r);
 }
 window.cycleNative = {
-  route: function (r) { if (ui.ready) applyRoute(r); else routeQ.push(r); },
-  ready: function () { while (ui.ready && routeQ.length) applyRoute(routeQ.shift()); },
+  route: function (r) { if (ui.ready) guard(applyRoute)(r); else routeQ.push(r); },
+  ready: function () { while (ui.ready && routeQ.length) guard(applyRoute)(routeQ.shift()); },
   pushToken: function (t) { St.setPushToken(t); },
   // Transcript so far (the whole utterance, not a delta); final = capture ended (natural end, or the shell stopped it).
   speech: function (text, final) {
@@ -1561,12 +1639,15 @@ window.cycleNative = {
 };
 
 // ---- boot --------------------------------------------------------------------------------------------------------------
-St.boot().then(function () { return St.hasNative ? St.native.lockGet() : false; }).then(function (lockOn) {
-  ui.lockOn = lockOn; ui.ready = true; render(); window.cycleNative.ready(); St.native.ready(); checkNotif();
+St.boot().then(function () { return St.hasNative ? St.native.lockGet() : false; }).then(function (lockOn) {  ui.lockOn = lockOn; ui.ready = true; render(); window.cycleNative.ready(); St.native.ready(); checkNotif();
   // No realtime channel: poll while visible (cursor-based, so a quiet poll is 9 tiny GETs), plus the
   // 15s repaint that moves countdowns and promotes a held item to "ready".
   setInterval(function () { if (document.visibilityState === 'visible' && S.session) St.sync(); }, 5000);
   setInterval(function () { if (!typing()) render(); }, 15000);
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') guard(stopRec)(); if (document.visibilityState === 'visible') window.cycleNative.foreground(); });
+}).catch(function (e) {
+  // Boot failed (unreadable storage, bridge error). Say so instead of leaving a blank page; storage is left exactly as found.
+  console.error('cycle boot failed:', e);
+  app.innerHTML = errScreen(false);
 });
 })();
