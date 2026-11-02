@@ -845,3 +845,31 @@ test('fightActions: same fight from both phones is symmetric', () => {
   assert.deepEqual(fa(o, FA_ME), ['wait:Sam']);
   assert.deepEqual(fa(o, FA_YOU), ['add', 'todo:Reflect']);
 });
+
+// ---- fightGap / Add details chip ----
+const T_EV = '2026-10-20T12:00:00Z', T_OLD = '2026-10-20T10:00:00Z', T_NEW = '2026-10-20T13:00:00Z';
+const gm = (o = {}) => mk({ gaps: { 'u-me': 'Add more detail.', 'u-you': 'Partner message.' }, summary_notes_at: T_EV, ...o });
+const gn = (author, at = T_OLD) => note(author, { created_at: at, updated_at: at });
+test('fightActions: Add details when my gap is set and I have a note; Add your side never pairs with it', () => {
+  assert.deepEqual(fa({ marker: gm(), notes: [gn('u-me'), gn('u-you')] }), ['details']);
+  assert.deepEqual(fa({ marker: gm(), notes: [gn('u-you')] }), ['add']);
+});
+test('fightActions: Add details viewer symmetry, each person only sees their own gap', () => {
+  const marker = gm({ gaps: { 'u-you': 'Only hers.' } }), notes = [gn('u-me'), gn('u-you')];
+  assert.deepEqual(fa({ marker, notes }), []);
+  assert.deepEqual(fa({ marker, notes }, FA_YOU), ['details']);
+});
+test('fightActions: no Add details when gaps null, {} , empty message, repaired, or deleted', () => {
+  const notes = [gn('u-me'), gn('u-you')];
+  for (const marker of [gm({ gaps: null }), gm({ gaps: {} }), gm({ gaps: { 'u-me': '' } }), gm({ repaired_at: T_OLD }), gm({ deleted_at: T_OLD }), mk()]) assert.deepEqual(fa({ marker, notes }), []);
+});
+test('fightActions: Add details waits until the evaluation has seen my newest note', () => {
+  assert.deepEqual(fa({ marker: gm(), notes: [gn('u-me', T_OLD), gn('u-me', T_NEW), gn('u-you')] }), []);
+  assert.deepEqual(fa({ marker: gm(), notes: [gn('u-me', T_OLD), gn('u-you', T_NEW)] }), ['details']); // partner's newer note is not mine
+});
+test('fightGap: shows with no note of mine (even a newer partner note), is the string for me only', () => {
+  assert.equal(C.fightGap({ me: 'u-me', marker: gm(), notes: [gn('u-you', T_NEW)] }), 'Add more detail.');
+  assert.equal(C.fightGap({ me: 'u-you', marker: gm(), notes: [gn('u-you')] }), 'Partner message.');
+  assert.equal(C.fightGap({ me: 'u-me', marker: gm({ repaired_at: T_OLD }), notes: [] }), '');
+  assert.equal(C.fightGap({ me: 'u-me', marker: gm({ summary_notes_at: null }), notes: [gn('u-me')] }), '');
+});

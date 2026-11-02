@@ -416,6 +416,7 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .rf .rcs{margin-top:10px;gap:10px}
 /* A long chip ("Hit herself, not related to <name>") wraps; let it grow instead of clipping two lines into a fixed-height pill. */
 .rf .sm{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.fgap p:not(.lab){font-size:16px;line-height:1.35;margin:4px 0 0}
 .fsum{padding:0 0 4px}.fsum p{font-size:17px;font-weight:700;line-height:1.3;margin:0}
 .rc.a{background:#fff;border-color:#fff;color:#0a0a0a}
 .rf .rc{height:auto;min-height:30px;padding:6px 12px;line-height:1.25}

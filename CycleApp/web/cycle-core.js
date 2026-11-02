@@ -507,13 +507,26 @@ var CycleCore = (function () {
     return out;
   }
 
+  // What the Opus evaluation says my account is missing ("" when nothing to show). o: {me, marker, notes (live)}.
+  // Hidden once the fight is repaired or deleted, and while my newest note is newer than the evaluation (it has not seen it).
+  function fightGap(o) {
+    var m = o.marker, g = m.gaps && typeof m.gaps === 'object' ? m.gaps[o.me] : '';
+    if (typeof g !== 'string' || !g || m.repaired_at || m.deleted_at) return '';
+    var mine = o.notes.filter(function (n) { return n.fight_marker_id === m.id && n.author_id === o.me; });
+    if (!mine.length) return g;
+    if (!m.summary_notes_at) return '';
+    var newest = Math.max.apply(null, mine.map(function (n) { return Date.parse(n.updated_at || n.created_at); }));
+    return newest > Date.parse(m.summary_notes_at) ? '' : g;
+  }
+
   // Action chips for one fight, from the viewer's side. o: {me, partner: {user_id, name}, marker, notes, todos}.
-  // -> [{kind: 'add'} | {kind: 'todo', id, title} | {kind: 'wait', name}]. Held asks have no todo yet, so they never show.
+  // -> [{kind: 'add'} | {kind: 'details'} | {kind: 'todo', id, title} | {kind: 'wait', name}]. Held asks have no todo yet, so they never show.
   function fightActions(o) {
     var out = [], open = function (t) { return t.fight_marker_id === o.marker.id && !t.done_at && !t.deleted_at; };
     var wrote = function (uid) { return o.notes.some(function (n) { return n.fight_marker_id === o.marker.id && n.author_id === uid; }); };
     var repaired = !!o.marker.repaired_at;
     if (!repaired && !wrote(o.me)) out.push({ kind: 'add' });
+    else if (wrote(o.me) && fightGap(o)) out.push({ kind: 'details' });
     o.todos.filter(function (t) { return open(t) && t.owner_id === o.me; })
       .forEach(function (t) { out.push({ kind: 'todo', id: t.id, title: t.title }); });
     var askedHer = o.todos.some(function (t) { return open(t) && t.owner_id === o.partner.user_id && t.created_by === o.me; });
@@ -537,7 +550,7 @@ var CycleCore = (function () {
     zonedMs: zonedMs, deliverAt: deliverAt, issueHeldUntil: issueHeldUntil, sectionNudges: sectionNudges,
     addMonths: addMonths, splitPayout: splitPayout, awardStatus: awardStatus,
     earnPts: earnPts, missPts: missPts, periodOf: periodOf, habitCount: habitCount, habitMisses: habitMisses, requireNote: requireNote, isEdited: isEdited,
-    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, needsYou: needsYou, calmStats: calmStats, weeklyFights: weeklyFights, inEditWindow: inEditWindow, monthGrid: monthGrid, fightActions: fightActions,
+    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, needsYou: needsYou, calmStats: calmStats, weeklyFights: weeklyFights, inEditWindow: inEditWindow, monthGrid: monthGrid, fightActions: fightActions, fightGap: fightGap,
     // Only a still-held item may offer Send / Edit / Drop; a stale notification can point at a delivered or dropped one.
     isStillHeld: function (i) { return !!i && i.status === 'held' && !i.deleted_at; }
   };

@@ -541,7 +541,7 @@ SCREEN.fightdetail = function () {
     var del = n.author_id === St.me() && !n.deleted_at ? ' <span class="lnk" data-a="notedel:' + n.id + '">Delete</span>' : '';
     return '<div class="fn' + (n.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + ns('fight_notes', n.id).replace('<span', ' <span') + '</p><p>' + (n.deleted_at ? 'Deleted' : esc(n.body)) + '</p></div>' + (del ? '<p class="meta fna">' + del + '</p>' : '');
   }).join('');
-  var chips = fightChips(mk);
+  var chips = fightChips(mk), gap = C.fightGap({ me: St.me(), marker: mk, notes: notes.filter(function (n) { return !n.deleted_at; }) });
   var sh = '';
   if (ui.sheet && ui.sheet.type === 'fightedit' && fightEditable(mk)) {
     sh = sheet('t3', '<div class="bsh"><h3>Edit</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Intensity</p><div class="arrows">' + intensityArrows(ui.d.int || 3) + '</div><div class="ends"><span>Low</span><span>High</span></div>' +
@@ -557,6 +557,7 @@ SCREEN.fightdetail = function () {
     (old ? intensityPicker(old.intensity, 'fightint') : '') +
     (chips ? '<section class="meta2"><div class="rcs">' + chips + '</div></section>' : '') +
     (list ? '<section class="fns">' + list + '</section>' : '') +
+    (gap ? '<section class="fgap"><p class="lab">Missing</p><p>' + esc(gap) + '</p></section>' : '') +
     '<section><p class="lab">' + (!me && !mine ? 'Add your version' : 'Add more') + '</p>' + micTa('more', 'nt') + whenRow('mw') + '</section>' +
     '<div class="save" data-a="notesave">Save</div>' + pending + del, { sheet: sh });
 };
@@ -583,7 +584,7 @@ function fightActionChips(mk) {
   if (!p) return '';
   return C.fightActions({ me: St.me(), partner: p, marker: mk, notes: fightNotes(mk.id).filter(function (n) { return !n.deleted_at; }), todos: L('todos') }).map(function (a) {
     return a.kind === 'todo' ? '<span class="rc a" data-a="tview:' + a.id + '">' + esc(a.title) + '</span>'
-      : a.kind === 'add' ? '<span class="rc a">Add your side</span>' : '<span class="rc">Waiting on ' + esc(a.name) + '</span>';
+      : a.kind === 'add' ? '<span class="rc a">Add your side</span>' : a.kind === 'details' ? '<span class="rc a">Add details</span>' : '<span class="rc">Waiting on ' + esc(a.name) + '</span>';
   }).join('');
 }
 function fightRow(mk) {

@@ -136,4 +136,46 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     assert.equal(await page.$('.fsum'), null);
     await context.close();
   });
+
+  const GAPS = { [UID]: 'MINE-GAP add what you said.', [PID]: 'HERS-GAP add more.' };
+  const gapFill = (o = {}, mine = true) => (r) => {
+    add(r, 'fight_markers', marker('f1', { summary: 'S.', summary_notes_at: ago(3), gaps: GAPS, ...o }));
+    add(r, 'fight_notes', fnote('n1', 'f1', PID, 'her note'));
+    if (mine) add(r, 'fight_notes', fnote('n2', 'f1', UID, 'my note'));
+  };
+  const gapView = async (fill) => {
+    const { context, page } = await open(fill);
+    const chips = (await rowText(page, 'f1')).chips;
+    await page.click('.rf .meta'); await page.waitForSelector('[data-a="notesave"]');
+    const html = await page.$eval('.fd', (e) => e.innerHTML);
+    const gap = await page.$('.fgap');
+    const out = { chips, html, gap: gap ? await gap.innerText() : null, above: gap ? await page.$eval('.fgap', (e) => !!(e.compareDocumentPosition(document.querySelector('[data-a="notesave"]')) & Node.DOCUMENT_POSITION_FOLLOWING)) : null };
+    await context.close();
+    return out;
+  };
+
+  test('gaps: Add details chip on the row and a Missing section with only my message, above the note input', async () => {
+    const v = await gapView(gapFill());
+    assert.deepEqual(v.chips, ['Add details']);
+    assert.match(v.gap, /^MISSING\s+MINE-GAP add what you said\.\s*$/i);
+    assert.ok(v.above); assert.doesNotMatch(v.html, /HERS-GAP/);
+  });
+
+  test('gaps: with no note from me the chip stays Add your side (no Add details) and Missing still shows', async () => {
+    const v = await gapView(gapFill({}, false));
+    assert.deepEqual(v.chips, ['Add your side']);
+    assert.match(v.gap, /MINE-GAP/);
+  });
+
+  test('gaps: nothing for null gaps, empty message, repaired, or my note newer than the evaluation', async () => {
+    for (const o of [{ gaps: null }, { gaps: { [UID]: '' } }, { gaps: {} }, { repaired_at: ago(1) }, { summary_notes_at: ago(6) }]) {
+      const v = await gapView(gapFill(o));
+      assert.equal(v.gap, null, JSON.stringify(o)); assert.doesNotMatch(v.chips.join(), /Add details/, JSON.stringify(o));
+    }
+  });
+
+  test('gaps: the message is escaped', async () => {
+    const v = await gapView(gapFill({ gaps: { [UID]: '<i>x</i> & y' } }));
+    assert.match(v.html, /&lt;i&gt;x&lt;\/i&gt; &amp; y/);
+  });
 });
