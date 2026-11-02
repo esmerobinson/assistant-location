@@ -100,7 +100,8 @@
     NSString *cls = plist[@"NSExtension"][@"NSExtensionPrincipalClass"];
     // Objective-C: the bare class name, not the "$(PRODUCT_MODULE_NAME).X" Swift form.
     XCTAssertEqualObjects(cls, @"CycleNotificationService");
-    XCTAssertTrue([[self text:@"CycleNSE/CycleNotificationService.m"] containsString:[NSString stringWithFormat:@"@implementation %@", cls]]);
+    NSString *implementation = [NSString stringWithFormat:@"@implementation %@", cls];
+    XCTAssertTrue([[self text:@"CycleNSE/CycleNotificationService.m"] containsString:implementation]);
     // iOS rejects an embedded extension whose version differs from the app's.
     NSDictionary *app = [NSDictionary dictionaryWithContentsOfFile:[[self root] stringByAppendingPathComponent:@"CycleApp/Info.plist"]];
     XCTAssertEqualObjects(plist[@"CFBundleShortVersionString"], app[@"CFBundleShortVersionString"]);
