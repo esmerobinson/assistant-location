@@ -208,4 +208,202 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
     assert.equal(await b.page.locator('.errbar').count(), 1, 'a genuine failure is still shown');
     await b.context.close();
   });
+  // ---- B: new screen behaviours ----
+  const tabTodo = async (page) => { await page.click('[data-a="tab:todo"]'); await page.waitForSelector('[data-a="todoseg:rem"]'); };
+  const library = async (page, view) => { await tabTodo(page); await page.click('[data-a="todoseg:rem"]'); if (view) await page.click('[data-a="remview:' + view + '"]'); };
+  const stored = async (page, table, id) => (await shared(page)).rows[table][id];
+  const detail = async (page, id) => { await tabTodo(page); await page.click('[data-a="todoseg:todo"]'); await page.click('.td-row[data-todo="' + id + '"]'); await page.waitForSelector('.tdd2'); };
+
+  test('B1 Edit on a to-do I made for her exists only inside the 15 minute window, and disappears when it passes', async () => {
+    const sd = seed({ rows: { todos: [todo('mine', { owner_id: UID }), todo('fresh', { owner_id: PID, created_at: iso(10) }), todo('stale', { owner_id: PID, created_at: iso(40) })] } });
+    const { context, page } = await open({ sd, offline: true });
+    await ready(page);
+    await detail(page, 'mine');
+    assert.equal(await page.locator('[data-a^="etodo:"]').count(), 1, 'my own to-do is always editable');
+    await page.click('[data-a="back"]');
+    await detail(page, 'stale');
+    assert.equal(await page.locator('[data-a^="etodo:"]').count(), 0, 'older than the window: no Edit');
+    await page.click('[data-a="back"]');
+    await detail(page, 'fresh');
+    assert.equal(await page.locator('[data-a^="etodo:"]').count(), 1, 'inside the window: Edit');
+    await context.clock.setFixedTime(new Date(Date.parse(NOW) + 10 * 6e4)); // 20 minutes after creation
+    await page.evaluate(() => window.cycleNative.foreground()); await wait(page, 300);
+    assert.equal(await page.locator('[data-a^="etodo:"]').count(), 0, 'window expired while open');
+    await context.close();
+  });
+
+  test('B2 deleting my own comment leaves a Deleted marker and a soft-delete patch; her comment has no Delete', async () => {
+    const cm = (id, by, body) => ({ id, couple_id: 'c1', todo_id: 't1', author_id: by, body, created_at: iso(5), updated_at: iso(5), deleted_at: null });
+    const sd = seed({ rows: { todos: [todo('t1')], todo_comments: [cm('c-me', UID, 'my words'), cm('c-her', PID, 'her words')] } });
+    const { context, page } = await open({ sd, offline: true });
+    await ready(page);
+    await detail(page, 't1');
+    assert.equal(await page.locator('[data-a="cmtdel:c-her"]').count(), 0);
+    await page.click('[data-a="cmtdel:c-me"]');
+    await page.waitForSelector('.fn.gone');
+    assert.match(await page.textContent('.fn.gone'), /Deleted/);
+    assert.doesNotMatch(await page.textContent('.tdd2'), /my words/);
+    assert.ok((await stored(page, 'todo_comments', 'c-me')).deleted_at, 'soft-deleted in the store');
+    assert.equal((await stored(page, 'todo_comments', 'c-her')).deleted_at, null);
+    await context.close();
+  });
+
+  // A reminder I sent her, with a reply from each of us.
+  const threadSeed = () => {
+    const rep = (id, by, body) => ({ id, couple_id: 'c1', send_id: 's1', author_id: by, body, read_at: null, created_at: iso(20), updated_at: iso(20), deleted_at: null });
+    return seed({ rows: {
+      nudges: [{ id: 'n1', couple_id: 'c1', author_id: UID, body: 'Breathe', tag: 'Calm', pinned: false, sort_order: 0, archived_at: null, created_at: iso(900), updated_at: iso(900), deleted_at: null }],
+      nudge_sends: [{ id: 's1', couple_id: 'c1', nudge_id: 'n1', sender_id: UID, recipient_id: PID, body: 'Breathe', deliver_at: iso(60), opened_at: iso(50), created_at: iso(61), deleted_at: null }],
+      nudge_replies: [rep('r-me', UID, 'my reply'), rep('r-her', PID, 'her reply')] } });
+  };
+  test('B3 deleting my reply leaves a Deleted marker and a soft-delete patch; hers has no Delete', async () => {
+    const { context, page } = await open({ sd: threadSeed(), offline: true });
+    await ready(page);
+    await library(page);
+    await page.click('[data-a="nudge:n1"]');
+    await page.waitForSelector('.bub');
+    assert.equal(await page.locator('[data-a="repdel:r-her"]').count(), 0);
+    await page.click('[data-a="repdel:r-me"]');
+    await page.waitForSelector('.bub.gone');
+    assert.match(await page.textContent('.bub.gone'), /Deleted/);
+    assert.doesNotMatch(await page.textContent('.th'), /my reply/);
+    assert.ok((await stored(page, 'nudge_replies', 'r-me')).deleted_at);
+    assert.equal((await stored(page, 'nudge_replies', 'r-her')).deleted_at, null);
+    await context.close();
+  });
+
+  test('B4 Cancel on a queued send soft-deletes it (shared patch, and the private Me tier); a delivered one has no Cancel', async () => {
+    const future = new Date(Date.parse(NOW) + 6 * 36e5).toISOString();
+    const nsend = (id, o) => ({ id, couple_id: 'c1', nudge_id: 'n1', sender_id: UID, recipient_id: PID, body: 'Body ' + id, deliver_at: future, opened_at: null, created_at: iso(1), deleted_at: null, ...o });
+    const sd = seed({ rows: { nudges: [{ id: 'n1', couple_id: 'c1', author_id: UID, body: 'Breathe', tag: 'Calm', pinned: false, sort_order: 0, archived_at: null, created_at: iso(900), updated_at: iso(900), deleted_at: null }],
+      nudge_sends: [nsend('q1'), nsend('done1', { deliver_at: iso(60), opened_at: iso(50) })] },
+      priv: { nudge_sends: [{ id: 'pq1', nudge_id: 'pn1', body: 'Me later', deliver_at: future, opened_at: null, created_at: iso(1), deleted_at: null }] } });
+    const { context, page } = await open({ sd, offline: true });
+    await ready(page);
+    await library(page, 'sent');
+    assert.equal(await page.locator('[data-a^="sendcancel:"]').count(), 2, 'only the two queued sends offer Cancel');
+    await page.click('[data-a="sendcancel:esme:q1"]');
+    await wait(page, 300);
+    assert.ok((await stored(page, 'nudge_sends', 'q1')).deleted_at, 'shared send soft-deleted');
+    assert.equal(await page.locator('[data-a="sendcancel:esme:q1"]').count(), 0, 'gone from the list');
+    await page.click('[data-a="sendcancel:me:pq1"]');
+    await wait(page, 300);
+    assert.ok((await priv(page)).nudge_sends[0].deleted_at, 'private send soft-deleted');
+    await context.close();
+  });
+
+  test('B5 an archived reminder can be restored, and it returns to Saved', async () => {
+    const sd = seed({ rows: { nudges: [{ id: 'n1', couple_id: 'c1', author_id: UID, body: 'Old calm', tag: 'Calm', pinned: false, sort_order: 0, archived_at: iso(100), created_at: iso(900), updated_at: iso(900), deleted_at: null }] } });
+    const { context, page } = await open({ sd, offline: true });
+    await ready(page);
+    await library(page, 'arch');
+    await page.click('[data-a="nudgerestore:esme:n1"]');
+    await wait(page, 300);
+    assert.equal((await stored(page, 'nudges', 'n1')).archived_at, null);
+    await page.click('[data-a="remview:lib"]');
+    assert.ok(await page.locator('[data-nid="n1"]').count(), 'back in Saved');
+    await context.close();
+  });
+
+  test('B6 a dropped ask can be restored to held from Dropped', async () => {
+    const it = { id: 'i1', couple_id: 'c1', sender_id: UID, recipient_id: PID, kind: 'ask', body: 'Dropped ask', ask_type: 'task', description: null, due_date: null, target: null, period: null, points_earn: null, points_miss: null,
+      needs_note: false, origin: null, response_type: null, fight_marker_id: null, held_until: iso(30), status: 'dropped', delivered_at: null, opened_at: null, kept: null, created_at: iso(120), updated_at: iso(120), deleted_at: null };
+    const { context, page } = await open({ sd: seed({ rows: { items: [it] } }), offline: true });
+    await ready(page);
+    await page.click('[data-a="go:more"]'); await page.click('[data-a="go:dropped"]');
+    await page.click('[data-a="restore:i1"]');
+    await wait(page, 300);
+    assert.equal((await stored(page, 'items', 'i1')).status, 'held');
+    await context.close();
+  });
+
+  test('B7 a reward can be edited (name and price) and archived from the shop', async () => {
+    const rw = { id: 'r1', couple_id: 'c1', name: 'Breakfast', price: 40, created_by: UID, archived: false, art: null, created_at: iso(900), updated_at: iso(900), deleted_at: null };
+    const { context, page } = await open({ sd: seed({ rows: { rewards: [rw] } }), offline: true });
+    await ready(page);
+    await page.click('[data-a="tab:progress"]'); await page.click('[data-a="go:shop"]');
+    await page.click('[data-a="shopedit"]'); await page.click('[data-a="reward:r1"]');
+    await page.fill('[data-d="rname"]', 'Brunch'); await page.fill('[data-d="rprice"]', '55');
+    await page.click('[data-a="savereward"]'); await wait(page, 300);
+    const r = await stored(page, 'rewards', 'r1');
+    assert.deepEqual([r.name, r.price, r.archived], ['Brunch', 55, false]);
+    assert.match(await page.textContent('.shop'), /Brunch/);
+    await page.click('[data-a="reward:r1"]');
+    await page.click('[data-a="rewardarch:r1"]'); await wait(page, 300);
+    assert.equal((await stored(page, 'rewards', 'r1')).archived, true);
+    assert.doesNotMatch(await page.textContent('.shop'), /Brunch/);
+    await context.close();
+  });
+
+  // Own fight carries intensity on this phone only; the partner's fight is a bare marker.
+  const mine = { id: 'fm', couple_id: 'c1', logged_by: UID, at: iso(60), repaired_at: null, hit_self: null, hit_related: null };
+  const hers = { id: 'fh', couple_id: 'c1', logged_by: PID, at: iso(120), repaired_at: null, hit_self: null, hit_related: null };
+  test('B8 the fight list shows intensity for my fights and never for hers (list and detail)', async () => {
+    // A stale private entry under her marker's id must still not surface: intensity is shown only for fights I logged.
+    const sd = seed({ rows: { fight_markers: [mine, hers] }, priv: { fights: [{ id: 'fm', at: Date.parse(mine.at), intensity: 4 }, { id: 'fh', at: Date.parse(hers.at), intensity: 5 }] } });
+    const { context, page } = await open({ sd, offline: true });
+    await ready(page);
+    await page.click('[data-a="tab:fights"]'); await page.waitForSelector('.rf');
+    assert.equal(await page.locator('[data-a="openfight:fm"] .ix i.f').count(), 4);
+    assert.equal(await page.locator('[data-a="openfight:fh"] .ix').count(), 0, 'no intensity on her fight');
+    await page.click('[data-a="openfight:fh"]'); await page.waitForSelector('.fd');
+    assert.equal(await page.locator('.fd .ix').count(), 0, 'nor on her fight detail');
+    await context.close();
+  });
+
+  test('B9 several fights on one calendar day are all reachable from the Cycle day view', async () => {
+    const fights = [30, 90, 150].map((m, i) => ({ id: 'f' + i, at: Date.parse(NOW) - m * 6e4, intensity: 2 + i }));
+    const sd = seed({ rows: { fight_markers: fights.map((f) => ({ id: f.id, couple_id: 'c1', logged_by: UID, at: new Date(f.at).toISOString(), repaired_at: null, hit_self: null, hit_related: null })) }, priv: { fights } });
+    const { context, page } = await open({ sd, offline: true });
+    await ready(page);
+    await page.click('[data-a="go:more"]'); await page.click('[data-a="go:cycle"]'); await page.waitForSelector('.cyc');
+    assert.equal(await page.locator('section.det').count(), 3, 'one block per fight on the picked day');
+    for (const f of fights) assert.equal(await page.locator('section.det[data-a="openfight:' + f.id + '"]').count(), 1);
+    await context.close();
+  });
+
+  // Fight detail with a mic field; draft key fightdetail:<id>.
+  const openFight = async (page) => { await page.click('[data-a="tab:fights"]'); await page.click('[data-a="openfight:fm"]'); await page.waitForSelector('.fd textarea'); };
+  const fightSeed = () => seed({ rows: { fight_markers: [mine] }, priv: { fights: [{ id: 'fm', at: Date.parse(mine.at), intensity: 3 }] } });
+  test('B10 dictated text survives a re-render and a reload; an interrupted recording keeps what was heard', async () => {
+    const { context, page } = await open({ sd: fightSeed(), native: {} });
+    await ready(page); await openFight(page);
+    await page.fill('.fd textarea', 'typed first');
+    await page.click('.fd .mic');
+    await page.evaluate(() => window.cycleNative.speech('and then some', false));
+    assert.equal(await page.inputValue('.fd textarea'), 'typed first and then some');
+    await page.evaluate(() => window.dispatchEvent(new Event('online'))); // forces a render
+    assert.equal(await page.inputValue('.fd textarea'), 'typed first and then some', 'survives a re-render');
+    await page.evaluate(() => window.cycleNative.speechError('Mic cut off')); // interrupted: shell reports an error, no final
+    assert.equal(await page.inputValue('.fd textarea'), 'typed first and then some', 'interrupted recording keeps the text');
+    assert.equal((await priv(page)).drafts['fightdetail:fm'].d.more, 'typed first and then some', 'persisted as a draft');
+    await page.reload(); await ready(page); await openFight(page);
+    assert.equal(await page.inputValue('.fd textarea'), 'typed first and then some', 'restored after reload');
+    await context.close();
+  });
+
+  test('B11 Save with nothing to save says so instead of doing nothing (note, reply, comment)', async () => {
+    const sd = threadSeed();
+    sd['shared.' + UID].rows.fight_markers = byId([mine]);
+    sd['shared.' + UID].rows.todos = byId([todo('t1')]);
+    sd['priv.' + UID].fights = [{ id: 'fm', at: Date.parse(mine.at), intensity: 3 }];
+    const { context, page } = await open({ sd, offline: true });
+    await ready(page);
+    const expectErr = async (sel, label) => {
+      const queuedBefore = (await shared(page)).outbox.length; // opening a thread legitimately queues read receipts
+      await page.click(sel);
+      await page.waitForSelector('.errbar');
+      assert.equal((await shared(page)).outbox.length, queuedBefore, label + ': nothing queued');
+      await page.evaluate(() => { const e = document.querySelector('.errbar'); if (e) e.remove(); });
+    };
+    await openFight(page);
+    await expectErr('[data-a="notesave"]', 'fight note');
+    await page.click('[data-a="back"]');
+    await library(page); await page.click('[data-a="nudge:n1"]'); await page.waitForSelector('[data-a="nreply"]');
+    await expectErr('[data-a="nreply"]', 'reply');
+    await page.click('[data-a="back"]').catch(() => {});
+    await detail(page, 't1');
+    await expectErr('[data-a^="tcomment:"]', 'comment');
+    await context.close();
+  });
 });
