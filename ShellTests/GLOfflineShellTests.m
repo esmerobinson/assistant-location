@@ -623,14 +623,15 @@ static NSURL *GLTempDir(void) {
     }
 }
 
-// Cold launch after a deploy: the launch refresh finds a new shell while the saved one may still be provisional
-// (WebContent can take seconds to launch), and replacing it cancels that navigation with -999.
+// Foreground right after a cold launch, with a new deploy: the probe finds a new shell while the saved one may still be
+// provisional (WebContent can take seconds to launch), and replacing it cancels that navigation with -999.
 - (void)testLaunchRefreshReplacingTheShellShowsNoError {
     [self saveShellVersion:@"v1"];
     _shellVersion = @"v2";
     GLShellHarness *cold = [self newHarness];
     cold.loader.prefersSavedShell = YES;
     [cold.loader loadPreferringSavedShell:[NSURLRequest requestWithURL:[self liveURL]]];
+    [cold.loader swapToLiveIfReachable];
     XCTAssertEqualObjects(GLPollJS(cold.webView, @"document.body.innerText.indexOf('shell v2') >= 0", @YES, 20), @YES);
     GLSpin(1);
     NSLog(@"[probe] launch race: %ld cancellation(s)", (long)cold.cancellations);
