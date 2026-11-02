@@ -96,6 +96,8 @@ static NSURL *GLTempDir(void) {
 /// Failures the loader did NOT consume: the host would have put
 /// its error view up for each of these.
 @property(nonatomic) NSInteger hostErrorViews;
+/// Every -999 WebKit reported, consumed or not: proves a test really cancelled a navigation.
+@property(nonatomic) NSInteger cancellations;
 @end
 
 @implementation GLShellHarness
@@ -127,10 +129,12 @@ static NSURL *GLTempDir(void) {
 }
 - (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
     NSLog(@"[harness] provisional failure: %@", error);
+    if (error.code == NSURLErrorCancelled) self.cancellations++;
     if (![self.loader webView:webView didFailProvisionalNavigation:navigation withError:error]) self.hostErrorViews++;
 }
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
     NSLog(@"[harness] failure: %@", error);
+    if (error.code == NSURLErrorCancelled) self.cancellations++;
     if (![self.loader webView:webView didFailNavigation:navigation withError:error]) self.hostErrorViews++;
 }
 - (void)offlineShellLoaderDidShowShell:(GLOfflineShellLoader *)loader { self.shellShown++; }
@@ -598,7 +602,7 @@ static NSURL *GLTempDir(void) {
     GLShellHarness *cold = [self newHarness];
     cold.loader.prefersSavedShell = YES;
     [cold.loader loadPreferringSavedShell:[NSURLRequest requestWithURL:[self liveURL]]];
-    XCTAssertEqualObjects(GLPollJS(cold.webView, @"document.body.innerText.indexOf('shell v1') >= 0", @YES, 5), @YES);
+    XCTAssertEqualObjects(GLPollJS(cold.webView, @"document.body.innerText.indexOf('shell v1') >= 0", @YES, 15), @YES);
     XCTAssertTrue(GLWaitFor(15, ^BOOL { return self->_server.requestedPaths.count >= 1; }));
     GLSpin(1);  // let the launch-time background refresh finish
 
@@ -619,30 +623,46 @@ static NSURL *GLTempDir(void) {
     }
 }
 
-// A new deploy changes the shell while the old one is still loading (a slow picture keeps its navigation open): replacing
-// it cancels that navigation with -999, which put "Couldn't reach Listen" over a working page.
-- (void)testShellReplacedMidLoadShowsNoError {
-    NSString *slowShell = @"<!doctype html><html><body>shell v1<img src=\"/slow\"></body></html>";
-    NSError *error = nil;
-    XCTAssertTrue([_cache storeShellData:[slowShell dataUsingEncoding:NSUTF8StringEncoding]
-                              forPageURL:[self liveURL] error:&error], @"%@", error);
+// Cold launch after a deploy: the launch refresh finds a new shell while the saved one may still be provisional
+// (WebContent can take seconds to launch), and replacing it cancels that navigation with -999.
+- (void)testLaunchRefreshReplacingTheShellShowsNoError {
+    [self saveShellVersion:@"v1"];
     _shellVersion = @"v2";
+    GLShellHarness *cold = [self newHarness];
+    cold.loader.prefersSavedShell = YES;
+    [cold.loader loadPreferringSavedShell:[NSURLRequest requestWithURL:[self liveURL]]];
+    XCTAssertEqualObjects(GLPollJS(cold.webView, @"document.body.innerText.indexOf('shell v2') >= 0", @YES, 20), @YES);
+    GLSpin(1);
+    NSLog(@"[probe] launch race: %ld cancellation(s)", (long)cold.cancellations);
+    XCTAssertEqual(cold.hostErrorViews, 0, @"a replaced navigation reached the host's error view");
+    XCTAssertNil(cold.liveFailure);
+}
+
+// The same replacement made deterministic: a navigation the loader did not start is still waiting on the server when
+// a changed shell replaces it. It must report -999, and that must stay away from the host's error view.
+- (void)testReplacedInFlightNavigationShowsNoError {
+    [self saveShellVersion:@"v1"];
     __weak typeof(self) weakSelf = self;
     _server.handler = ^GLTestHTTPResponse *(NSString *method, NSString *path) {
         GLOfflineShellTests *s = weakSelf;
-        if ([path hasPrefix:@"/slow"]) [NSThread sleepForTimeInterval:3];
+        if ([path hasPrefix:@"/slow"]) [NSThread sleepForTimeInterval:8];
         if ([path hasPrefix:@"/shell.html"]) return [GLTestHTTPResponse html:GLShellPage(s->_shellVersion)];
         return [GLTestHTTPResponse status:200 contentType:@"text/plain" body:@"ok"];
     };
     GLShellHarness *cold = [self newHarness];
     cold.loader.prefersSavedShell = YES;
     [cold.loader loadPreferringSavedShell:[NSURLRequest requestWithURL:[self liveURL]]];
-    XCTAssertEqualObjects(GLPollJS(cold.webView, @"document.body.innerText.indexOf('shell v1') >= 0", @YES, 5), @YES);
-    XCTAssertEqual(cold.finished, 0, @"the first shell finished, so nothing was replaced mid-load");
-    XCTAssertTrue(GLWaitFor(15, ^BOOL { return [[self->_cache cachedHTMLForPageURL:[self liveURL]] isEqual:GLShellPage(@"v2")]; }));
+    XCTAssertEqualObjects(GLPollJS(cold.webView, @"document.body.innerText.indexOf('shell v1') >= 0", @YES, 15), @YES);
+    GLSpin(1);  // let the launch-time background refresh finish
+
+    _shellVersion = @"v2";
+    GLEvalJS(cold.webView, @"location.href = '/slow'; 1");
+    XCTAssertTrue(GLWaitFor(5, ^BOOL { return [self->_server.requestedPaths containsObject:@"/slow"]; }),
+                  @"the page's navigation never reached the server: %@", _server.requestedPaths);
     [cold.loader swapToLiveIfReachable];
     XCTAssertEqualObjects(GLPollJS(cold.webView, @"document.body.innerText.indexOf('shell v2') >= 0", @YES, 15), @YES);
     GLSpin(1);
+    XCTAssertGreaterThanOrEqual(cold.cancellations, 1, @"nothing was cancelled, so this test proved nothing");
     XCTAssertEqual(cold.hostErrorViews, 0, @"a replaced navigation reached the host's error view");
     XCTAssertNil(cold.liveFailure);
 }
