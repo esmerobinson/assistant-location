@@ -1435,6 +1435,7 @@ function talkHalt(t) {
   ui.rec = null; t.listen = false;
   var h = (t.heard || '').trim(); t.heard = '';
   if (h) { t.msgs.push({ role: 'user', text: h }); t.failed = true; talkSave(t); }
+  if (ui.talk === t) render(); // else the mic stays lit and the live bubble stays on screen after typing or backgrounding
   return St.native.speechStop();
 }
 // Begin a listening turn (native only). Cuts any speech first; the tap that got here is the user gesture.

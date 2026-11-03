@@ -68,10 +68,11 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await context.route('**/cycle.css', (route) => route.fulfill({ contentType: 'text/css', body: CSS }));
     await context.route('https://x.test/**', (route) => route.abort());
     const posts = [];
-    await context.route('https://box.test/talk', (route) => {
+    await context.route('https://box.test/talk', async (route) => {
       posts.push(route.request().postDataJSON());
       const a = talk.shift();
       if (!a) return route.abort();
+      if (a.delay) await new Promise((r) => setTimeout(r, a.delay)); // a slow box, for the late-reply case
       if (a.abort) return route.abort();
       return route.fulfill({ status: a.status || 200, contentType: 'application/json', body: JSON.stringify(a.body || {}) });
     });
@@ -261,6 +262,133 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await sendTyped(page, 'my side');
     await page.waitForSelector('.tb.ai:not(.live)');
     assert.deepEqual(posts[0].notes, ['Jo: Started with the dishes']);
+    assert.equal(JSON.stringify(posts[0]).includes('DELETED TEXT'), false, 'a deleted note never goes to the model');
+    await context.close();
+  });
+
+  test('saving a note on fight detail clears that fight\'s stored conversation', async () => {
+    const { context, page } = await open({ talk: [ok('Go on.')] });
+    await page.evaluate(() => window.cycleNative.route('fight/fp'));
+    await page.waitForSelector('[data-a="notesave"]');
+    await page.click('[data-a="talk:more"]');
+    await sendTyped(page, 'some words');
+    await page.waitForSelector('.tb.ai:not(.live)');
+    await page.click('[data-a="tkclose"]');
+    await page.waitForSelector('[data-a="notesave"]');
+    assert.notEqual(await page.evaluate(() => localStorage.getItem('cycle:talk:fp')), '', 'kept on Close');
+    await page.fill('[data-d="more"]', 'typed myself');
+    await page.click('[data-a="notesave"]');
+    await page.waitForFunction(() => localStorage.getItem('cycle:talk:fp') === '');
+    await context.close();
+  });
+
+  test('a reply that arrives after Close is dropped, not added to the saved conversation', async () => {
+    const { context, page, posts } = await open({ talk: [{ ...ok('too late'), delay: 600 }] });
+    await logFight(page);
+    await page.click('[data-a="talk:note"]');
+    await sendTyped(page, 'quick words');
+    await page.waitForSelector('.tb.ai.live'); // pending
+    await page.click('[data-a="tkclose"]');
+    await page.waitForSelector('[data-a="fightsave"]');
+    await page.waitForTimeout(900);
+    assert.equal(posts.length, 1);
+    await page.click('[data-a="talk:note"]');
+    await page.waitForSelector('.tb.me');
+    assert.deepEqual(await bubbles(page), ['me:quick words'], 'no late AI bubble');
+    assert.ok(await page.$('[data-a="tkretry"]'), 'the unanswered turn is retryable');
+    await context.close();
+  });
+
+  test('a push that moves the app to another route leaves Talk and keeps the words', async () => {
+    const { context, page } = await open({ talk: [ok('Go on.')] });
+    await logFight(page);
+    await page.click('[data-a="talk:note"]');
+    await sendTyped(page, 'before the push');
+    await page.waitForSelector('.tb.ai:not(.live)');
+    await page.evaluate(() => window.cycleNative.route('fight/fp'));
+    await page.waitForSelector('[data-a="notesave"]');
+    assert.equal(await page.$('.tkm'), null, 'Talk is gone');
+    assert.ok(JSON.parse(await page.evaluate(() => localStorage.getItem('cycle:talk:new'))).msgs.length >= 2, 'words kept');
+    await context.close();
+  });
+
+  test('native: typing during the live mic stops the mic', async () => {
+    const { context, page } = await open({ native: true });
+    await logFight(page);
+    await page.click('[data-a="talk:note"]');
+    await page.waitForFunction(() => window.__bridge.includes('speech.start'));
+    await hear(page, 'still talking');
+    await page.type('[data-t="tk"]', 'x');
+    await page.waitForFunction(() => window.__bridge.includes('speech.stop'));
+    assert.ok(await page.$('[data-a="tkmic"]:not(.rec)'), 'mic no longer recording');
+    await context.close();
+  });
+
+  test('native: backgrounding the app stops recognition and cancels speech', async () => {
+    const { context, page } = await open({ native: true, talk: [ok('Speaking now.')] });
+    await logFight(page);
+    await page.click('[data-a="talk:note"]');
+    await page.waitForFunction(() => window.__bridge.includes('speech.start'));
+    await hear(page, 'hello', true);
+    await page.waitForFunction(() => window.__spoken.length === 1);
+    const cancelled = await page.evaluate(() => window.__cancelled || 0);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForFunction((n) => (window.__cancelled || 0) > n, cancelled);
+    await page.evaluate(() => window.__spoken[0].onend && window.__spoken[0].onend());
+    await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() => window.__bridge.filter((c) => c === 'speech.start').length), 1, 'a cancelled voice does not restart listening');
+    await context.close();
+  });
+
+  test('native: backgrounding while listening stops speech recognition via Talk', async () => {
+    const { context, page } = await open({ native: true });
+    await logFight(page);
+    await page.click('[data-a="talk:note"]');
+    await page.waitForFunction(() => window.__bridge.includes('speech.start'));
+    await hear(page, 'half heard');
+    const cancelled = await page.evaluate(() => window.__cancelled || 0);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForFunction((n) => (window.__cancelled || 0) > n, cancelled);
+    await page.waitForFunction(() => window.__bridge.includes('speech.stop'));
+    assert.deepEqual(await bubbles(page), ['me:half heard'], 'the partial transcript is kept, not dropped');
+    await context.close();
+  });
+
+  test('a failed Done retries as Done (finish:true)', async () => {
+    const { context, page, posts } = await open({ talk: [ok('Ok.'), { status: 500 }, ok('Right?', 'My note.')] });
+    await logFight(page);
+    await page.click('[data-a="talk:note"]');
+    await sendTyped(page, 'something');
+    await page.waitForSelector('[data-a="tkdone"]');
+    await page.click('[data-a="tkdone"]');
+    await page.waitForSelector('[data-a="tkretry"]');
+    assert.equal(posts[1].finish, true);
+    await page.click('[data-a="tkretry"]');
+    await page.waitForSelector('.tkd');
+    assert.equal(posts[2].finish, true, 'Retry keeps finish');
+    await context.close();
+  });
+
+  test('native: a voice whose end never fires goes idle after the timeout, with no error and no relisten', async () => {
+    const { context, page } = await open({ native: true, talk: [ok('Ok.')] });
+    await logFight(page);
+    await page.click('[data-a="talk:note"]');
+    await page.waitForFunction(() => window.__bridge.includes('speech.start'));
+    await hear(page, 'hi', true);
+    await page.waitForFunction(() => window.__spoken.length === 1);
+    const cancelled = await page.evaluate(() => window.__cancelled || 0);
+    // talkSpeakMs('Ok.') is 5000 + 3*120 ms; nothing fires onend, so the fallback timer cancels the voice.
+    await page.waitForFunction((n) => (window.__cancelled || 0) > n, cancelled, { timeout: 9000 });
+    await page.waitForTimeout(100);
+    assert.equal(await page.$('.errbar'), null);
+    assert.equal(await page.evaluate(() => window.__bridge.filter((c) => c === 'speech.start').length), 1, 'idle, not listening');
+    assert.ok(await page.$('[data-a="tkmic"]:not(.rec)'));
     await context.close();
   });
 
