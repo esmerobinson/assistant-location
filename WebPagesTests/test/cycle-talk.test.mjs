@@ -186,6 +186,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     assert.equal(await page.inputValue('[data-d="note"]'), 'Typed first\n\nI was upset about dinner.');
     assert.equal(await page.$eval('[data-a="int:5"]', (e) => e.className.includes('on') || e.classList.length > 0), true);
     assert.equal(await page.$eval('[data-a="int:5"]', (e) => (e.getAttribute('class') || '').trim() !== (document.querySelector('[data-a="int:1"]').getAttribute('class') || '').trim()), true, 'intensity 5 still selected');
+    await page.waitForTimeout(300); // the store persists on a 50ms debounce; a stray insert would only show in localStorage after it
     assert.deepEqual(await rows(page), before, 'nothing shared yet');
     assert.equal(await page.evaluate(() => localStorage.getItem('cycle:talk:new')), '', 'saved conversation cleared');
     await page.click('[data-a="fightsave"]');
