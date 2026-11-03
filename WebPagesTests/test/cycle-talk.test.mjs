@@ -137,7 +137,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
   });
 
   test('native: opening listens at once, silence sends the turn, the reply is spoken, then listening restarts', async () => {
-    const { context, page, posts } = await open({ native: true, talk: [{ ...ok('Tell me more.'), delay: 300 }] });
+    const { context, page, posts } = await open({ native: true, talk: [{ ...ok('Tell me more.'), delay: 1200 }] });
     await logFight(page);
     await openTalk(page);
     await page.waitForFunction(() => window.__bridge.includes('speech.start'));
@@ -366,6 +366,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await openTalk(page);
     await sendTyped(page, 'my words survive');
     await replyIs(page, 'Go on.');
+    await page.waitForTimeout(300); // the store persists on a 50ms debounce
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('[data-a="go:fight"]');
     await logFight(page);
@@ -556,7 +557,9 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     const closed = await geo();
     assert.ok(closed.rowBottom <= closed.h - 12, 'row clear of the bottom edge');
     assert.ok(closed.pillBottom < closed.rowTop);
-    await page.setViewportSize({ width: 390, height: 520 }); // keyboard open
+    // iOS keyboard: the layout viewport stays, visualViewport shrinks and the app sets --vvh from it.
+    await page.evaluate(() => { Object.defineProperty(window.visualViewport, 'height', { configurable: true, get: () => 520 }); window.visualViewport.dispatchEvent(new Event('resize')); });
+    await page.waitForFunction(() => document.querySelector('#app').getBoundingClientRect().height === 520);
     const open_ = await geo();
     assert.ok(open_.rowBottom <= 520 && open_.pillBottom < open_.rowTop, 'pill and row inside the shrunk viewport');
     await context.close();
