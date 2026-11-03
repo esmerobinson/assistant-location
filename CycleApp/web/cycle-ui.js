@@ -497,13 +497,15 @@ SCREEN.fight = function () {
     intensityPicker(i, 'int') +
     // Esme is the one who may hit herself, so her questions are in the first person; the flag lives on her member row.
     '<section>' + hitFields(d, esme) + '</section>' +
-    '<section><p class="lab">What happened</p>' + micTa('note', 'nt') + whenRow('when') + '</section>' +
+    '<section><p class="lab">What happened' + talkLink('note') + '</p>' + micTa('note', 'nt') + whenRow('when') + '</section>' +
     '<section><p class="lab">Ask ' + pn() + ' to</p><div class="tdc">' + [['apologize', 'Apologize'], ['reflect', 'Reflect'], ['custom', 'Custom']].map(function (c) { return '<span class="chip' + (chips[c[0]] ? ' on' : '') + '" data-a="chip:' + c[0] + '">' + c[1] + '</span>'; }).join('') + '</div>' +
     (chips.custom ? '<p class="lab">Title</p>' + inp('customTitle') : '') + '</section>' +
     '<div class="save" data-a="fightsave">Save</div>', { band: false });
 };
 
 // Notes are append-only and shared: both people read the same time-ordered list and can only add.
+// The Talk entry beside a note's label; only where a box url is configured. Analysis is shown verbatim as authored, so it has none.
+function talkLink(field) { return St.canTalk ? ' <span class="lnk" data-a="talk:' + field + '">Talk</span>' : ''; }
 function fightNotes(id) { return L('fight_notes').filter(function (n) { return n.fight_marker_id === id; }).sort(function (a, b) { return C.ms(a.created_at) - C.ms(b.created_at); }); }
 function noteStamp(ms) { return fmtDay(C.localDay(ms, tz())) + ' &middot; ' + fmtTime(ms); }
 // Writes the server refused, shown as plain text (never deleted here) with an export control.
@@ -615,7 +617,7 @@ SCREEN.fightdetail = function () {
     intensityPicker(myRating(mk), 'fightint') +
     (chips ? '<section class="meta2"><div class="rcs">' + chips + '</div></section>' : '') +
     story + gapHtml + notesHtml +
-    '<section><p class="lab">' + (!me && !mine ? 'Add your version' : 'Add more') + '</p>' + seg([['note', 'Note'], ['analysis', 'Analysis']], nkind, 'fnkind', 'ty') + micTa('more', 'nt') + linkRow + whenRow('mw') + '</section>' +
+    '<section><p class="lab">' + (!me && !mine ? 'Add your version' : 'Add more') + (nkind === 'note' ? talkLink('more') : '') + '</p>' + seg([['note', 'Note'], ['analysis', 'Analysis']], nkind, 'fnkind', 'ty') + micTa('more', 'nt') + linkRow + whenRow('mw') + '</section>' +
     '<div class="save" data-a="notesave">Save</div>' + pending + del, { sheet: sh });
 };
 
@@ -1304,14 +1306,15 @@ function render() {
   syncDraft();
   var sc = document.querySelector('.scr'), top = sc ? sc.scrollTop : 0, name = currentScreen(), key = name + (ui.sheet ? 's' : '');
   // A tapped control must not close the keyboard: hand focus to the field's twin after the swap (else .scr grows and clamps scrollTop).
-  var fa = document.activeElement, fk = typing() && fa.getAttribute('data-d'), fs = fk && fa.selectionStart, fe = fk && fa.selectionEnd;
+  var fa = document.activeElement, fk = typing() && (fa.getAttribute('data-d') || fa.getAttribute('data-t')), fs = fk && fa.selectionStart, fe = fk && fa.selectionEnd;
   var html;
   try {
-    html = SCREEN[name]();
+    if (ui.talk && (ui.talk.route !== ui.route || ui.talk.fid !== talkFid())) { var gone = ui.talk; ui.talk = null; guard(talkHalt)(gone); } // a push moved the app elsewhere: keep the words, leave Talk
+    html = ui.talk ? talkScreen() : SCREEN[name]();
     // Sheets are rendered inside the owning screen (so they inherit its family CSS); screens that
     // host sheets read ui.sheet themselves. Everything else shows the sheet via the shared hook below.
     if (ui.notif && S.session) html = html.replace(/<\/div>$/, notifSheet() + '</div>');
-    if (ui.sheet && name !== 'todo' && name !== 'tododetail' && name !== 'shop' && name !== 'challenge') html = html.replace(/<\/div>$/, sheetFor() + '</div>');
+    if (!ui.talk && ui.sheet && name !== 'todo' && name !== 'tododetail' && name !== 'shop' && name !== 'challenge') html = html.replace(/<\/div>$/, sheetFor() + '</div>');
   } catch (e) {
     // A screen that cannot draw (e.g. a row it expects is missing) must not blank the app or poison every later render.
     console.error('cycle screen failed:', name, e);
@@ -1319,13 +1322,14 @@ function render() {
   }
   app.innerHTML = html;
   // The mic only lives while its field is on screen. What was heard is already in ui.d and the draft, so stopping loses nothing.
-  if (ui.rec && !app.querySelector('[data-d="' + ui.rec.field + '"]')) guard(stopRec)();
+  if (ui.rec && ui.rec.field !== 'talk' && !app.querySelector('[data-d="' + ui.rec.field + '"]')) guard(stopRec)();
   // Before scrollTop is restored below: a box still at its min height would make .scr too short and clamp it.
   app.querySelectorAll('.ta.nt textarea').forEach(fitNote);
   var ns = document.querySelector('.scr');
-  var nf = fk && lastKey.split('|')[0] === name && document.querySelector('[data-d="' + fk + '"]');
+  var nf = fk && lastKey.split('|')[0] === name && document.querySelector('[data-d="' + fk + '"],[data-t="' + fk + '"]');
   if (nf) { nf.focus({ preventScroll: true }); if (fs != null) nf.setSelectionRange(fs, fe); } // email inputs have no selection
   if (ns && lastKey.split('|')[0] === name) ns.scrollTop = top;
+  if (ui.talk && ns) ns.scrollTop = ns.scrollHeight; // newest turn in view
   markScrolled();
   lastKey = name + '|' + (ui.sheet ? 1 : 0);
 }
@@ -1381,6 +1385,143 @@ app.addEventListener('input', function (e) {
   if (nb) nb.classList.toggle('dis', !e.target.value.trim());
   var pt = e.target.getAttribute('data-pt');
   if (pt) e.target.previousElementSibling.textContent = dispPick(pt, e.target.value);
+});
+
+// ---- Talk: a spoken back-and-forth about a fight ---------------------------------------------------------------
+// Drawn INSTEAD of the current screen while ui.talk is set (not a route): ui.d holds the unsaved Log-a-fight form, and
+// every route change wipes it. ui.talk = {field, key, route, fid, msgs[{role,text}], draft, text (composer), heard
+// (live transcript), listen, speak, pending, failed, finish, seq, spk}. The words are kept in St.kv (on this device
+// only, never synced) on every change, so a crash or Close loses nothing; Use this / Use my words / Save clear them.
+// Native recognition has no silence detection (CycleSpeech.m ends only on stop), so the turn ends when the transcript
+// has not changed for this long. 1800ms is a guess: long enough to survive a breath, short enough to feel live.
+var TALK_SILENCE_MS = 1800;
+// Fallback for a speechSynthesis whose `end` never fires: proportional to the text, then fall back to idle.
+function talkSpeakMs(text) { return 5000 + text.length * 120; }
+function firstName(n) { return String(n || '').trim().split(/\s+/)[0]; }
+function talkStoreKey(fid) { return 'talk:' + (fid || 'new'); }
+// The fight a Talk belongs to: the open fight, or null on the Log a fight form.
+function talkFid() { return ui.route === 'fightdetail' ? ui.fightId : null; }
+function talkClearSaved(fid) { return St.kv.set(talkStoreKey(fid), ''); }
+function talkSave(t) { return St.kv.set(t.key, t.msgs.length || t.draft ? JSON.stringify({ msgs: t.msgs, draft: t.draft }) : ''); }
+// Context for the model: this fight's already-shared notes only (never intensity, hits or other private tiers).
+function talkNotes(fid) {
+  if (!fid) return [];
+  return fightNotes(fid).filter(function (n) { return !n.deleted_at; }).slice(-40).map(function (n) { return firstName(nameOf(n.author_id)) + ': ' + n.body.slice(0, 4000); });
+}
+function talkMsgsHtml(t) {
+  var h = t.msgs.map(function (m) { return '<div class="tb ' + (m.role === 'user' ? 'me' : 'ai') + '">' + esc(m.text) + '</div>'; }).join('');
+  if (t.listen && t.heard) h += '<div class="tb me live">' + esc(t.heard) + '</div>';
+  if (t.pending) h += '<div class="tb ai live">&hellip;</div>';
+  return h;
+}
+function talkScreen() {
+  var t = ui.talk, fail = t.failed && !t.pending, exch = t.msgs.some(function (m) { return m.role === 'assistant'; });
+  var body = talkMsgsHtml(t) +
+    (fail ? '<div class="pair"><span class="save" data-a="tkretry">Retry</span><span class="ghost" data-a="tkwords">Use my words</span></div>' : '') +
+    (t.draft ? '<div class="tkd"><p>' + esc(t.draft) + '</p><div class="pair"><span class="save" data-a="tkuse">Use this</span><span class="ghost" data-a="tkkeep">Keep talking</span></div></div>' : '');
+  var mic = St.hasNative ? '<span class="mic' + (t.listen ? ' rec' : '') + '" data-a="tkmic" role="button" aria-label="' + (t.listen ? 'Stop' : 'Voice') + '">' + ic('mic') + '</span>' : '';
+  var bar = '<div class="tkbar"><div class="tkrow"><div class="micw"><input class="inp fill" data-t="tk" aria-label="Message" value="' + esc(t.text) + '">' + mic + '</div><span class="save tksend" data-a="tksend">Send</span></div>' +
+    (exch && !t.draft && !fail ? '<span class="ghost" data-a="tkdone">Done</span>' : '') + '</div>';
+  return phone('p2 tk', '<header class="hd"><div><h2>Talk</h2></div><span class="txtbtn" data-a="tkclose">Close</span></header><div class="tkm">' + body + '</div>', { band: false, tab: false, pin: bar });
+}
+// Stops speech and recognition, keeping a just-heard partial transcript as an unsent turn (shown with Retry) so Close,
+// backgrounding or typing never drops it. Awaits speechStop so the native audio session is free before anything else.
+function talkHalt(t) {
+  t = t || ui.talk;
+  if (!t) return Promise.resolve();
+  clearTimeout(t.silence); t.spk++; t.speak = false;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  if (!(ui.rec && ui.rec.field === 'talk')) return Promise.resolve();
+  ui.rec = null; t.listen = false;
+  var h = (t.heard || '').trim(); t.heard = '';
+  if (h) { t.msgs.push({ role: 'user', text: h }); t.failed = true; talkSave(t); }
+  return St.native.speechStop();
+}
+// Begin a listening turn (native only). Cuts any speech first; the tap that got here is the user gesture.
+async function talkListen() {
+  var t = ui.talk;
+  if (!t || !St.hasNative || t.pending || ui.rec) return;
+  t.spk++; t.speak = false;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  ui.rec = { field: 'talk', base: '' }; t.listen = true; t.heard = ''; render();
+  try { await St.native.speechStart(); } catch (e) { ui.rec = null; t.listen = false; render(); throw e; }
+}
+// Silence (or the final callback, or a mic tap) ends the turn: stop recognition, then send what was heard.
+async function talkEndTurn() {
+  var t = ui.talk;
+  if (!t || !(ui.rec && ui.rec.field === 'talk')) return;
+  clearTimeout(t.silence); ui.rec = null; t.listen = false;
+  var h = t.heard.trim(); t.heard = '';
+  await St.native.speechStop();
+  if (ui.talk !== t) return;
+  if (h) await talkSend(h, false); else render();
+}
+// Live transcript from the shell (cycleNative.speech): every change restarts the silence countdown.
+function talkHeard(text, final) {
+  var t = ui.talk;
+  if (!t) return;
+  if (text && text !== t.heard) { t.heard = text; clearTimeout(t.silence); t.silence = setTimeout(guard(talkEndTurn), TALK_SILENCE_MS); render(); }
+  if (final) guard(talkEndTurn)();
+}
+// One request. A failure keeps the user's turn on screen with Retry; a stale answer (Closed meanwhile) is dropped.
+async function talkSend(text, finish) {
+  var t = ui.talk;
+  if (text) t.msgs.push({ role: 'user', text: text });
+  t.pending = true; t.failed = false; t.finish = !!finish; var seq = ++t.seq;
+  talkSave(t); render();
+  var r;
+  try {
+    r = await St.talk({ messages: t.msgs, finish: !!finish, speaker: firstName(nameOf(St.me())), partner: firstName(pName()), notes: talkNotes(t.fid) });
+  } catch (e) {
+    if (ui.talk !== t || t.seq !== seq) return;
+    St.logErr('talk', e); t.pending = false; t.failed = true; render(); return;
+  }
+  if (ui.talk !== t || t.seq !== seq) return;
+  t.pending = false; t.msgs.push({ role: 'assistant', text: r.reply }); t.draft = r.draft;
+  talkSave(t); render();
+  return talkSpeak(t, r.reply);
+}
+// Speak the reply, then listen again. No speechSynthesis, an error, or an `end` that never comes all land on idle with the
+// mic tappable and no error: the text is on screen regardless. Recognition is stopped (awaited) first because it holds the audio session.
+async function talkSpeak(t, text) {
+  var ss = window.speechSynthesis;
+  if (!St.hasNative || !ss || typeof SpeechSynthesisUtterance === 'undefined') return;
+  var id = ++t.spk;
+  await St.native.speechStop();
+  if (ui.talk !== t || t.spk !== id) return;
+  var u = new SpeechSynthesisUtterance(text), done = false, timer = 0;
+  function fin(listen) {
+    if (done || ui.talk !== t || t.spk !== id) return;
+    done = true; clearTimeout(timer); t.speak = false; render();
+    if (listen) guard(talkListen)();
+  }
+  u.onend = function () { fin(true); };
+  u.onerror = function () { fin(false); };
+  timer = setTimeout(function () { ss.cancel(); fin(false); }, talkSpeakMs(text));
+  t.speak = true;
+  ss.speak(u);
+}
+// Close Talk with `text` appended to the field it was opened from, after a blank line when the field has text.
+async function talkApply(text) {
+  var t = ui.talk, f = t.field;
+  await talkHalt(t);
+  var cur = (ui.d[f] || '').replace(/\s+$/, '');
+  ui.d[f] = cur ? cur + '\n\n' + text : text;
+  await talkClearSaved(t.fid);
+  talkLeave(t);
+  saveDraft(draftKey());
+}
+function talkLeave(t) {
+  ui.talk = null; render();
+  var sc = document.querySelector('.scr'); if (sc) sc.scrollTop = t.top;
+}
+app.addEventListener('input', function (e) {
+  if (e.target.getAttribute('data-t') !== 'tk' || !ui.talk) return;
+  ui.talk.text = e.target.value;
+  guard(talkHalt)(); // typing takes over from the mic and the voice
+});
+app.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && e.target.getAttribute && e.target.getAttribute('data-t') === 'tk') { e.preventDefault(); guard(ACT.tksend)(); }
 });
 
 // ---- actions ---------------------------------------------------------------------------------------------------
@@ -1459,7 +1600,7 @@ function logFight() {
   setRating(id, d.int || 3);
   S.priv.fights.push({ id: id, at: at, logged_at: Date.now(), intensity: d.int || 3 });
   St.savePriv();
-  draftSent();
+  draftSent(); talkClearSaved();
   M.play('crack', el);
   tab('home');
 }
@@ -1475,7 +1616,7 @@ function saveNote() {
     row.linked_fight_ids = Object.keys(ui.d.nlinks || {}).filter(function (id) { return ui.d.nlinks[id] && S.rows.fight_markers[id]; });
   }
   St.insert('fight_notes', row);
-  draftSent(); ui.d.more = ''; ui.d.fnkind = 'note'; ui.d.nlinks = {}; delete ui.d.mwD; delete ui.d.mwT; render();
+  draftSent(); talkClearSaved(ui.fightId); ui.d.more = ''; ui.d.fnkind = 'note'; ui.d.nlinks = {}; delete ui.d.mwD; delete ui.d.mwT; render();
 }
 
 var ACT = {
@@ -1503,6 +1644,33 @@ var ACT = {
     ui.rec = { field: field, base: ui.d[field] || '' }; render();
     return St.native.speechStart().catch(function (e) { ui.rec = null; throw e; });
   }),
+  // Talk: open from a note field (restoring this fight's saved conversation), and the controls inside it.
+  talk: guard(async function (field) {
+    var fid = talkFid(), key = talkStoreKey(fid), sc = document.querySelector('.scr');
+    var saved = JSON.parse((await St.kv.get(key)) || 'null') || { msgs: [], draft: null };
+    var last = saved.msgs[saved.msgs.length - 1];
+    ui.talk = { field: field, key: key, route: ui.route, fid: fid, top: sc ? sc.scrollTop : 0, msgs: saved.msgs, draft: saved.draft, text: '', heard: '', listen: false, speak: false,
+      pending: false, failed: !!last && last.role === 'user' && !saved.draft, finish: false, seq: 0, spk: 0 };
+    render();
+    if (St.hasNative && !ui.talk.failed) await talkListen();
+  }),
+  tkclose: guard(async function () { var t = ui.talk; await talkHalt(t); await talkSave(t); talkLeave(t); }),
+  tkmic: guard(function () {
+    var t = ui.talk; if (t.pending) return;
+    return t.listen ? talkEndTurn() : talkListen();
+  }),
+  tksend: guard(async function () {
+    var t = ui.talk, text = t.text.trim(); if (!text || t.pending) return;
+    await talkHalt(t); t.text = ''; return talkSend(text, false);
+  }),
+  tkdone: guard(async function () {
+    var t = ui.talk; if (t.pending) return;
+    await talkHalt(t); var text = t.text.trim(); t.text = ''; return talkSend(text || null, true);
+  }),
+  tkretry: guard(function () { return talkSend(null, ui.talk.finish); }),
+  tkkeep: function () { ui.talk.draft = null; talkSave(ui.talk); render(); if (St.hasNative) guard(talkListen)(); },
+  tkuse: guard(function () { return talkApply(ui.talk.draft); }),
+  tkwords: guard(function () { return talkApply(ui.talk.msgs.filter(function (m) { return m.role === 'user'; }).map(function (m) { return m.text; }).join(' ')); }),
   notifx: function () { ui.notif = false; render(); },
   notifset: function () { St.native.openSettings(); },
   notifoff: function () { ui.notif = false; render(); St.kv.set(notifKey(), '1'); },
@@ -2063,6 +2231,7 @@ window.cycleNative = {
   // Transcript so far (the whole utterance, not a delta); final = capture ended (natural end, or the shell stopped it).
   speech: function (text, final) {
     if (!ui.rec) return;
+    if (ui.rec.field === 'talk') return talkHeard(text, final);
     var f = ui.rec.field, el = document.querySelector('[data-d="' + f + '"]');
     if (text) { ui.d[f] = C.appendSpeech(ui.rec.base, text); if (el) el.value = ui.d[f]; saveDraft(draftKey()); }
     if (final) { ui.rec = null; render(); }
@@ -2077,7 +2246,7 @@ St.boot().then(function () { return St.hasNative ? St.native.lockGet() : false; 
   // 15s repaint that moves countdowns and promotes a held item to "ready".
   setInterval(function () { if (document.visibilityState === 'visible' && S.session) St.sync(); }, 5000);
   setInterval(function () { if (!typing()) render(); }, 15000);
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') guard(stopRec)(); if (document.visibilityState === 'visible') window.cycleNative.foreground(); });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') { guard(talkHalt)(); guard(stopRec)(); } if (document.visibilityState === 'visible') window.cycleNative.foreground(); });
 }).catch(function (e) {
   // Boot failed (unreadable storage, bridge error). Say so instead of leaving a blank page; storage is left exactly as found.
   console.error('cycle boot failed:', e);

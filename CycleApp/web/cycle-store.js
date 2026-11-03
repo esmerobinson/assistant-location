@@ -515,6 +515,15 @@ var CycleStore = (function () {
       pushRegistered = key;
     } catch (e) { if (!(e instanceof TypeError)) console.error('cycle push register failed:', e); }
   }
+  // ---- talk -----------------------------------------------------------------------------------
+  // One turn of the spoken fight conversation. Throws (with .status for HTTP failures) so the UI can keep the person's
+  // words on screen and offer Retry; a fetch TypeError means offline.
+  async function talk(payload) {
+    await ensureFresh();
+    var r = await fetch(cfg.boxUrl + '/talk', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + S.session.access_token }, body: JSON.stringify(payload) });
+    if (!r.ok) { var e = new Error('talk failed: HTTP ' + r.status); e.status = r.status; throw e; }
+    return r.json();
+  }
   // ---- local notifications -----------------------------------------------------------------
   // Everything the shell must have scheduled is derived from state on every change; ids that
   // were scheduled before but are no longer wanted are cancelled. Native replaces a re-used id.
@@ -616,6 +625,6 @@ var CycleStore = (function () {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
     kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, upsert: upsert, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
-    api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
+    talk: talk, canTalk: !!cfg.boxUrl, api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
   };
 })();

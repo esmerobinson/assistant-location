@@ -459,4 +459,23 @@ svg.zoomchart{display:block;width:100%;height:auto;touch-action:pan-y;user-selec
 
 .fna{margin:10px 0 12px;text-align:right}
 
+/* Talk: full-screen conversation drawn instead of the fight screen. Me right in pink, the AI left in an outline; the
+   composer is pinned (a sibling of .scr, order:1) so it rides above the keyboard like Home's add row. */
+.p2.tk main{gap:12px}
+.p2.tk h2{color:#fff} /* no pink band behind the header here (band:false), same as .s2 in cycle.base.css */
+.tkm{display:flex;flex-direction:column;gap:12px;padding-bottom:8px}
+.tb{max-width:84%;padding:12px 16px;border-radius:20px;font-size:17px;font-weight:700;line-height:1.35;overflow-wrap:anywhere;white-space:pre-wrap}
+.tb.me{align-self:flex-end;background:var(--pk);color:#0a0a0a;border-bottom-right-radius:6px}
+.tb.ai{align-self:flex-start;border:2px solid var(--ln);border-bottom-left-radius:6px}
+.tb.live{opacity:.6}
+.tkd{border:2px solid var(--pk);border-radius:22px;padding:16px 16px 12px;display:flex;flex-direction:column;gap:14px}
+.tkd>p{margin:0;font-size:17px;font-weight:700;line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere}
+.tkm .pair,.tkd .pair{display:flex;gap:10px}
+.tkm .pair>*,.tkd .pair>*{flex:1;min-width:0}
+.tkbar{order:1;flex:none;display:flex;flex-direction:column;gap:10px;padding:10px 16px max(env(safe-area-inset-bottom),12px);background:#0a0a0a;border-top:1px solid #222}
+.tkrow{display:flex;align-items:center;gap:10px}
+.tkrow .micw{flex:1;min-width:0}
+.tkrow .save{flex:none;width:auto;min-width:84px;padding:0 20px;margin:0}
+.tkbar>.ghost{margin:0}
+
 .errlog{margin:8px 20px 16px;font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-all;user-select:text;-webkit-user-select:text}
