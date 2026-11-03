@@ -1329,7 +1329,7 @@ function render() {
   var nf = fk && lastKey.split('|')[0] === name && document.querySelector('[data-d="' + fk + '"],[data-t="' + fk + '"]');
   if (nf) { nf.focus({ preventScroll: true }); if (fs != null) nf.setSelectionRange(fs, fe); } // email inputs have no selection
   if (ns && lastKey.split('|')[0] === name) ns.scrollTop = top;
-  if (ui.talk && ns) ns.scrollTop = ns.scrollHeight; // newest turn in view
+  if (ui.talk && ns && ui.talk.resetScroll) { ns.scrollTop = 0; ui.talk.resetScroll = false; } // a new reply starts at its top
   markScrolled();
   lastKey = name + '|' + (ui.sheet ? 1 : 0);
 }
@@ -1408,25 +1408,57 @@ function talkNotes(fid) {
   if (!fid) return [];
   return fightNotes(fid).filter(function (n) { return !n.deleted_at; }).slice(-40).map(function (n) { return firstName(nameOf(n.author_id)) + ': ' + n.body.slice(0, 4000); });
 }
-function talkMsgsHtml(t) {
-  var h = t.msgs.map(function (m) { return '<div class="tb ' + (m.role === 'user' ? 'me' : 'ai') + '">' + esc(m.text) + '</div>'; }).join('');
-  if (t.listen && t.heard) h += '<div class="tb me live">' + esc(t.heard) + '</div>';
-  if (t.pending) h += '<div class="tb ai live">&hellip;</div>';
-  return h;
-}
+// Gemini-Live-style screen: only the NEWEST assistant reply is drawn (large, top); earlier turns live on in t.msgs and the
+// saved conversation, never on screen. data-state on the glow drives its animation and is what tests read.
+function talkLast(t, role) { for (var i = t.msgs.length - 1; i >= 0; i--) if (t.msgs[i].role === role) return t.msgs[i].text; return ''; }
+function talkState(t) { return t.speak ? 'speaking' : t.pending ? 'thinking' : t.listen ? 'listening' : t.muted ? 'muted' : 'idle'; }
+var TALK_FADE_MS = 500;
 function talkScreen() {
-  var t = ui.talk, fail = t.failed && !t.pending, exch = t.msgs.some(function (m) { return m.role === 'assistant'; });
-  var body = talkMsgsHtml(t) +
-    (fail ? '<div class="pair"><span class="save" data-a="tkretry">Retry</span><span class="ghost" data-a="tkwords">Use my words</span></div>' : '') +
-    (t.draft ? '<div class="tkd"><p>' + esc(t.draft) + '</p><div class="pair"><span class="save" data-a="tkuse">Use this</span><span class="ghost" data-a="tkkeep">Keep talking</span></div></div>' : '');
-  var mic = St.hasNative ? '<span class="mic' + (t.listen ? ' rec' : '') + '" data-a="tkmic" role="button" aria-label="' + (t.listen ? 'Stop' : 'Voice') + '">' + ic('mic') + '</span>' : '';
-  var bar = '<div class="tkbar"><div class="tkrow"><div class="micw"><input class="inp fill" data-t="tk" aria-label="Message" value="' + esc(t.text) + '">' + mic + '</div><span class="save tksend" data-a="tksend">Send</span></div>' +
-    (exch && !t.draft && !fail ? '<span class="ghost" data-a="tkdone">Done</span>' : '') + '</div>';
-  return phone('p2 tk', '<header class="hd"><div><h2>Talk</h2></div><span class="txtbtn" data-a="tkclose">Close</span></header><div class="tkm">' + body + '</div>', { band: false, tab: false, pin: bar });
+  var t = ui.talk, reply = talkLast(t, 'assistant'), fail = t.failed && !t.pending, st = talkState(t);
+  // Every render rebuilds the DOM, so a fade-in would restart on each one (the speak/listen state changes render right after
+  // the reply lands). A negative animation-delay equal to the time already elapsed lets the rebuilt element carry on.
+  if (reply !== t.shown) { t.shown = reply; t.shownAt = Date.now(); t.resetScroll = true; }
+  var age = Date.now() - t.shownAt, fade = reply && age < TALK_FADE_MS ? ' fresh" style="animation-delay:-' + age + 'ms' : '';
+  var body = '<p class="tkrep' + fade + '">' + esc(reply) + '</p>' + (t.draft ? '<div class="tkd"><p>' + esc(t.draft) + '</p></div>' : '');
+  var x = '<span class="tkb" data-a="tkx" role="button" aria-label="End"><svg class="ic"><path d="M6 6l12 12M18 6L6 18"/></svg></span>';
+  var bar;
+  if (t.draft || fail) {
+    bar = '<div class="tkact">' + (t.draft ? '<span class="save" data-a="tkuse">Use this</span><span class="ghost" data-a="tkkeep">Keep talking</span>' :
+      '<span class="save" data-a="tkretry">Retry</span><span class="ghost" data-a="tkwords">Use my words</span>') + x + '</div>';
+  } else {
+    var ph = t.heard || talkLast(t, 'user'); // the live transcript, then the last sent turn until the next one starts
+    var mic = St.hasNative ? '<span class="tkb tkmic' + (t.listen ? ' rec' : '') + (t.muted ? ' off' : '') + '" data-a="tkmic" role="button" aria-label="Mute">' + ic('mic') + '</span>' : '<span class="tksp"></span>';
+    bar = '<div class="tkpill' + (t.text.trim() ? ' has' : '') + '"><span class="tkph">' + esc(ph) + '</span>' +
+      '<input class="tkin" data-t="tk" aria-label="Message" autocomplete="off" autocapitalize="sentences" value="' + esc(t.text) + '">' +
+      '<span class="tksend" data-a="tksend" role="button" aria-label="Send"><svg class="ic"><path d="M12 19V6M6 12l6-6 6 6"/></svg></span></div>' +
+      '<div class="tkrow">' + mic + '<span class="tkglow" data-a="tkglow" data-state="' + st + '" role="button" aria-label="Talk"></span>' + x + '</div>';
+  }
+  return phone('p2 tk', body, { band: false, tab: false, pin: '<div class="tkbar">' + bar + '</div>' });
+}
+// Best installed English voice: the Premium/Enhanced downloads sound far more natural than the default compact voice.
+function talkPickVoice(list) {
+  var best = null, bs = -1;
+  list.forEach(function (v) {
+    if (!/^en([-_]|$)/i.test(v.lang)) return;
+    var s = (/premium/i.test(v.name) ? 40 : /enhanced/i.test(v.name) ? 30 : 0) + (/^en[-_]US/i.test(v.lang) ? 3 : /^en[-_]GB/i.test(v.lang) ? 2 : 0) + (v.localService ? 1 : 0);
+    if (s > bs) { best = v; bs = s; }
+  });
+  return best;
+}
+// getVoices() is empty until the engine has loaded them (WebKit then fires voiceschanged): wait briefly instead of
+// speaking in the default voice. 800ms is a guess; a device with no voices at all just proceeds without one.
+function talkVoices(ss) {
+  var l = ss.getVoices();
+  if (l.length) return Promise.resolve(l);
+  return new Promise(function (res) {
+    var done = false;
+    function fin() { if (done) return; done = true; ss.removeEventListener('voiceschanged', fin); res(ss.getVoices()); }
+    ss.addEventListener('voiceschanged', fin); setTimeout(fin, 800);
+  });
 }
 // Stops speech and recognition, keeping a just-heard partial transcript as an unsent turn (shown with Retry) so Close,
 // backgrounding or typing never drops it. Awaits speechStop so the native audio session is free before anything else.
-function talkHalt(t) {
+function talkHalt(t, quiet) {
   t = t || ui.talk;
   if (!t) return Promise.resolve();
   clearTimeout(t.silence); t.spk++; t.speak = false;
@@ -1434,7 +1466,8 @@ function talkHalt(t) {
   if (!(ui.rec && ui.rec.field === 'talk')) return Promise.resolve();
   ui.rec = null; t.listen = false;
   var h = (t.heard || '').trim(); t.heard = '';
-  if (h) { t.msgs.push({ role: 'user', text: h }); t.failed = true; talkSave(t); }
+  // `quiet` (typing took over): keep the words but stay on the pill, since Retry/Use my words would replace the field being typed in.
+  if (h) { t.msgs.push({ role: 'user', text: h }); t.failed = !quiet; talkSave(t); }
   if (ui.talk === t) render(); // else the mic stays lit and the live bubble stays on screen after typing or backgrounding
   return St.native.speechStop();
 }
@@ -1490,18 +1523,30 @@ async function talkSpeak(t, text) {
   var id = ++t.spk;
   await St.native.speechStop();
   if (ui.talk !== t || t.spk !== id) return;
+  var voice = talkPickVoice(await talkVoices(ss));
+  if (ui.talk !== t || t.spk !== id) return;
   var u = new SpeechSynthesisUtterance(text), done = false, timer = 0;
+  if (voice) { u.voice = voice; u.lang = voice.lang; }
+  u.rate = 1; // natural pace; the engine default is slower on iOS
   function fin(listen) {
     if (done || ui.talk !== t || t.spk !== id) return;
     done = true; clearTimeout(timer); t.speak = false; render();
-    if (listen) guard(talkListen)();
+    if (listen && !t.muted) guard(talkListen)();
   }
   u.onend = function () { fin(true); };
   u.onerror = function () { fin(false); };
   timer = setTimeout(function () { ss.cancel(); fin(false); }, talkSpeakMs(text));
-  t.speak = true;
+  t.speak = true; render();
   ss.speak(u);
 }
+function talkMic() {
+  var t = ui.talk;
+  if (!t || t.pending) return;
+  if (ui.rec && ui.rec.field === 'talk') { t.muted = true; return talkEndTurn(); }
+  t.muted = false; return talkListen();
+}
+// Leave Talk keeping the conversation saved (X with an answer, a draft or an unsent turn; also a push moving the route).
+async function talkExit(t) { await talkHalt(t); await talkSave(t); talkLeave(t); }
 // Close Talk with `text` appended to the field it was opened from, after a blank line when the field has text.
 async function talkApply(text) {
   var t = ui.talk, f = t.field;
@@ -1519,7 +1564,8 @@ function talkLeave(t) {
 app.addEventListener('input', function (e) {
   if (e.target.getAttribute('data-t') !== 'tk' || !ui.talk) return;
   ui.talk.text = e.target.value;
-  guard(talkHalt)(); // typing takes over from the mic and the voice
+  e.target.parentNode.classList.toggle('has', !!e.target.value.trim()); // shows the send arrow; a re-render here would drop the keyboard
+  guard(talkHalt)(ui.talk, true); // typing takes over from the mic and the voice
 });
 app.addEventListener('keydown', function (e) {
   if (e.key === 'Enter' && e.target.getAttribute && e.target.getAttribute('data-t') === 'tk') { e.preventDefault(); guard(ACT.tksend)(); }
@@ -1655,21 +1701,25 @@ var ACT = {
     render();
     if (St.hasNative && !ui.talk.failed) await talkListen();
   }),
-  tkclose: guard(async function () { var t = ui.talk; await talkHalt(t); await talkSave(t); talkLeave(t); }),
-  tkmic: guard(function () {
-    var t = ui.talk; if (t.pending) return;
-    return t.listen ? talkEndTurn() : talkListen();
+  // Mic and glow: speaking -> cut it and listen; listening -> mute (what was heard is sent, no auto-relisten); muted -> listen.
+  tkmic: guard(function () { return talkMic(); }),
+  tkglow: guard(function () { return talkMic(); }),
+  // X: with an answer, a draft or an unsent turn on screen it just leaves (words stay saved); otherwise with at least one
+  // user turn it asks the model to finish, exactly what Done did; with nothing said it exits.
+  tkx: guard(async function () {
+    var t = ui.talk;
+    if (t.pending || t.draft || t.failed) return talkExit(t);
+    await talkHalt(t);
+    var text = t.text.trim();
+    if (!text && !t.msgs.some(function (m) { return m.role === 'user'; })) return talkExit(t);
+    t.text = ''; return talkSend(text || null, true);
   }),
   tksend: guard(async function () {
     var t = ui.talk, text = t.text.trim(); if (!text || t.pending) return;
     await talkHalt(t); t.text = ''; return talkSend(text, false);
   }),
-  tkdone: guard(async function () {
-    var t = ui.talk; if (t.pending) return;
-    await talkHalt(t); var text = t.text.trim(); t.text = ''; return talkSend(text || null, true);
-  }),
   tkretry: guard(function () { return talkSend(null, ui.talk.finish); }),
-  tkkeep: function () { ui.talk.draft = null; talkSave(ui.talk); render(); if (St.hasNative) guard(talkListen)(); },
+  tkkeep: function () { ui.talk.draft = null; ui.talk.muted = false; talkSave(ui.talk); render(); if (St.hasNative) guard(talkListen)(); },
   tkuse: guard(function () { return talkApply(ui.talk.draft); }),
   tkwords: guard(function () { return talkApply(ui.talk.msgs.filter(function (m) { return m.role === 'user'; }).map(function (m) { return m.text; }).join(' ')); }),
   notifx: function () { ui.notif = false; render(); },
