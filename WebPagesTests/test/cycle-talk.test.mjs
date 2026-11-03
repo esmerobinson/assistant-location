@@ -313,7 +313,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
   });
 
   test('native: typing during the live mic stops the mic', async () => {
-    const { context, page } = await open({ native: true });
+    const { context, page, posts } = await open({ native: true, talk: [ok('should not be asked')] });
     await logFight(page);
     await page.click('[data-a="talk:note"]');
     await page.waitForFunction(() => window.__bridge.includes('speech.start'));
@@ -321,6 +321,10 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await page.type('[data-t="tk"]', 'x');
     await page.waitForFunction(() => window.__bridge.includes('speech.stop'));
     assert.ok(await page.$('[data-a="tkmic"]:not(.rec)'), 'mic no longer recording');
+    // Without the halt the silence timer would still send the heard words 1800ms later; wait it out.
+    await page.waitForTimeout(2300);
+    assert.equal(posts.length, 0, 'typing cancelled the pending voice turn');
+    assert.deepEqual(await bubbles(page), ['me:still talking']);
     await context.close();
   });
 
