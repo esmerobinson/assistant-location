@@ -4,6 +4,7 @@
 
 static NSString *const CycleActivePointer = @"active.txt";
 static const NSTimeInterval CycleWebCheckInterval = 600;
+static const NSTimeInterval CycleFreshOpenWindow = 10;
 
 @interface CycleWebUpdater ()
 @property (nonatomic, strong) NSURL *root;
@@ -85,9 +86,17 @@ static NSNumber *CycleJSONNumber(NSURL *dir, NSString *file, NSString *key) {
 }
 
 - (void)checkIfDue {
+    [self checkIfDueWithCompletion:nil];
+}
+
+- (void)checkIfDueWithCompletion:(void (^)(BOOL))completion {
     if (self.running || (self.lastCheck && -[self.lastCheck timeIntervalSinceNow] < CycleWebCheckInterval)) return;
     self.lastCheck = [NSDate date];
-    [self checkWithCompletion:nil];
+    [self checkWithCompletion:completion];
+}
+
++ (BOOL)shouldReloadAfterActivationWithFreshOpenAt:(NSDate *)freshOpenAt now:(NSDate *)now active:(BOOL)active {
+    return active && freshOpenAt && [now timeIntervalSinceDate:freshOpenAt] <= CycleFreshOpenWindow;
 }
 
 - (void)checkWithCompletion:(void (^)(BOOL))completion {
@@ -108,8 +117,13 @@ static NSError *CycleUpdateError(NSString *message) {
 }
 
 /// Synchronous GET (the caller is already on a background queue).
-- (NSData *)fetch:(NSString *)path error:(NSError **)error {
+- (NSData *)fetch:(NSString *)path query:(NSString *)query error:(NSError **)error {
     NSURL *url = [self.boxURL URLByAppendingPathComponent:path];
+    if (query) {
+        NSURLComponents *parts = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+        parts.query = query;
+        url = parts.URL;
+    }
     __block NSData *body = nil; __block NSError *err = nil;
     dispatch_semaphore_t done = dispatch_semaphore_create(0);
     [[self.session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *e) {
@@ -133,7 +147,10 @@ static NSString *CycleSHA256(NSData *data) {
 }
 
 - (BOOL)update:(NSError **)error {
-    NSData *raw = [self fetch:@"app/manifest.json" error:error];
+    // The loaded version rides on the manifest GET so phone checks are distinguishable in the box log.
+    NSURL *loaded = [CycleWebUpdater pageDirectoryWithRoot:self.root bundleDirectory:self.bundle shellVersion:self.shellVersion];
+    NSString *query = [NSString stringWithFormat:@"have=%@&shell=%ld", CycleJSONNumber(loaded, @"version.json", @"version"), (long)self.shellVersion];
+    NSData *raw = [self fetch:@"app/manifest.json" query:query error:error];
     if (!raw) return NO;
     NSDictionary *manifest = [NSJSONSerialization JSONObjectWithData:raw options:0 error:NULL];
     NSNumber *version = [manifest isKindOfClass:NSDictionary.class] ? manifest[@"version"] : nil;
@@ -171,7 +188,7 @@ static NSString *CycleSHA256(NSData *data) {
             if (local && [CycleSHA256(local) isEqualToString:want]) { data = local; break; }
         }
         if (!data) {
-            data = [self fetch:[@"app/" stringByAppendingString:rel] error:error];
+            data = [self fetch:[@"app/" stringByAppendingString:rel] query:nil error:error];
             if (!data) return NO;
             if (![CycleSHA256(data) isEqualToString:want]) {
                 if (error) *error = CycleUpdateError([NSString stringWithFormat:@"hash mismatch for %@", rel]);
@@ -194,7 +211,7 @@ static NSString *CycleSHA256(NSData *data) {
     [fm removeItemAtURL:live error:NULL];
     if (![fm moveItemAtURL:staging toURL:live error:error]) return NO;
     if (![name writeToURL:[self.root URLByAppendingPathComponent:CycleActivePointer] atomically:YES encoding:NSUTF8StringEncoding error:error]) return NO;
-    NSLog(@"[Cycle] web copy %@ activated; used from the next launch", version);
+    NSLog(@"[Cycle] web copy %@ activated; used from the next cold load or long-absence return", version);
     return YES;
 }
 

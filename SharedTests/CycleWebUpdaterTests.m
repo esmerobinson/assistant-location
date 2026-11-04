@@ -7,15 +7,16 @@
 @interface CycleBoxStub : NSURLProtocol
 @end
 
-static NSMutableDictionary *routes_; static NSMutableArray *requests_;
+static NSMutableDictionary *routes_; static NSMutableArray *requests_; static NSMutableArray *queries_;
 
 @implementation CycleBoxStub
 + (BOOL)canInitWithRequest:(NSURLRequest *)request { return YES; }
 + (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
 - (void)startLoading {
     NSString *path = self.request.URL.path;
-    @synchronized (CycleBoxStub.class) { [requests_ addObject:path]; }
+    @synchronized (CycleBoxStub.class) { [requests_ addObject:path]; [queries_ addObject:self.request.URL.query ?: @""]; }
     id route = routes_[path];
+    if ([route isKindOfClass:NSNull.class]) return; // hangs: only the session's timeout ends it
     if ([route isKindOfClass:NSError.class]) { [self.client URLProtocol:self didFailWithError:route]; return; }
     NSInteger status = route ? 200 : 404;
     NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:status HTTPVersion:@"HTTP/1.1" headerFields:nil];
@@ -62,6 +63,7 @@ static NSData *Bytes(NSString *s) { return [s dataUsingEncoding:NSUTF8StringEnco
                    @"version.json": @"{\"version\":100}", @"shell.json": @"{\"minShell\":1}" } into:self.bundle];
     routes_ = [NSMutableDictionary dictionary];
     requests_ = [NSMutableArray array];
+    queries_ = [NSMutableArray array];
     NSURLSessionConfiguration *config = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     config.protocolClasses = @[CycleBoxStub.class];
     self.session = [NSURLSession sessionWithConfiguration:config];
@@ -204,6 +206,34 @@ static NSData *Bytes(NSString *s) { return [s dataUsingEncoding:NSUTF8StringEnco
 - (void)testBoxURLParsedFromConfigJs {
     XCTAssertEqualObjects([CycleWebUpdater boxURLFromConfigAtURL:[self.bundle URLByAppendingPathComponent:@"config.js"]].absoluteString, @"http://box.test/cycle");
     XCTAssertNil([CycleWebUpdater boxURLFromConfigAtURL:[self.bundle URLByAppendingPathComponent:@"missing.js"]]);
+}
+
+- (void)testHungFetchTimesOutAndDoesNotBlockTheNextCheck {
+    NSURLSessionConfiguration *config = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+    config.protocolClasses = @[CycleBoxStub.class];
+    config.timeoutIntervalForRequest = 1;
+    self.session = [NSURLSession sessionWithConfiguration:config];
+    routes_[@"/cycle/app/manifest.json"] = NSNull.null;
+    CycleWebUpdater *updater = [self updaterWithShell:1];
+    XCTAssertFalse([self runCheck:updater], @"the hung request must complete, not activate");
+    [self publishVersion:200 minShell:1 files:[self threeFiles] tamper:@[]];
+    XCTAssertTrue([self runCheck:updater], @"a later check must issue a new request; requests: %@", requests_);
+    XCTAssertEqualObjects([self pageDir:1].lastPathComponent, @"v200");
+}
+
+- (void)testManifestRequestCarriesLoadedVersionAndShell {
+    [self publishVersion:200 minShell:1 files:[self threeFiles] tamper:@[]];
+    [self runCheck:[self updaterWithShell:1]];
+    XCTAssertEqualObjects(queries_.firstObject, @"have=100&shell=1");
+    XCTAssertEqualObjects(requests_.firstObject, @"/cycle/app/manifest.json");
+}
+
+- (void)testReloadAfterActivationOnlyRightAfterAnOpenWhileActive {
+    NSDate *now = [NSDate date];
+    XCTAssertTrue([CycleWebUpdater shouldReloadAfterActivationWithFreshOpenAt:[now dateByAddingTimeInterval:-3] now:now active:YES]);
+    XCTAssertFalse([CycleWebUpdater shouldReloadAfterActivationWithFreshOpenAt:[now dateByAddingTimeInterval:-30] now:now active:YES], @"mid-session");
+    XCTAssertFalse([CycleWebUpdater shouldReloadAfterActivationWithFreshOpenAt:[now dateByAddingTimeInterval:-3] now:now active:NO], @"backgrounded");
+    XCTAssertFalse([CycleWebUpdater shouldReloadAfterActivationWithFreshOpenAt:nil now:now active:YES]);
 }
 
 @end

@@ -23,6 +23,13 @@
 /// Runs `check` unless one ran in the last 10 minutes or is in flight. Main thread.
 - (void)checkIfDue;
 
+/// Like `checkIfDue`, with `completion` (main queue, only when a check actually ran) reporting whether a new copy was activated.
+- (void)checkIfDueWithCompletion:(void (^)(BOOL activated))completion;
+
+/// Whether a just-activated copy should replace the page on screen: only while the app is active and
+/// within a few seconds of a launch or long-absence return (`freshOpenAt`), never mid-session.
++ (BOOL)shouldReloadAfterActivationWithFreshOpenAt:(NSDate *)freshOpenAt now:(NSDate *)now active:(BOOL)active;
+
 /// Fetches the manifest and, when it is newer and compatible, downloads, verifies and swaps in the new
 /// copy. Network and verification failures are logged and leave the active copy untouched. Runs on a
 /// background queue; `completion` (optional, main queue) reports whether a new copy was activated.

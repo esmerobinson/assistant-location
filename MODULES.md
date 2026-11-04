@@ -114,7 +114,7 @@ fetches `<boxUrl>/app/manifest.json` (`{version, minShell, files: {path: sha256}
 (committed `CycleApp/web/shell.json`) is <= the app's `CycleShellVersion` (Info.plist; bump it with any bridge change that new web code
 needs) is downloaded into `Application Support/web-ota/staging` (unchanged files reused from the active copy or bundle, each sha256
 checked, bundled `config.js` copied in), moved to `v<version>/` and activated by an atomic `active.txt` write. Any failure leaves the
-previous copy active. The page loads the newer of bundle and active copy at `viewDidLoad` only, never mid-session. Data is unaffected:
+previous copy active. The page loads the newer of bundle and active copy at `viewDidLoad` and on a 15+ min absence return, and reloads once more when a copy finishes activating within 10 s of either (app still active); never otherwise mid-session. Each request has a 15 s timeout (60 s resource) so a hung fetch cannot block later checks, and the manifest GET carries `?have=<loaded version>&shell=<n>` so phone checks show in the box log. Data is unaffected:
 the page's store goes through the native bridge, not `localStorage` (only the no-bridge dev fallback uses it).
 Layout rules and the layout sweep test: `CycleApp/web/LAYOUT.md`.
 (Finances held slot 50 — the first visible tab — until Esme took it over;

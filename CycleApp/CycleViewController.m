@@ -15,6 +15,7 @@
 @property (nonatomic, strong) NSURL *webRoot, *bundleWeb, *loadedWeb; // downloaded copies, bundle floor, folder on screen
 @property (nonatomic, assign) NSInteger shellVersion;
 @property (nonatomic, strong) NSDate *backgroundedAt;
+@property (nonatomic, strong) NSDate *freshOpenAt; // launch or long-absence return: a copy activated soon after is shown at once
 // Face ID lock. The cover hides the page (and the app-switcher snapshot) until auth succeeds.
 @property (nonatomic, strong) UIView *cover;
 @property (nonatomic, assign) BOOL needsAuth;          // YES until the first successful evaluation on this install
@@ -112,10 +113,15 @@
     [CycleWebUpdater pruneRoot:root keepingDirectory:pageDir];
     NSURL *boxURL = [CycleWebUpdater boxURLFromConfigAtURL:[bundleWeb URLByAppendingPathComponent:@"config.js"]];
     if (boxURL) {
-        self.updater = [[CycleWebUpdater alloc] initWithRoot:root bundleDirectory:bundleWeb boxURL:boxURL shellVersion:shell session:NSURLSession.sharedSession];
-        [self.updater checkIfDue];
+        // Bounded so a hung request always completes and never blocks later checks.
+        NSURLSessionConfiguration *config = NSURLSessionConfiguration.defaultSessionConfiguration;
+        config.timeoutIntervalForRequest = 15;
+        config.timeoutIntervalForResource = 60;
+        self.updater = [[CycleWebUpdater alloc] initWithRoot:root bundleDirectory:bundleWeb boxURL:boxURL shellVersion:shell session:[NSURLSession sessionWithConfiguration:config]];
     }
     self.webRoot = root; self.bundleWeb = bundleWeb; self.shellVersion = shell;
+    self.freshOpenAt = [NSDate date];
+    [self checkForNewWeb];
     [self loadWebFrom:pageDir];
 }
 
@@ -126,11 +132,22 @@
     [self.webView loadFileURL:page allowingReadAccessToURL:pageDir];
 }
 
+- (void)checkForNewWeb {
+    [self.updater checkIfDueWithCompletion:^(BOOL activated) {
+        BOOL active = UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
+        if (!activated || ![CycleWebUpdater shouldReloadAfterActivationWithFreshOpenAt:self.freshOpenAt now:[NSDate date] active:active]) return;
+        NSURL *pageDir = [CycleWebUpdater pageDirectoryWithRoot:self.webRoot bundleDirectory:self.bundleWeb shellVersion:self.shellVersion];
+        NSLog(@"[Cycle] web copy activated right after opening; reloading from %@", pageDir.lastPathComponent);
+        [self loadWebFrom:pageDir];
+    }];
+}
+
 // After 15+ minutes in the background nothing is mid-edit, so a newer downloaded copy is swapped in.
 - (void)reloadIfNewerWebAfterLongAbsence {
     NSDate *away = self.backgroundedAt;
     self.backgroundedAt = nil;
     if (!away || -[away timeIntervalSinceNow] < 15 * 60) return;
+    self.freshOpenAt = [NSDate date];
     NSURL *pageDir = [CycleWebUpdater pageDirectoryWithRoot:self.webRoot bundleDirectory:self.bundleWeb shellVersion:self.shellVersion];
     if ([pageDir isEqual:self.loadedWeb]) return;
     NSLog(@"[Cycle] newer web copy after %.0f min away; reloading from %@", -[away timeIntervalSinceNow] / 60, pageDir.lastPathComponent);
@@ -175,7 +192,7 @@
 
 - (void)appDidBecomeActive {
     [self reloadIfNewerWebAfterLongAbsence];
-    [self.updater checkIfDue];
+    [self checkForNewWeb];
     if (self.evaluating) return;
     if (!self.needsAuth) { self.cover.hidden = YES; return; }
     self.cover.hidden = NO;
