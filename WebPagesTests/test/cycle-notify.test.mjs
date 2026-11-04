@@ -142,8 +142,8 @@ describe('webkit', { skip: !haveWebkit }, () => {
     assert.equal(await page.textContent('.hd h2'), 'Fight');
     await page.fill('textarea[data-d="more"]', 'It was the dishes');
     await page.click('[data-a="notesave"]');
-    const cancelled = (await waitCalls(page, 'notify.cancel', 3)).map((a) => a.id);
-    assert.deepEqual(ns.map((n) => n.id).filter((x) => !cancelled.includes(x)), []);
+    // Wait for these ids, not a count: a launch also cancels the old build's leftover ids (-3 and up) once.
+    await page.waitForFunction((o) => o.every((x) => window.__calls.some((c) => c.cmd === 'notify.cancel' && c.args.id === x)), ns.map((n) => n.id));
     await context.close();
   });
 
@@ -153,8 +153,29 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await page.waitForFunction(() => window.__calls.filter((x) => x.cmd === 'notify.schedule' && x.args.id.startsWith('fnote-')).length >= 3);
     const ns = await fnotes(page);
     await page.evaluate(() => { const S = CycleStore.S; delete S.rows.fight_markers[S.priv.fights[0].id]; CycleStore.reschedule(); });
-    const cancelled = (await waitCalls(page, 'notify.cancel', 3)).map((a) => a.id);
-    assert.deepEqual(ns.map((n) => n.id).filter((x) => !cancelled.includes(x)), []);
+    // Wait for these ids, not a count: a launch also cancels the old build's leftover ids (-3 and up) once.
+    await page.waitForFunction((o) => o.every((x) => window.__calls.some((c) => c.cmd === 'notify.cancel' && c.args.id === x)), ns.map((n) => n.id));
+    await context.close();
+  });
+
+  test('after an update, a launch cancels the 2-hourly asks the old build left scheduled (ids past -2)', async () => {
+    const { context, page } = await open();
+    await logFight(page);
+    await page.waitForFunction(() => window.__calls.some((x) => x.cmd === 'notify.schedule' && x.args.id.startsWith('fnote-')));
+    // Backdate the log 14h, as for the fight logged at 00:06 whose old-build asks were still firing at 14:36, then relaunch.
+    const id = await page.evaluate(() => {
+      const p = JSON.parse(localStorage.getItem('cycle:priv.u-me'));
+      p.fights[0].logged_at = Date.now() - 14 * 3600000;
+      localStorage.setItem('cycle:priv.u-me', JSON.stringify(p));
+      return p.fights[0].id;
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.tabbar, [data-a^="tab:"]');
+    // Old build: k = 7 was the 14:36 ask, 8..12 the ones it had topped up after it.
+    const old = [3, 7, 8, 12].map((k) => 'fnote-' + id + '-' + k);
+    await page.waitForFunction((o) => o.every((x) => window.__calls.some((c) => c.cmd === 'notify.cancel' && c.args.id === x)), old);
+    const kept = (await fnotes(page)).map((n) => n.id);
+    assert.ok(kept.every((x) => /-[012]$/.test(x)), 'new policy still schedules only ids -0..-2: ' + kept);
     await context.close();
   });
 

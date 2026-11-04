@@ -528,7 +528,21 @@ var CycleStore = (function () {
   // Everything the shell must have scheduled is derived from state on every change; ids that
   // were scheduled before but are no longer wanted are cancelled. Native replaces a re-used id.
   // 'checkin' is the id an older build scheduled; it is not wanted, so the first reschedule cancels it.
-  var scheduledIds = ['checkin'], reschedTimer = 0, scheduleFailed = {};
+  var scheduledIds = ['checkin'], reschedTimer = 0, scheduleFailed = {}, legacySwept = {};
+  // The pre-2026-11-04 build asked about a note every 2 hours and gave each ask the id fnote-<fight>-<k>, k counting every
+  // 2-hour slot since logging (night slots included), so ids ran well past the 0..2 the 3-ask policy uses. scheduledIds
+  // lives in memory only, so those ids are unknown after an update and would keep firing every 2 hours (Oliver got one at
+  // 14:36 for a fight logged at 00:06). Once per fight per launch, every id the old build could have used is marked as
+  // scheduled so rescheduleNow cancels whichever are not wanted. Cancelling an id iOS never had is a no-op.
+  function sweepLegacyFightNotes(now) {
+    (S.priv ? S.priv.fights : []).forEach(function (f) {
+      if (!f.logged_at || legacySwept[f.id]) return;
+      legacySwept[f.id] = true;
+      // The old build topped up 6 asks ahead of now, so k reached (elapsed slots) + 6 plus the skipped night slots; +12 covers that.
+      var maxK = Math.ceil((now - f.logged_at) / (2 * 3600000)) + 12;
+      for (var k = 3; k <= maxK; k++) scheduledIds.push('fnote-' + f.id + '-' + k);
+    });
+  }
   function reschedule() { clearTimeout(reschedTimer); reschedTimer = setTimeout(rescheduleNow, 200); }
   function wanted() {
     var out = [], m = myMember(), now = Date.now();
@@ -594,6 +608,7 @@ var CycleStore = (function () {
   async function rescheduleNow() {
     if (!hasNative || !S.session) return;
     var w = wanted(), ids = w.map(function (x) { return x.id; }), fresh = false;
+    sweepLegacyFightNotes(Date.now());
     for (var i = 0; i < scheduledIds.length; i++) if (ids.indexOf(scheduledIds[i]) < 0) await native.cancel(scheduledIds[i]);
     for (var j = 0; j < w.length; j++) {
       // A time that slipped into the past between wanted() and the bridge call is simply not scheduled; any other rejection is real.
