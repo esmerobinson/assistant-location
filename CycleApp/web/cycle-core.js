@@ -534,6 +534,19 @@ var CycleCore = (function () {
     return out;
   }
 
+  // Home "To do" list: my open to-dos (due or not; never the partner's, done, deleted or not yet delivered), the needs-you cards and the
+  // week-close card, in one order: overdue, due today, needs-you cards (their own order), other dated to-dos by date, undated.
+  // s: {me, now, today, todos, cards, week}. Returns [{kind:'todo', todo} | {kind:'card', card}].
+  function homeList(s) {
+    var mine = s.todos.filter(function (t) { return t.owner_id === s.me && !t.deleted_at && !t.done_at && !t.declined_at && !isScheduled(t, s.now); })
+      .sort(function (a, b) { return a.due_date && b.due_date ? (a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0) : a.due_date ? -1 : b.due_date ? 1 : 0; });
+    var tdo = function (t) { return { kind: 'todo', todo: t }; };
+    var hot = mine.filter(function (t) { return t.due_date && t.due_date <= s.today; });
+    var rest = mine.filter(function (t) { return !(t.due_date && t.due_date <= s.today); });
+    var cards = s.cards.concat(s.week ? [s.week] : []).map(function (c) { return { kind: 'card', card: c }; });
+    return hot.map(tdo).concat(cards, rest.map(tdo));
+  }
+
   // What the Opus evaluation says my account is missing ("" when nothing to show). o: {me, marker, notes (live)}.
   // Hidden once the fight is repaired or deleted, and while my newest note is newer than the evaluation (it has not seen it).
   function fightGap(o) {
@@ -578,7 +591,7 @@ var CycleCore = (function () {
     zonedMs: zonedMs, deliverAt: deliverAt, issueHeldUntil: issueHeldUntil, sectionNudges: sectionNudges,
     addMonths: addMonths, splitPayout: splitPayout, awardStatus: awardStatus,
     earnPts: earnPts, missPts: missPts, periodOf: periodOf, habitCount: habitCount, habitMisses: habitMisses, requireNote: requireNote, isEdited: isEdited,
-    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, needsYou: needsYou, calmStats: calmStats, inEditWindow: inEditWindow, monthGrid: monthGrid, chartValue: chartValue, dailyTotals: dailyTotals, rollingAvg: rollingAvg, niceAxis: niceAxis, fightActions: fightActions, fightGap: fightGap,
+    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, needsYou: needsYou, homeList: homeList, calmStats: calmStats, inEditWindow: inEditWindow, monthGrid: monthGrid, chartValue: chartValue, dailyTotals: dailyTotals, rollingAvg: rollingAvg, niceAxis: niceAxis, fightActions: fightActions, fightGap: fightGap,
     // Only a still-held item may offer Send / Edit / Drop; a stale notification can point at a delivered or dropped one.
     isStillHeld: function (i) { return !!i && i.status === 'held' && !i.deleted_at; }
   };

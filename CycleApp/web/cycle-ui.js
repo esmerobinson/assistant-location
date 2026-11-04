@@ -281,11 +281,7 @@ function calm() {
 }
 function addRow(label, a) { return '<div class="row r2" data-a="' + a + '"><p class="lb">' + label + '</p><p class="mt">' + ic('plus', 'sm') + '</p></div>'; }
 
-SCREEN.home = function () {
-  var t = today();
-  var cards = C.needsYou({ me: St.me(), now: now(), tz: tz(), items: L('items'), redemptions: L('redemptions'), members: S.members,
-    nudge_sends: L('nudge_sends'), nudge_replies: L('nudge_replies'), fight_markers: L('fight_markers'), fight_notes: L('fight_notes'), todos: L('todos'), seen: S.priv.ownupSeen, since: S.priv.ownupSince });
-  var html = cards.map(function (n) {
+function needCard(n) {
     if (n.type === 'ready') {
       return '<div class="nc pk" data-a="still:' + n.item.id + '"><div class="mid"><p class="s">Still send? &middot; ' + n.count + ' ready</p><p class="x">' + esc(itemTitle(n.item)) + '</p></div><span class="go">Send</span></div>';
     }
@@ -306,25 +302,30 @@ SCREEN.home = function () {
     if (n.type === 'nudge') {
       return '<div class="nc" data-a="nudgein:' + n.send.id + '"><div class="mid"><p class="s">From ' + pnx(nameOf(n.send.sender_id)) + '</p><p class="x">' + esc(n.send.body) + '</p></div>' + ic('chevr', 'chv') + '</div>';
     }
+    if (n.type === 'week') return '<div class="nc" data-a="go:week"><div class="mid"><p class="x">Week</p><p class="s">' + sg(n.net) + '</p></div>' + ic('chevr', 'chv') + '</div>';
     // n.type === 'reply': a reply from the other person on one of the nudge threads.
     return '<div class="nc" data-a="replyopen:' + n.reply.send_id + '"><div class="mid"><p class="s">Reply from ' + pnx(nameOf(n.reply.author_id)) + '</p><p class="x">' + esc(n.reply.body) + '</p></div>' + ic('chevr', 'chv') + '</div>';
-  }).join('');
+}
+
+SCREEN.home = function () {
+  var t = today();
+  var cards = C.needsYou({ me: St.me(), now: now(), tz: tz(), items: L('items'), redemptions: L('redemptions'), members: S.members,
+    nudge_sends: L('nudge_sends'), nudge_replies: L('nudge_replies'), fight_markers: L('fight_markers'), fight_notes: L('fight_notes'), todos: L('todos'), seen: S.priv.ownupSeen, since: S.priv.ownupSince });
   // Week close appears from Sunday until acknowledged.
-  var led = ledger();
-  if (C.dow(t) === 6 && prefs().weekSeen !== led.current.start) {
-    html += '<div class="nc" data-a="go:week"><div class="mid"><p class="x">Week</p><p class="s">' + sg(led.current.net) + '</p></div>' + ic('chevr', 'chv') + '</div>';
-  }
-  // Only your own late and due-today to dos: the partner's are theirs to act on, and stay on the To-dos tab.
-  var dueCards = urgentFirst(myTodos().filter(function (x) {
-    return !closed(x) && x.due_date && x.due_date <= t;
-  })).map(function (x) {
-    var d = dueOf(x.due_date);
-    return '<div class="nc dc" data-a="tview:' + x.id + '"><div class="mid"><p class="s ' + d.state + '">' + d.text + '</p><p class="x">' + esc(x.title) + '</p></div>' + ic('chevr', 'chv') + '</div>';
+  var led = ledger(), week = null;
+  if (C.dow(t) === 6 && prefs().weekSeen !== led.current.start) week = { type: 'week', net: led.current.net };
+  var list = C.homeList({ me: St.me(), now: now(), today: t, todos: L('todos'), cards: cards, week: week });
+  var html = list.map(function (e) {
+    if (e.kind === 'card') return needCard(e.card);
+    var x = e.todo, d = x.due_date ? dueOf(x.due_date) : null;
+    return '<div class="nc' + (d && d.state ? ' dc' : '') + '" data-a="tview:' + x.id + '"><div class="mid"><p class="s ' + (d ? d.state : '') + '">' + (d ? d.text : 'To-do') + '</p><p class="x">' + esc(x.title) + '</p></div>' + ic('chevr', 'chv') + '</div>';
   }).join('');
-  var k = calm();
-  return phone('pts', '<header class="hd"><div class="ttl"><span class="mark"><svg><use href="#arwh"/></svg></span><div><h2>Home</h2><p class="dl">' + fmtDay(t) + '</p></div></div><span class="gear" data-a="go:more">' + ic('cog') + '</span></header>' +
-    '<div class="nd"><p class="lab">Needs you</p>' + (html || '<p class="empty">None</p>') + '</div>' + (dueCards ? '<div class="nd"><p class="lab">Due</p>' + dueCards + '</div>' : '') +
-    '<div class="nd"><div class="nc mom" data-a="tab:progress"><div class="mid"><p class="s">Calm streak</p><p class="x">' + k.streak + (k.streak === 1 ? ' day' : ' days') + '</p></div>' + ic('chevr', 'chv') + '</div></div>',
+  var k = calm(), fr = fightRecs(), ph = C.phase(fr, now(), tz(), 14);
+  var tiles = '<div class="tiles"><div class="tile2 big" data-a="tab:progress"><p class="s">Calm streak</p><span class="v">' + k.streak + ' <span class="u">' + (k.streak === 1 ? 'day' : 'days') + '</span></span></div>' +
+    '<div class="tile2" data-a="tab:progress"><p class="s">Phase</p>' + (ph ? '<p class="v">' + ph.name + '</p><p class="u mu">Day ' + ph.day + ' of ~' + Math.round(ph.len) + '</p><div class="bar"><i style="width:' + Math.min(100, Math.round(100 * ph.day / ph.len)) + '%"></i></div>' : '<p class="v">None</p>') + '</div>' +
+    '<div class="tile2" data-a="tab:progress"><p class="s">This week</p><p class="v">' + sg(led.current.net) + '</p><p class="u mu">Balance ' + led.balance + '</p></div></div>';
+  return phone('pts', '<header class="hd"><div class="ttl"><span class="mark"><svg><use href="#arwh"/></svg></span><div><h2>Home</h2><p class="dl">' + fmtDay(t) + '</p></div></div><span class="gear" data-a="go:more">' + ic('cog') + '</span></header>' + tiles +
+    '<div class="nd"><p class="lab">To do' + (list.length ? ' <em>&middot; ' + list.length + '</em>' : '') + '</p>' + (html || '<p class="empty">None</p>') + '</div>',
     // How to add must be obvious on opening, so the three adders sit outside the scroller, pinned above the tab bar at any list length.
     { pin: '<div class="rows pin">' + addRow('Log fight', 'go:fight') + addRow('To-do', 'newtodo:task') + addRow('Reminder', 'nudgenew') + '</div>' });
 };

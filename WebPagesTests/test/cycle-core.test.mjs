@@ -895,3 +895,18 @@ test('fightGap: shows with no note of mine (even a newer partner note), is the s
   assert.equal(C.fightGap({ me: 'u-me', marker: gm({ repaired_at: T_OLD }), notes: [] }), '');
   assert.equal(C.fightGap({ me: 'u-me', marker: gm({ summary_notes_at: null }), notes: [gn('u-me')] }), '');
 });
+
+test('homeList: own open to-dos incl. undated; no partner, done, deleted or scheduled; overdue, due today, cards, dated, undated', () => {
+  const now = at('2026-10-20', 12), today = '2026-10-20';
+  const td = (id, o = {}) => ({ id, title: id, owner_id: ME, due_date: null, created_at: iso('2026-10-01', 9), ...o });
+  const todos = [
+    td('undated'), td('later', { due_date: '2026-10-25' }), td('soon', { due_date: '2026-10-22' }), td('now', { due_date: today }),
+    td('late', { due_date: '2026-10-18' }), td('theirs', { owner_id: YOU, due_date: '2026-10-18' }), td('done', { done_at: iso('2026-10-19', 9) }),
+    td('declined', { declined_at: iso('2026-10-19', 9) }), td('gone', { deleted_at: iso('2026-10-19', 9) }), td('sched', { created_at: iso('2026-10-25', 9) }),
+  ];
+  const cards = [{ type: 'approve', redemption: { id: 'r1' } }, { type: 'nudge', send: { id: 's1' } }];
+  const out = C.homeList({ me: ME, now, today, todos, cards, week: { type: 'week', net: 5 } })
+    .map((e) => (e.kind === 'todo' ? e.todo.id : e.card.type));
+  assert.deepEqual(out, ['late', 'now', 'approve', 'nudge', 'week', 'soon', 'later', 'undated']);
+  assert.deepEqual(C.homeList({ me: ME, now, today, todos: [], cards: [], week: null }), []);
+});
