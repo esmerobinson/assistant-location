@@ -2320,6 +2320,29 @@ function applyRoute(r, synced) {
   else if (r === 'acks') tab('home');
   else throw new Error('unknown route ' + r);
 }
+// Hold menu on a recording dictation mic (voice-hold.js, the one gesture every app's mics share): holding the mic while it
+// listens pops Cancel / Insert. Insert stops and keeps what was heard, which is what a tap does here too, since these mics
+// fill their box and never send. Cancel stops and puts the box back to what it held before the mic started (ui.rec.base),
+// so a dictation that came out wrong costs nothing. The Talk screen's mic (.tkmic) is a turn-taking control, not
+// dictation, and is not matched by '.mic.rec'.
+VoiceHold.init({
+  mic: '.mic.rec',
+  key: function (el) { return el.getAttribute('data-a'); },
+  actions: function (a) {
+    var f = a.slice(4); // 'mic:<field>'
+    // Asked again at release: a recording that already ended (final transcript, field gone) has nothing to cancel.
+    if (!ui.rec || ui.rec.field !== f) return null;
+    return {
+      insert: guard(function () { return stopRec().then(render); }),
+      cancel: guard(function () {
+        var base = ui.rec.base, el = document.querySelector('[data-d="' + f + '"]');
+        ui.d[f] = base; if (el) el.value = base; saveDraft(draftKey()); if (f === 'more') noteSaveSync();
+        // stopRec clears ui.rec first, so a late partial or final transcript from the shell is dropped (cycleNative.speech).
+        return stopRec().then(render);
+      })
+    };
+  }
+});
 window.cycleNative = {
   route: function (r) { if (ui.ready) guard(applyRoute)(r); else routeQ.push(r); },
   ready: function () { while (ui.ready && routeQ.length) guard(applyRoute)(routeQ.shift()); },

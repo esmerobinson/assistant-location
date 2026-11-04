@@ -376,6 +376,12 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .mic .ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .mic.rec{background:#ff2e88;color:#0a0a0a;animation:micpulse 1.2s ease-in-out infinite}
 @keyframes micpulse{50%{box-shadow:0 0 0 8px rgba(255,46,136,.28)}}
+/* A press on the mic can become the hold menu (voice-hold.js): it must not scroll, select text or raise the iOS callout. */
+.mic{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+/* The hold menu's targets live on <body>, outside .phone where --pk is set, so its colours are spelled out here. */
+.vhold-t{background:#ff2e88;color:#0a0a0a;font-family:"Space Grotesk",sans-serif;font-weight:700;letter-spacing:.04em}
+.vhold-t[data-t=cancel]{background:#1a1a1a;color:#fff;border:2px solid #3a3a3a}
+.vhold-t[data-t=cancel].armed{background:#ff3b30;color:#fff;border-color:transparent}
 .cdet .rule[data-a]{cursor:pointer}
 
 /* ---- Job tabs: Home / To-dos / Fights / Progress ---- */
