@@ -93,6 +93,9 @@ describe('actions tab (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_W
     const todos = [td('late', { due_date: T.yesterday }), td('old', { done_at: '2026-10-19T12:00:00Z' }), td('hers', { owner_id: HER, done_at: '2026-10-20T12:00:00Z' })];
     const { context, page } = await open(seed({ todos }));
     let s = await sections(page);
+    assert.deepEqual(s[1], ['Done · 2', [], false], 'Done starts collapsed: label and count only');
+    await page.click('[data-a="doneopen"]');
+    s = await sections(page);
     assert.deepEqual(s[1], ['Done · 2', ['hers', 'old'], false]);
     await page.click('[data-a="done:late"]');
     await page.waitForFunction(() => !document.querySelector('.td .list [data-todo="late"]'));
@@ -104,12 +107,16 @@ describe('actions tab (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_W
     await context.close();
   });
 
-  test('Done shows 10 rows and an All toggle shows the rest', async () => {
+  test('Done is collapsed until its label is tapped; open it shows 10 rows and an All toggle shows the rest', async () => {
     const todos = Array.from({ length: 12 }, (_, i) => td('d' + i, { done_at: '2026-10-' + String(10 + i).padStart(2, '0') + 'T12:00:00Z' }));
     const { context, page } = await open(seed({ todos }));
+    assert.equal(await page.$('[data-a="doneall"]'), null, 'no All toggle while Done is collapsed');
+    await page.click('[data-a="doneopen"]');
     assert.equal((await sections(page))[1][1].length, 10);
     await page.click('[data-a="doneall"]');
     assert.equal((await sections(page))[1][1].length, 12);
+    await page.click('[data-a="doneopen"]');
+    assert.deepEqual((await sections(page))[1][1], [], 'tapping Done again collapses it');
     await context.close();
   });
 

@@ -20,7 +20,9 @@ var ui = {
   mode: 'create', code: null,
   // todoSeg: the To-dos tab's segment ('todo' | 'rem'); remView: which Reminders list shows; fz: the Fights chart's zoomed day range
   // {a, b} (null = everything); fpick: the day whose tooltip shows; notesOpen: the fight id whose collapsed notes list is open.
-  todoSeg: 'todo', remView: 'lib', fz: null, fpick: null, notesOpen: null,
+  // doneOpen: the To-dos Done section is expanded. Starts false on every launch so Open is all the tab shows; kept in memory only,
+  // since remembering an open Done would bring back the long list this exists to hide.
+  todoSeg: 'todo', remView: 'lib', fz: null, fpick: null, notesOpen: null, doneOpen: false,
   ntier: 'esme', tip: false, nid: null, nedit: null, nfor: 'esme', sendId: null
 };
 // Minutes after submitting during which the author can still fix a to-do or a delivered ask, (the owner still sees Edited on the row).
@@ -393,9 +395,12 @@ SCREEN.todo = function () {
     return '<div class="td-row"><span class="om"></span><div class="tx"><p>' + esc(q.body) + '</p>' + tdDesc(q) + '<small>Queued</small><span class="tts"><span class="tt">' + pn() + '</span></span></div></div>';
   }).join('') + theirs.map(row).join('');
   var done = L('todos').filter(function (x) { return !x.deleted_at && x.done_at; }).sort(function (a, b) { return C.ms(b.done_at) - C.ms(a.done_at); });
-  var doneHtml = done.length ? section('Done &middot; ' + done.length, done.slice(0, ui.doneAll ? done.length : DONE_SHOWN).map(function (x) {
+  // Done is collapsed by default: only its label and count show, and tapping the label toggles the rows (and the
+  // All / Fewer row past DONE_SHOWN). The chevron points right when closed, down when open.
+  var doneRows = !ui.doneOpen ? '' : done.slice(0, ui.doneAll ? done.length : DONE_SHOWN).map(function (x) {
     return '<div class="td-row dn" data-a="tview:' + x.id + '"><span class="om"></span><div class="tx"><p>' + esc(x.title) + '</p>' + tags(x) + '</div><span class="hv">' + fmtShort(C.localDay(C.ms(x.done_at), tz())) + '</span></div>';
-  }).join('') + (done.length > DONE_SHOWN ? '<p class="empty" data-a="doneall">' + (ui.doneAll ? 'Fewer' : 'All') + '</p>' : ''), 'ro2') : '';
+  }).join('') + (done.length > DONE_SHOWN ? '<p class="empty" data-a="doneall">' + (ui.doneAll ? 'Fewer' : 'All') + '</p>' : '');
+  var doneHtml = done.length ? section('<span class="dtg' + (ui.doneOpen ? ' on' : '') + '" data-a="doneopen">Done &middot; ' + done.length + ic('chevr') + '</span>', doneRows, 'ro2') : '';
   return phone('p2 td' + (held.length || sched.length ? ' hl' : ''), '<header class="hd"><div><h2>To-dos</h2><p class="dl">' + todoCount() + '</p></div><span class="fight" data-a="addpick">Add</span></header>' + seg2 + heldHtml + schedHtml +
     section('Open', open || '<p class="empty">None</p>') + doneHtml, { sheet: sh });
 };
@@ -1766,6 +1771,7 @@ var ACT = {
   todoseg: function (v) { ui.todoSeg = v; render(); },
   remview: function (v) { ui.remView = v; render(); },
   fzreset: function () { ui.fz = null; ui.fpick = null; render(); },
+  doneopen: function () { ui.doneOpen = !ui.doneOpen; render(); },
   doneall: function () { ui.doneAll = !ui.doneAll; render(); },
   decline: guard(function (id) { St.patch('redemptions', id, { status: 'declined', decided_by: St.me(), decided_at: nowIso() }); }),
   approve: guard(function (id) {

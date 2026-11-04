@@ -148,6 +148,9 @@ label.pick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;font
 .p2.nd .scr main>.save,.p2.nd .scr main>.pair{position:static;margin-top:24px}
 .hd .pn,.hrow .pn{max-width:6.5em}
 .p2 .lab .edit{display:inline-block;padding:14px 10px;margin:-14px -10px;min-width:44px;text-align:center}
+.p2 .lab .dtg{display:inline-flex;align-items:center;gap:6px;padding:14px 0;margin:-14px 0;cursor:pointer}
+.p2 .lab .dtg .ic{width:16px;height:16px;stroke-width:2.4;transition:transform .15s}
+.p2 .lab .dtg.on .ic{transform:rotate(90deg)}
 label.pick{min-height:44px;display:inline-flex;align-items:center}
 
 .srow .pn+*,.srow .pn{vertical-align:bottom}
