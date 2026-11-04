@@ -229,6 +229,12 @@ function micTa(k, cls, ph) {
   var ta = '<textarea data-d="' + k + '"' + (ph ? ' placeholder="' + esc(ph) + '"' : '') + '>' + esc(val(k)) + '</textarea>';
   return '<div class="ta ' + cls + (St.hasNative ? ' micta' : '') + '">' + ta + (St.hasNative ? micBtn(k) : '') + '</div>';
 }
+// The fight detail's Save shows only while its note box has text (see fightDetail). Typing and dictation update the box without a
+// re-render (that would drop the keyboard), so they call this to flip Save's `hidden` in place.
+function noteSaveSync() {
+  var ns = document.querySelector('[data-a="notesave"]');
+  if (ns) ns.hidden = !val('more').trim();
+}
 function stopRec() {
   if (!ui.rec) return Promise.resolve();
   ui.rec = null;
@@ -618,7 +624,9 @@ SCREEN.fightdetail = function () {
     (chips ? '<section class="meta2"><div class="rcs">' + chips + '</div></section>' : '') +
     story + gapHtml + notesHtml +
     '<section><p class="lab">' + (!me && !mine ? 'Add your version' : 'Add more') + (nkind === 'note' ? talkLink('more') : '') + '</p>' + seg([['note', 'Note'], ['analysis', 'Analysis']], nkind, 'fnkind', 'ty') + micTa('more', 'nt') + linkRow + whenRow('mw') + '</section>' +
-    '<div class="save" data-a="notesave">Save</div>' + pending + del, { sheet: sh });
+    // Save shows only once the note box has text: pinned to the screen bottom, it covered the summary while Oliver read it
+    // (2026-11-03), and with no text it only went back. The input handler toggles `hidden` as he types (a re-render would drop the keyboard).
+    '<div class="save" data-a="notesave"' + (val('more').trim() ? '' : ' hidden') + '>Save</div>' + pending + del, { sheet: sh });
 };
 
 // ---- Fights tab ---------------------------------------------------------------------------------------------
@@ -1390,6 +1398,7 @@ app.addEventListener('input', function (e) {
   if (ui.rec && ui.rec.field === k) guard(stopRec)(); // typing takes over from the mic
   if (e.target.closest('.ta.nt')) fitNote(e.target);
   if (k === 'dotherv') doneRefresh();
+  if (k === 'more') noteSaveSync();
   var nb = k === 'chname' && document.getElementById('chnew');
   if (nb) nb.classList.toggle('dis', !e.target.value.trim());
   var pt = e.target.getAttribute('data-pt');
@@ -2293,7 +2302,7 @@ window.cycleNative = {
     if (!ui.rec) return;
     if (ui.rec.field === 'talk') return talkHeard(text, final);
     var f = ui.rec.field, el = document.querySelector('[data-d="' + f + '"]');
-    if (text) { ui.d[f] = C.appendSpeech(ui.rec.base, text); if (el) el.value = ui.d[f]; saveDraft(draftKey()); }
+    if (text) { ui.d[f] = C.appendSpeech(ui.rec.base, text); if (el) el.value = ui.d[f]; saveDraft(draftKey()); if (f === 'more') noteSaveSync(); }
     if (final) { ui.rec = null; render(); }
   },
   speechError: function (msg) { ui.rec = null; showErr(plain(new Error(msg))); },

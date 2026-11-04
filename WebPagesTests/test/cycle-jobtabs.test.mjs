@@ -359,7 +359,7 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
     assert.equal(await page.locator('[data-a="openfight:fh"] .ix').count(), 0, 'no intensity on her fight');
     await page.click('[data-a="openfight:fh"]'); await page.waitForSelector('.fd');
     assert.equal(await page.locator('.fd .ix').count(), 0, 'nor on her fight detail');
-    assert.equal(await page.locator('.fd .arrows').count(), 0, 'and no picker on her fight');
+    assert.equal(await page.locator('.fd .arrows').count(), 1, 'but I can rate her fight (ratings are shared since a55b88e)');
     await context.close();
   });
   test('B8b my fight intensity is labeled, editable from its detail, persists on the phone, and never syncs', async () => {
@@ -376,14 +376,17 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
     assert.equal(await page.inputValue('.fd textarea'), 'keep this draft', 'picking keeps the typed note');
     assert.equal((await priv(page)).fights[0].intensity, 5);
     const outbox = await page.evaluate(() => JSON.parse(localStorage.getItem('cycle:shared.u-me')).outbox);
-    assert.deepEqual(outbox, [], 'intensity stays private');
+    // Ratings are shared since a55b88e (2026-11-02): my pick syncs as my own fight_ratings row, and nothing else goes out.
+    assert.deepEqual(outbox.map((o) => [o.table, o.row.user_id, o.row.intensity]), [['fight_ratings', 'u-me', 5]], 'only my rating syncs');
     await page.click('[data-a="fightint:1"]');
     assert.equal((await priv(page)).fights[0].intensity, 1, 'and back down');
+    assert.ok(await page.isVisible('[data-a="notesave"]'), 'Save shows while the note box has text');
     await page.fill('.fd textarea', '');
-    await page.click('[data-a="notesave"]');
+    assert.equal(await page.isVisible('[data-a="notesave"]'), false, 'and hides once it is emptied');
+    await page.click('.fd [data-a="back"]');
     await page.waitForSelector('.rf');
-    assert.equal(await page.locator('.errbar[role="alert"]').count(), 0, 'Save with no note is not an error');
-    assert.equal((await priv(page)).fights[0].intensity, 1, 'the picked intensity survives Save');
+    assert.equal(await page.locator('.errbar[role="alert"]').count(), 0, 'leaving with no note is not an error');
+    assert.equal((await priv(page)).fights[0].intensity, 1, 'the picked intensity survives leaving');
     assert.deepEqual(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('cycle:shared.u-me')).rows.fight_notes)), [], 'and no empty note is written');
     await page.reload(); await ready(page);
     await page.click('[data-a="tab:fights"]'); await page.waitForSelector('.rf');

@@ -393,7 +393,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
   test('fight detail: Talk on Note only, not Analysis; shared notes (not deleted) go as context', async () => {
     const { context, page, posts } = await open({ talk: [ok('Ok.')] });
     await page.evaluate(() => window.cycleNative.route('fight/fp'));
-    await page.waitForSelector('[data-a="notesave"]');
+    await page.waitForSelector('.fd');
     assert.ok(await page.$('[data-a="talk:more"]'));
     await page.click('[data-a="fnkind:analysis"]');
     assert.equal(await page.$('[data-a="talk:more"]'), null, 'hidden for Analysis');
@@ -409,12 +409,12 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
   test('saving a note on fight detail clears that fight\'s stored conversation', async () => {
     const { context, page } = await open({ talk: [{ status: 500 }] });
     await page.evaluate(() => window.cycleNative.route('fight/fp'));
-    await page.waitForSelector('[data-a="notesave"]');
+    await page.waitForSelector('.fd');
     await openTalk(page, 'more');
     await sendTyped(page, 'some words');
     await page.waitForSelector('[data-a="tkretry"]');
     await page.click('[data-a="tkx"]');
-    await page.waitForSelector('[data-a="notesave"]');
+    await page.waitForSelector('.fd');
     assert.notEqual(await page.evaluate(() => localStorage.getItem('cycle:talk:fp')), '', 'kept on leaving');
     await page.fill('[data-d="more"]', 'typed myself');
     await page.click('[data-a="notesave"]');
@@ -446,7 +446,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await sendTyped(page, 'before the push');
     await replyIs(page, 'Go on.');
     await page.evaluate(() => window.cycleNative.route('fight/fp'));
-    await page.waitForSelector('[data-a="notesave"]');
+    await page.waitForSelector('.fd');
     assert.equal(await page.$('.tkrep'), null, 'Talk is gone');
     assert.ok((await saved(page)).msgs.length >= 2, 'words kept');
     await context.close();

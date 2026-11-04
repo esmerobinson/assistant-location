@@ -142,6 +142,7 @@ label.pick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;font
 #app{height:var(--vvh,100%)}
 /* Primary pill stays reachable when the keyboard shrinks the column. */
 .p2 .scr main>.save,.p2 .scr main>.pair{position:sticky;bottom:16px;z-index:5}
+.p2 .scr main>.save[hidden]{display:none} /* .save's own display rule would beat the hidden attribute */
 /* The nudge form's buttons follow the form instead: sticky, they floated over the For switch whenever the
    keyboard shrank the viewport, and the transparent Save ghost showed the switch through it. */
 .p2.nd .scr main>.save,.p2.nd .scr main>.pair{position:static;margin-top:24px}

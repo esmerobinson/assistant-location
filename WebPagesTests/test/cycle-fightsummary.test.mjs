@@ -117,7 +117,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await context.close();
     ({ context, page } = await open(fill));
     await page.click('.rf .meta');
-    await page.waitForSelector('[data-a="notesave"]');
+    await page.waitForSelector('.fd');
     await context.close();
   });
 
@@ -132,7 +132,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     add(r, 'fight_markers', marker('f0', { at: new Date(Date.now() - 9 * 24 * HOUR).toISOString() }));
     more(r);
   };
-  const detail = async (fill) => { const h = await open(fill); await h.page.click('.rf[data-a="openfight:f1"] .meta'); await h.page.waitForSelector('[data-a="notesave"]'); return h; };
+  const detail = async (fill) => { const h = await open(fill); await h.page.click('.rf[data-a="openfight:f1"] .meta'); await h.page.waitForSelector('.fd'); return h; };
   // The outbox is persisted asynchronously after a write; wait until `n` ops for `table` are stored, then return them.
   const outbox = async (page, table, n) => { await page.waitForFunction(([t, k]) => JSON.parse(localStorage.getItem('cycle:shared.u-me')).outbox.filter((o) => o.table === t).length >= k, [table, n]); return page.evaluate((t) => JSON.parse(localStorage.getItem('cycle:shared.u-me')).outbox.filter((o) => o.table === t), table); };
   const order = (page, sels) => page.evaluate((ss) => { const els = ss.map((q) => document.querySelector(q)); return els.every(Boolean) && els.every((e, i) => i === 0 || !!(els[i - 1].compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING)); }, sels);
@@ -185,6 +185,17 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     const { context, page } = await detail(beatFill({ gaps: { [UID]: 'MINE-GAP add more.', [PID]: 'HERS-GAP' } }));
     assert.doesNotMatch(await page.$eval('.fd', (e) => e.innerHTML), /HERS-GAP/);
     assert.ok(await order(page, ['.bt', '.fgap', '.srow']));
+    await context.close();
+  });
+
+  test('detail: Save shows only while the note box has text (pinned, it covered the summary)', async () => {
+    const { context, page } = await detail(beatFill());
+    const save = '[data-a="notesave"]';
+    assert.equal(await page.isVisible(save), false, 'hidden on open');
+    await page.fill('textarea[data-d="more"]', 'x');
+    assert.equal(await page.isVisible(save), true, 'shows as I type');
+    await page.fill('textarea[data-d="more"]', '  ');
+    assert.equal(await page.isVisible(save), false, 'hides again when only spaces are left');
     await context.close();
   });
 
@@ -299,7 +310,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
   const gapView = async (fill) => {
     const { context, page } = await open(fill);
     const chips = (await rowText(page, 'f1')).chips;
-    await page.click('.rf .meta'); await page.waitForSelector('[data-a="notesave"]');
+    await page.click('.rf .meta'); await page.waitForSelector('.fd');
     const html = await page.$eval('.fd', (e) => e.innerHTML);
     const gap = await page.$('.fgap');
     const out = { chips, html, gap: gap ? await gap.innerText() : null, above: gap ? await page.$eval('.fgap', (e) => !!(e.compareDocumentPosition(document.querySelector('[data-a="notesave"]')) & Node.DOCUMENT_POSITION_FOLLOWING)) : null };
