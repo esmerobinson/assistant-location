@@ -16,7 +16,7 @@
 
 + (UIImage *)moduleIcon { return [UIImage systemImageNamed:@"bolt.heart"]; }
 
-+ (NSInteger)moduleOrder { return 160; }
++ (NSInteger)moduleOrder { return 310; }
 
 + (UIViewController *)makeViewController {
     return [[OverstimViewController alloc] init];
