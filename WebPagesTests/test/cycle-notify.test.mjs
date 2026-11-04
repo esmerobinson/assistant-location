@@ -117,25 +117,32 @@ describe('webkit', { skip: !haveWebkit }, () => {
   };
   const fnotes = async (page) => (await calls(page, 'notify.schedule')).filter((a) => a.id.startsWith('fnote-'));
 
-  test('a fight logged with no note asks after 30 min then every 2 hours outside 22-08, opens that fight, and a note cancels them all', async () => {
+  test('a fight logged with no note asks 3 times, 30 min then daily, 22-08 moved to 08:00, last one says so; opens that fight, and a note cancels them all', async () => {
     const { context, page } = await open();
     const t0 = Date.now();
     await logFight(page);
-    await page.waitForFunction(() => window.__calls.filter((x) => x.cmd === 'notify.schedule' && x.args.id.startsWith('fnote-')).length >= 6);
-    const ns = await fnotes(page), hour = (ms) => +new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hourCycle: 'h23', hour: '2-digit' }).format(new Date(ms));
-    assert.equal(ns.length, 6);
+    await page.waitForFunction(() => window.__calls.filter((x) => x.cmd === 'notify.schedule' && x.args.id.startsWith('fnote-')).length >= 3);
+    await page.waitForTimeout(800); // past the 200ms reschedule debounce, so a 4th would have shown
+    const ns = await fnotes(page);
+    const hm = (ms) => new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
+    assert.equal(new Set(ns.map((n) => n.id)).size, 3);
     const logged = await page.evaluate(() => JSON.parse(localStorage.getItem('cycle:priv.u-me')).fights[0].logged_at);
     assert.ok(logged >= t0 && logged <= Date.now());
-    const expected = [];
-    for (let k = 0; expected.length < 6; k++) { const at = logged + 30 * 60000 + k * 2 * 3600000, h = hour(at); if (h < 22 && h >= 8) expected.push(at); }
-    assert.deepEqual(ns.map((n) => n.at), expected);
+    const uniq = [...new Map(ns.map((n) => [n.id, n])).values()];
+    uniq.forEach((n, k) => {
+      const raw = logged + 30 * 60000 + k * 24 * 3600000, h = +hm(raw).slice(0, 2);
+      if (h >= 22 || h < 8) { assert.equal(hm(n.at), '08:00'); assert.ok(n.at > raw && n.at - raw < 10 * 3600000); }
+      else assert.equal(n.at, raw);
+    });
+    assert.deepEqual(uniq.map((n) => n.body), ['What happened?', 'Still want to note what happened?', 'Last reminder: what happened?']);
+    ns.splice(0, ns.length, ...uniq);
     const id = await page.evaluate(() => JSON.parse(localStorage.getItem('cycle:priv.u-me')).fights[0].id);
     ns.forEach((n) => assert.equal(n.route, 'fight/' + id));
     await page.evaluate((r) => window.cycleNative.route(r), ns[0].route);
     assert.equal(await page.textContent('.hd h2'), 'Fight');
     await page.fill('textarea[data-d="more"]', 'It was the dishes');
     await page.click('[data-a="notesave"]');
-    const cancelled = (await waitCalls(page, 'notify.cancel', 6)).map((a) => a.id);
+    const cancelled = (await waitCalls(page, 'notify.cancel', 3)).map((a) => a.id);
     assert.deepEqual(ns.map((n) => n.id).filter((x) => !cancelled.includes(x)), []);
     await context.close();
   });
@@ -143,10 +150,10 @@ describe('webkit', { skip: !haveWebkit }, () => {
   test('a fight whose marker was deleted stops asking', async () => {
     const { context, page } = await open();
     await logFight(page);
-    await page.waitForFunction(() => window.__calls.filter((x) => x.cmd === 'notify.schedule' && x.args.id.startsWith('fnote-')).length >= 6);
+    await page.waitForFunction(() => window.__calls.filter((x) => x.cmd === 'notify.schedule' && x.args.id.startsWith('fnote-')).length >= 3);
     const ns = await fnotes(page);
     await page.evaluate(() => { const S = CycleStore.S; delete S.rows.fight_markers[S.priv.fights[0].id]; CycleStore.reschedule(); });
-    const cancelled = (await waitCalls(page, 'notify.cancel', 6)).map((a) => a.id);
+    const cancelled = (await waitCalls(page, 'notify.cancel', 3)).map((a) => a.id);
     assert.deepEqual(ns.map((n) => n.id).filter((x) => !cancelled.includes(x)), []);
     await context.close();
   });

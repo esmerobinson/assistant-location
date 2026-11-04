@@ -559,17 +559,23 @@ var CycleStore = (function () {
       var mk = S.rows.fight_markers[f.id];
       if (mk && !mk.deleted_at && at > now && !f.followed && !mk.repaired_at) out.push({ id: 'fu-' + f.id, at: at, title: 'Follow up', body: 'How is it now?', route: 'log-followup' });
     });
-    // A fight I logged with no note from me yet: ask 30 min after logging, then every 2 hours until there is one, skipping 22:00-08:00.
-    // iOS can't repeat on its own, so the next 6 are scheduled and each change or launch tops them up. Fights logged before this have no logged_at.
-    var hourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: m.tz || S.couple.tz, hourCycle: 'h23', hour: '2-digit' });
+    // A fight I logged with no note from me yet: ask 30 min after logging, then once a day at that time for two more days,
+    // three asks in all. Oliver found a 2-hourly repeat nagging; the wording changes each time so the third reads as the end.
+    // An ask that falls in 22:00-08:00 moves to the next 08:00 rather than being dropped, so all three still come.
+    // Each ask's id is fixed by its index k, so an ask already past is gone for good (no top-up). Fights logged before
+    // logged_at existed have none and never ask.
+    var tzF = m.tz || S.couple.tz;
+    var hourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: tzF, hourCycle: 'h23', hour: '2-digit' });
+    var FNOTE_BODY = ['What happened?', 'Still want to note what happened?', 'Last reminder: what happened?'];
     (S.priv ? S.priv.fights : []).forEach(function (f) {
       var mk2 = S.rows.fight_markers[f.id];
       if (!f.logged_at || !mk2 || mk2.deleted_at || list('fight_notes').some(function (n) { return n.fight_marker_id === f.id && n.author_id === me(); })) return;
-      for (var k = 0, n = 0; n < 6; k++) {
-        var at = f.logged_at + 30 * 60000 + k * 2 * 3600000, h = +hourFmt.format(at);
-        if (at <= now || h >= 22 || h < 8) continue;
-        out.push({ id: 'fnote-' + f.id + '-' + k, at: at, title: 'Log fight', body: 'What happened?', route: 'fight/' + f.id });
-        n++;
+      for (var k = 0; k < FNOTE_BODY.length; k++) {
+        var at = f.logged_at + 30 * 60000 + k * 24 * 3600000, h = +hourFmt.format(at);
+        if (h >= 22) at = C.zonedMs(C.addDays(C.localDay(at, tzF), 1), 8, 0, tzF);
+        else if (h < 8) at = C.zonedMs(C.localDay(at, tzF), 8, 0, tzF);
+        if (at <= now) continue;
+        out.push({ id: 'fnote-' + f.id + '-' + k, at: at, title: 'Log fight', body: FNOTE_BODY[k], route: 'fight/' + f.id });
       }
     });
     // An unaccepted challenge for me: a 09:00 reminder (my timezone) on each of the next 7 days until I accept.
