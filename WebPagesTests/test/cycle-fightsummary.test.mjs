@@ -227,7 +227,11 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
   const chartFill = (r) => {
     add(r, 'fight_markers', marker('t1', { at: ago(0.01) }));
     add(r, 'fight_markers', marker('t2', { at: ago(0.02), logged_by: UID }));
-    add(r, 'fight_markers', marker('old', { at: new Date(Date.now() - 8 * 24 * HOUR).toISOString() }));
+    // Midday in the couple's tz (America/New_York), 8 calendar days back. "now - 8×24h" fell on the next day late in the
+    // evening across the 1 Nov DST change, moving the fight off index 5 and failing the tap test.
+    const nyToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()), old = new Date(nyToday + 'T17:00:00Z');
+    old.setUTCDate(old.getUTCDate() - 8);
+    add(r, 'fight_markers', marker('old', { at: old.toISOString() }));
     add(r, 'fight_ratings', { id: 'old:u-her', fight_marker_id: 'old', user_id: PID, intensity: 4 });
     add(r, 'fight_ratings', { id: 'old:u-me', fight_marker_id: 'old', user_id: UID, intensity: 2 });
   };
@@ -256,6 +260,21 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await drag(page, 5, 6);
     assert.equal(await page.$('.zc'), null);
     assert.equal(await page.$$eval('.rf', (e) => e.length), 3);
+    await context.close();
+  });
+
+  // The real-iPhone bug: a vertical swipe starting on the chart didn't scroll the page, because pointerdown swapped the SVG
+  // under the finger. Playwright can't show native iOS scroll, so this pins the cause: the SVG must survive pointerdown.
+  test('chart: touching the chart leaves its SVG in place, and a vertical move neither zooms nor redraws', async () => {
+    const { context, page } = await open(chartFill);
+    const a = await dayX(page, 4);
+    await page.$eval('.fcv svg', (s) => { s.dataset.orig = '1'; });
+    await page.mouse.move(a.x, a.y); await page.mouse.down();
+    assert.ok(await page.$('.fcv svg[data-orig]'), 'pointerdown must not replace the SVG under the finger');
+    await page.mouse.move(a.x + 2, a.y + 40); await page.mouse.move(a.x + 3, a.y + 80);
+    assert.ok(await page.$('.fcv svg[data-orig]'), 'a vertical move must not redraw the chart');
+    await page.mouse.up();
+    assert.equal(await page.$('.zc'), null);
     await context.close();
   });
 

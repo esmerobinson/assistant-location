@@ -702,16 +702,24 @@ SCREEN.fights = function () {
     return Math.max(0, Math.min(n - 1, Math.floor((vx - FCL) / (FW - FCL - FCR) * n)));
   }
   function ctx(e) { var host = e.target.closest && e.target.closest('.fcv'); if (!host || !host.querySelector('svg')) return null; var t = fightTotals(), days = fightView(t); return { host: host, t: t, days: days, n: days.length }; }
+  // pointerdown only records where the touch started. Replacing the SVG under the finger at pointerdown (the old code) stopped
+  // iOS from scrolling the page on a vertical swipe that began on the chart (real iPhone, 2026-11-03). The chart redraws only
+  // once the move is clearly sideways; a mostly-vertical first move hands the gesture to the page scroll (touch-action:pan-y).
   app.addEventListener('pointerdown', function (e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     var c = ctx(e); if (!c) return;
-    c.host.setPointerCapture(e.pointerId);
-    var i = idx(e, c.host, c.n); drag = { a: i, b: i, moved: false }; ui.fpick = null;
-    c.host.innerHTML = fightChartSvg(c.t, c.days, drag, null);
+    var i = idx(e, c.host, c.n); drag = { a: i, b: i, moved: false, live: false, x: e.clientX, y: e.clientY };
   });
   app.addEventListener('pointermove', function (e) {
     if (!drag) return;
     var c = ctx(e); if (!c) return;
+    if (!drag.live) {
+      // 8px: below that a finger is still a tap (guessed, matches the usual touch slop).
+      var dx = Math.abs(e.clientX - drag.x), dy = Math.abs(e.clientY - drag.y);
+      if (dx < 8 && dy < 8) return;
+      if (dy > dx) { drag = null; return; }
+      drag.live = true; ui.fpick = null; c.host.setPointerCapture(e.pointerId);
+    }
     var i = idx(e, c.host, c.n); if (i === drag.b) return;
     if (i !== drag.a) drag.moved = true; drag.b = i;
     c.host.innerHTML = fightChartSvg(c.t, c.days, drag, null);
@@ -719,6 +727,7 @@ SCREEN.fights = function () {
   app.addEventListener('pointerup', function (e) {
     if (!drag) return;
     var c = ctx(e), d = drag; drag = null; if (!c) return;
+    if (!d.live) { ui.fpick = c.days[idx(e, c.host, c.n)]; render(); return; } // never moved past the slop: a tap on a day
     var lo = Math.min(d.a, d.b), hi = Math.max(d.a, d.b);
     // 3+ days zooms; anything shorter is a tap on a day and shows its tooltip.
     if (d.moved && hi - lo >= 2) { ui.fz = { a: c.days[lo], b: c.days[hi] }; ui.fpick = null; }
