@@ -437,7 +437,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
   test('Home "Add your version" row for her unrepaired fight, gone once I write a note', async () => {
     const { context, page } = await open({ fight: false, tweak: partnerFight });
     const row = '.nd .nc[data-a="openfight:fp"]';
-    assert.match((await page.textContent(row)).replace(/\s+/g, ' ').trim(), /^Her\s?Add your version/);
+    assert.match((await page.textContent(row)).replace(/\s+/g, ' ').trim(), /^Fight · \w{3}( \d+ \w{3})? \d+:\d\d[ap]m · Her\s?Add your version/);
     await page.click(row);
     await page.waitForSelector('textarea[data-d="more"]');
     await page.fill('textarea[data-d="more"]', 'My side');
