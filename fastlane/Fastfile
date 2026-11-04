@@ -50,6 +50,7 @@ GOALS_GROUP = "Goals Testers"
 # The guest copy of Listen: same Listen target and scheme, its own bundle id, page URL and passcode cookie.
 LISTEN_GUEST_ID = "com.oliverullman.listenguest"
 LISTEN_GUEST_APPSTORE_PROFILE_NAME = "Listen Guest AppStore"
+LISTEN_GUEST_ADHOC_PROFILE_NAME = "Listen Guest AdHoc"
 LISTEN_GUEST_GROUP = "Listen Testers"
 
 platform :ios do
@@ -198,8 +199,11 @@ platform :ios do
     UI.success("Ad hoc ipa: #{lane_context[SharedValues::IPA_OUTPUT_PATH]}")
   end
 
-  desc "Build the standalone Listen app as an ad-hoc signed ipa (no Pods, no extensions)"
-  lane :listen_adhoc do
+  desc "Build the standalone Listen app as an ad-hoc signed ipa (no Pods, no extensions); guest:true builds the guest copy"
+  lane :listen_adhoc do |options|
+    guest = options[:guest]
+    bundle_id = guest ? LISTEN_GUEST_ID : LISTEN_ID
+    profile = guest ? LISTEN_GUEST_ADHOC_PROFILE_NAME : LISTEN_ADHOC_PROFILE_NAME
     api_key = asc_api_key
 
     Spaceship::ConnectAPI.auth(
@@ -207,22 +211,22 @@ platform :ios do
       issuer_id: ENV["ASC_ISSUER_ID"],
       key: ENV["ASC_KEY_P8"],
     )
-    if Spaceship::ConnectAPI::BundleId.find(LISTEN_ID)
-      UI.message("Bundle id #{LISTEN_ID} is already registered")
+    if Spaceship::ConnectAPI::BundleId.find(bundle_id)
+      UI.message("Bundle id #{bundle_id} is already registered")
     else
       Spaceship::ConnectAPI::BundleId.create(
         name: "Listen",
-        identifier: LISTEN_ID,
+        identifier: bundle_id,
         platform: Spaceship::ConnectAPI::BundleIdPlatform::IOS,
       )
-      UI.success("Registered bundle id #{LISTEN_ID}")
+      UI.success("Registered bundle id #{bundle_id}")
     end
 
     get_provisioning_profile(
       api_key: api_key,
       adhoc: true,
-      app_identifier: LISTEN_ID,
-      provisioning_name: LISTEN_ADHOC_PROFILE_NAME,
+      app_identifier: bundle_id,
+      provisioning_name: profile,
       team_id: TEAM_ID,
       force: true,
     )
@@ -236,7 +240,8 @@ platform :ios do
       use_automatic_signing: false,
       team_id: TEAM_ID,
       code_sign_identity: "Apple Distribution",
-      profile_name: LISTEN_ADHOC_PROFILE_NAME,
+      profile_name: profile,
+      bundle_identifier: bundle_id,
     )
 
     build_app(
@@ -247,11 +252,12 @@ platform :ios do
       output_name: "Listen",
       export_options: {
         signingStyle: "manual",
-        provisioningProfiles: { LISTEN_ID => LISTEN_ADHOC_PROFILE_NAME },
+        provisioningProfiles: { bundle_id => profile },
       },
       xcargs: "CODE_SIGN_STYLE=Manual " \
               "DEVELOPMENT_TEAM=#{TEAM_ID} " \
-              "CODE_SIGN_IDENTITY='Apple Distribution'",
+              "CODE_SIGN_IDENTITY='Apple Distribution' " \
+              "PRODUCT_BUNDLE_IDENTIFIER=#{bundle_id}",
     )
 
     UI.success("Listen ad hoc ipa: #{lane_context[SharedValues::IPA_OUTPUT_PATH]}")
