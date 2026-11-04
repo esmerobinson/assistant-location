@@ -113,7 +113,9 @@ function byDelivered(a, b) { return C.ms(b.delivered_at || b.created_at) - C.ms(
 function myItems() { return L('items').filter(function (i) { return i.sender_id === St.me() && !i.deleted_at; }); }
 function heldItems() { return myItems().filter(function (i) { return i.status === 'held'; }).sort(function (a, b) { return C.ms(a.held_until) - C.ms(b.held_until); }); }
 function myTodos() { return L('todos').filter(function (t) { return t.owner_id === St.me() && !t.deleted_at; }); }
-function openTodos(list) { return list.filter(function (t) { return !t.done_at; }); }
+// Declined closes a to-do like done does, but is not done: no points, no repair, no done_at.
+function closed(t) { return !!(t.done_at || t.declined_at); }
+function openTodos(list) { return list.filter(function (t) { return !closed(t); }); }
 function theirTodos() { return openTodos(L('todos').filter(function (x) { return x.owner_id !== St.me() && !x.deleted_at; })); }
 // Both lists' open counts, so an empty "For you" doesn't read as nothing to do; queued asks sit in the partner's list.
 function todoCount() { return 'You ' + openTodos(myTodos()).length + ' &middot; ' + esc(pName()) + ' ' + (theirTodos().length + S.priv.queued.length); }
@@ -314,7 +316,7 @@ SCREEN.home = function () {
   }
   // Only your own late and due-today to dos: the partner's are theirs to act on, and stay on the To-dos tab.
   var dueCards = urgentFirst(myTodos().filter(function (x) {
-    return !x.done_at && x.due_date && x.due_date <= t;
+    return !closed(x) && x.due_date && x.due_date <= t;
   })).map(function (x) {
     var d = dueOf(x.due_date);
     return '<div class="nc dc" data-a="tview:' + x.id + '"><div class="mid"><p class="s ' + d.state + '">' + d.text + '</p><p class="x">' + esc(x.title) + '</p></div>' + ic('chevr', 'chv') + '</div>';
@@ -371,7 +373,7 @@ function todoFight(x) { var mk = x.fight_marker_id && S.rows.fight_markers[x.fig
 var DONE_SHOWN = 10; // Done rows shown before "All": a guess at a few days' worth, short enough that Open stays the first thing seen.
 SCREEN.todo = function () {
   var rem = ui.todoSeg === 'rem';
-  var sh = ui.sheet && ui.sheet.type === 'newtodo' ? newTodoSheet() : ui.sheet && ui.sheet.type === 'note' ? noteSheet() : ui.sheet && ui.sheet.type === 'still' ? stillSheet() : ui.sheet && ui.sheet.type === 'addpick' ? addPick() : '';
+  var sh = ui.sheet && ui.sheet.type === 'newtodo' ? newTodoSheet() : ui.sheet && ui.sheet.type === 'note' ? noteSheet() : ui.sheet && ui.sheet.type === 'decline' ? declineSheet() : ui.sheet && ui.sheet.type === 'still' ? stillSheet() : ui.sheet && ui.sheet.type === 'addpick' ? addPick() : '';
   var seg2 = seg([['todo', 'To-dos'], ['rem', 'Reminders']], ui.todoSeg, 'todoseg');
   if (rem) {
     return phone('p2 nd', '<header class="hd"><div><h2>To-dos</h2></div><span class="plus" data-a="nudgenew">' + ic('plus') + '</span></header>' + seg2 + remBody(), { sheet: sh });
@@ -384,7 +386,7 @@ SCREEN.todo = function () {
   // sub: the row sits under its fight's parent row, so the fight arrow and the Response tag would only repeat it.
   function row(x, sub) {
     var mine = x.owner_id === St.me(), habit = x.type === 'habit', h = habit && hprog(x), resp = x.type === 'response' && !sub;
-    var btn = !mine ? '' : habit ? '<span class="p1b" data-a="tally:' + x.id + '">+1</span>' : '<span class="done" data-a="done:' + x.id + '">Done</span>';
+    var btn = !mine ? '' : habit ? '<span class="p1b" data-a="tally:' + x.id + '">+1</span>' : (x.type === 'response' ? '<span class="done o" data-a="tdecline:' + x.id + '">Decline</span>' : '') + '<span class="done" data-a="done:' + x.id + '">Done</span>';
     return '<div class="td-row' + (sub ? ' sub' : '') + '" data-todo="' + x.id + '" data-a="tview:' + x.id + '"><span class="om">' + (resp ? '<svg><use href="#fa"/></svg>' : '') + '</span><div class="tx"><p>' + esc(x.title) + '</p>' + tdDesc(x) + (habit ? lastNote(x) + h.bar : dueTag(x)) + edited(x) + ns('todos', x.id) + tags(x, sub) + '</div>' + (habit ? '<span class="hv">' + h.hv + '</span>' : '') + btn + '</div>';
   }
   // A fight's open to dos (both people's) sit under one parent row naming the fight, at the place its first to do would take.
@@ -411,11 +413,11 @@ SCREEN.todo = function () {
   var open = rows(mineL) + S.priv.queued.map(function (q) {
     return '<div class="td-row"><span class="om"></span><div class="tx"><p>' + esc(q.body) + '</p>' + tdDesc(q) + '<small>Queued</small><span class="tts"><span class="tt">' + pn() + '</span></span></div></div>';
   }).join('') + rows(theirs);
-  var done = L('todos').filter(function (x) { return !x.deleted_at && x.done_at; }).sort(function (a, b) { return C.ms(b.done_at) - C.ms(a.done_at); });
+  var done = L('todos').filter(function (x) { return !x.deleted_at && closed(x); }).sort(function (a, b) { return C.ms(b.done_at || b.declined_at) - C.ms(a.done_at || a.declined_at); });
   // Done is collapsed by default: only its label and count show, and tapping the label toggles the rows (and the
   // All / Fewer row past DONE_SHOWN). The chevron points right when closed, down when open.
   var doneRows = !ui.doneOpen ? '' : done.slice(0, ui.doneAll ? done.length : DONE_SHOWN).map(function (x) {
-    return '<div class="td-row dn" data-a="tview:' + x.id + '"><span class="om"></span><div class="tx"><p>' + esc(x.title) + '</p>' + tags(x) + '</div><span class="hv">' + fmtShort(C.localDay(C.ms(x.done_at), tz())) + '</span></div>';
+    return '<div class="td-row dn" data-a="tview:' + x.id + '"><span class="om"></span><div class="tx"><p>' + esc(x.title) + '</p>' + tags(x) + '</div><span class="hv">' + (x.declined_at ? 'Declined' : fmtShort(C.localDay(C.ms(x.done_at), tz()))) + '</span></div>';
   }).join('') + (done.length > DONE_SHOWN ? '<p class="empty" data-a="doneall">' + (ui.doneAll ? 'Fewer' : 'All') + '</p>' : '');
   var doneHtml = done.length ? section('<span class="dtg' + (ui.doneOpen ? ' on' : '') + '" data-a="doneopen">Done &middot; ' + done.length + ic('chevr') + '</span>', doneRows, 'ro2') : '';
   return phone('p2 td' + (held.length || sched.length ? ' hl' : ''), '<header class="hd"><div><h2>To-dos</h2><p class="dl">' + todoCount() + '</p></div><span class="fight" data-a="addpick">Add</span></header>' + seg2 + heldHtml + schedHtml +
@@ -469,12 +471,13 @@ SCREEN.tododetail = function () {
   var mineOwn = t.owner_id === St.me(), habit = t.type === 'habit', h = habit && hprog(t);
   var notes = L('todo_events').filter(function (e) { return e.todo_id === t.id && e.note; }).sort(function (a, b) { return C.ms(b.at) - C.ms(a.at); });
   function fr(l, v) { return '<div class="frow"><span class="lab0">' + l + '</span><span>' + v + '</span></div>'; }
-  function dueFact(x) { var d = dueOf(x.due_date), hot = !x.done_at && d.state; return fmtDay(x.due_date) + (hot ? ' <span class="due ' + d.state + '">' + d.text + '</span>' : ''); }
+  function dueFact(x) { var d = dueOf(x.due_date), hot = !closed(x) && d.state; return fmtDay(x.due_date) + (hot ? ' <span class="due ' + d.state + '">' + d.text + '</span>' : ''); }
   var facts = fr('For', mineOwn ? 'You' : pnx(nameOf(t.owner_id))) + fr('From', t.created_by === St.me() ? 'You' : pnx(nameOf(t.created_by))) +
     (habit ? fr('Progress', h.hv + (t.period ? ' ' + { day: 'today', week: 'this week', month: 'this month' }[t.period] : '')) : t.due_date ? fr('Due', dueFact(t)) : '') +
-    (t.type === 'response' ? '' : fr('Earn', C.earnPts(t)) + fr('Lose', C.missPts(t))) + (t.done_at ? fr('Done', fmtDay(C.localDay(C.ms(t.done_at), tz()))) : '');
-  var undo = mineOwn && habit && t.tally > 0 ? '<div class="ghost" data-a="tundo:' + t.id + '">Undo tally</div>' : mineOwn && !habit && t.done_at ? '<div class="ghost" data-a="tundo:' + t.id + '">Undo done</div>' : '';
-  var canNudge = !mineOwn && !t.done_at, nudged = nudgedToday(t.id);
+    (t.type === 'response' ? '' : fr('Earn', C.earnPts(t)) + fr('Lose', C.missPts(t))) + (t.done_at ? fr('Done', fmtDay(C.localDay(C.ms(t.done_at), tz()))) : '') + (t.declined_at ? fr('Declined', fmtDay(C.localDay(C.ms(t.declined_at), tz()))) + (t.decline_note ? fr('Note', esc(t.decline_note)) : '') : '');
+  var undo = mineOwn && habit && t.tally > 0 ? '<div class="ghost" data-a="tundo:' + t.id + '">Undo tally</div>' : mineOwn && !habit && t.done_at ? '<div class="ghost" data-a="tundo:' + t.id + '">Undo done</div>' : mineOwn && t.declined_at ? '<div class="ghost" data-a="tundecline:' + t.id + '">Undo decline</div>' : '';
+  var decline = mineOwn && t.type === 'response' && !closed(t) ? '<div class="ghost" data-a="tdecline:' + t.id + '">Decline</div>' : '';
+  var canNudge = !mineOwn && !closed(t), nudged = nudgedToday(t.id);
   var nudge = canNudge ? '<div class="ghost' + (nudged ? ' dis' : '') + '"' + (nudged ? '' : ' data-a="tnudge:' + t.id + '"') + '>' + (nudged ? 'Pinged' : 'Ping') + '</div>' : '';
   var cm = todoComments(t.id);
   // A deleted comment stays as a marker, so a reply under it never reads as answering nothing.
@@ -483,12 +486,12 @@ SCREEN.tododetail = function () {
     return '<div class="fn' + (c.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(c.author_id)) + ' &middot; ' + noteStamp(C.ms(c.created_at)) + ns('todo_comments', c.id).replace('<span', ' <span') + del + '</p><p>' + (c.deleted_at ? 'Deleted' : esc(c.body)) + '</p></div>';
   }).join('');
   var edit = canEditTodo(t) ? '<span class="fight" data-a="etodo:' + t.id + '">Edit</span>' : '';
-  var sh = ui.sheet && ui.sheet.type === 'newtodo' ? newTodoSheet() : '';
+  var sh = ui.sheet && ui.sheet.type === 'newtodo' ? newTodoSheet() : ui.sheet && ui.sheet.type === 'decline' ? declineSheet() : '';
   return phone('p2 tdd2', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>' + esc(t.title) + '</h2></div>' + edit + '</header>' +
     (t.description ? '<section><p class="tdd">' + esc(t.description) + '</p></section>' : '') +
     '<section class="list">' + facts + (habit ? h.bar : '') + '</section>' +
     (notes.length ? section('Log', notes.map(function (e) { return '<p class="tdd">' + esc(fmtDay(C.localDay(C.ms(e.at), tz()))) + ' &middot; ' + esc(e.note) + '</p>'; }).join('')) : '') +
-    (nudge ? '<section>' + nudge + '</section>' : '') + (undo ? '<section>' + undo + '</section>' : '') +
+    (nudge ? '<section>' + nudge + '</section>' : '') + (undo || decline ? '<section>' + undo + decline + '</section>' : '') +
     section('Comments', (thread ? '<div class="fns">' + thread + '</div>' : '') + micTa('cmt', 'nt', 'Comment') + '<div class="save" data-a="tcomment:' + t.id + '">Send</div>'),
     { sheet: sh });
 };
@@ -497,6 +500,13 @@ function noteSheet() {
   if (!t || t.deleted_at) return '';
   return sheet('', '<div class="bsh"><h3>' + esc(clip(t.title, 28)) + '</h3><span class="x" data-a="sheet:close">&#x2715;</span></div>' +
     '<p class="lab">What did you do</p>' + micTa('note', 'msg') + '<div class="save" data-a="lognote">Log</div>');
+}
+
+function declineSheet() {
+  var t = S.rows.todos[ui.sheet.id];
+  if (!t || t.deleted_at) return '';
+  return sheet('', '<div class="bsh"><h3>' + esc(clip(t.title, 28)) + '</h3><span class="x" data-a="sheet:close">&#x2715;</span></div>' +
+    '<p class="lab">Note</p>' + micTa('dnote', 'msg') + '<div class="save" data-a="tdeclinego">Decline</div>');
 }
 
 // Single-choice Yes/No chips for a Log fight question; tapping the selected chip clears it.
@@ -1157,7 +1167,7 @@ function issueEntries() {
   return L('items').filter(function (i) { return i.origin === 'issue' && !i.deleted_at && i.status !== 'dropped' && (i.sender_id === me || i.status === 'delivered'); })
     .map(function (i) {
       var t = L('todos').filter(function (x) { return x.item_id === i.id && !x.deleted_at; })[0];
-      return { item: i, todo: t, mine: i.sender_id === me, open: i.status === 'held' || !!(t && !t.done_at) };
+      return { item: i, todo: t, mine: i.sender_id === me, open: i.status === 'held' || !!(t && !closed(t)) };
     });
 }
 SCREEN.issues = function () {
@@ -1167,7 +1177,7 @@ SCREEN.issues = function () {
     list.sort(function (a, b) { return byDelivered(a.item, b.item); });
     return list.length ? list.map(function (e) {
       var d = C.localDay(C.ms(e.item.delivered_at), tz());
-      return '<div class="td-row"' + (e.todo ? ' data-a="tview:' + e.todo.id + '"' : '') + '><span class="om"></span><div class="tx"><p>' + esc(e.item.body) + '</p><small>' + ISSUE_TYPE[e.item.response_type] + ' &middot; ' + who + ' &middot; ' + fmtDay(d) + ' &middot; ' + (e.todo && e.todo.done_at ? 'Done' : 'Open') + '</small></div></div>';
+      return '<div class="td-row"' + (e.todo ? ' data-a="tview:' + e.todo.id + '"' : '') + '><span class="om"></span><div class="tx"><p>' + esc(e.item.body) + '</p><small>' + ISSUE_TYPE[e.item.response_type] + ' &middot; ' + who + ' &middot; ' + fmtDay(d) + ' &middot; ' + (e.todo && e.todo.declined_at ? 'Declined' : e.todo && e.todo.done_at ? 'Done' : 'Open') + '</small></div></div>';
     }).join('') : '<p class="empty">None</p>';
   }
   var yours = es.filter(function (e) { return e.mine && e.item.status === 'delivered'; }), theirs = es.filter(function (e) { return !e.mine; });
@@ -1237,7 +1247,7 @@ function fightText(f) { var n = fightNotes(f.id).filter(function (x) { return x.
 function chipsFor(f) {
   var tds = L('todos').filter(function (t) { return t.fight_marker_id === f.id; }), out = '';
   var chk = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
-  tds.forEach(function (t) { out += '<span class="rc' + (t.done_at ? ' d' : '') + '">' + (t.done_at ? chk : '') + esc(t.title) + '</span>'; });
+  tds.forEach(function (t) { out += '<span class="rc' + (t.done_at ? ' d' : '') + '">' + (t.done_at ? chk : '') + esc(t.title) + (t.declined_at ? ' &middot; Declined' : '') + '</span>'; });
   var mk = S.rows.fight_markers[f.id], hit = mk && C.hitText(mk, 'me');
   if (hit) out += '<span class="rc">' + esc(hit) + '</span>';
   return out;
@@ -1293,7 +1303,7 @@ function draftKey() {
   if (s) {
     if (s.type === 'newtodo') return 'todo:' + (s.edit || 'new');
     if (s.type === 'still') return s.edit ? 'still:' + s.id : null;
-    if (s.type === 'note' || s.type === 'chlogedit') return s.type + ':' + s.id;
+    if (s.type === 'note' || s.type === 'decline' || s.type === 'chlogedit') return s.type + ':' + s.id;
     if (s.type === 'chlog' || s.type === 'broke' || s.type === 'chedit') return s.type + ':' + ui.chId;
     if (s.type === 'editreward') return s.type + ':' + s.id;
     return s.type === 'addreward' ? 'addreward' : null; // the rest (pickers, confirms) have no text field
@@ -1818,7 +1828,7 @@ var ACT = {
   tview: function (id) { markOwnupSeen(id); go('tododetail', { todoId: id }); },
   tnudge: guard(function (id) {
     var t = S.rows.todos[id];
-    if (t.owner_id === St.me() || t.done_at || t.deleted_at) throw new Error('Cannot nudge');
+    if (t.owner_id === St.me() || closed(t) || t.deleted_at) throw new Error('Cannot nudge');
     if (nudgedToday(id)) throw new Error('Already nudged');
     var n = nowIso();
     St.insert('todo_nudges', { id: St.uuid(), couple_id: S.couple.id, todo_id: id, sender_id: St.me(), created_at: n, updated_at: n, deleted_at: null });
@@ -1989,6 +1999,22 @@ var ACT = {
     var t = S.rows.todos[id];
     if (t.needs_note) { ui.sheet = { type: 'note', id: id, kind: 'done' }; ui.d = {}; render(); }
     else todoDone(t, document.querySelector('[data-todo="' + id + '"] .om'));
+  }),
+  // Declining is not doing: no done_at, no event, no points, and the fight stays unrepaired.
+  tdecline: guard(function (id) {
+    var t = S.rows.todos[id];
+    if (!t || t.owner_id !== St.me() || t.type !== 'response' || closed(t) || t.deleted_at) throw new Error('Cannot decline');
+    ui.sheet = { type: 'decline', id: id }; ui.d = {}; render();
+  }),
+  tdeclinego: guard(function () {
+    var t = S.rows.todos[ui.sheet.id], note = (ui.d.dnote || '').trim();
+    draftSent(); ui.sheet = null; ui.d = {};
+    St.patch('todos', t.id, { declined_at: nowIso(), decline_note: note || null }); render();
+  }),
+  tundecline: guard(function (id) {
+    var t = S.rows.todos[id];
+    if (!t || t.owner_id !== St.me() || !t.declined_at || t.deleted_at) throw new Error('Nothing to undo');
+    St.patch('todos', id, { declined_at: null, decline_note: null }); render();
   }),
   tally: guard(function (id) {
     var t = S.rows.todos[id];

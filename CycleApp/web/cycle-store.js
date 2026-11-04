@@ -540,7 +540,7 @@ var CycleStore = (function () {
     // A to do I scheduled for myself appears for me at T. One my partner scheduled reaches
     // me as a remote push from the box at T, so a local notification here would be a duplicate.
     list('todos').forEach(function (t) {
-      if (t.owner_id === me() && t.created_by === me() && !t.deleted_at && !t.done_at && C.isScheduled(t, now))
+      if (t.owner_id === me() && t.created_by === me() && !t.deleted_at && !t.done_at && !t.declined_at && C.isScheduled(t, now))
         out.push({ id: 'sched-' + t.id, at: C.ms(t.created_at), title: 'To do', body: t.title, route: 'todo' });
     });
     // Nudges: a synced send to me that is unopened with a future deliver_at, and my own Me nudges at theirs.

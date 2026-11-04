@@ -550,7 +550,7 @@ var CycleCore = (function () {
   // Action chips for one fight, from the viewer's side. o: {me, partner: {user_id, name}, marker, notes, todos}.
   // -> [{kind: 'add'} | {kind: 'details'} | {kind: 'todo', id, title} | {kind: 'wait', name}]. Held asks have no todo yet, so they never show.
   function fightActions(o) {
-    var out = [], open = function (t) { return t.fight_marker_id === o.marker.id && !t.done_at && !t.deleted_at; };
+    var out = [], open = function (t) { return t.fight_marker_id === o.marker.id && !t.done_at && !t.declined_at && !t.deleted_at; };
     var wrote = function (uid) { return o.notes.some(function (n) { return n.fight_marker_id === o.marker.id && n.author_id === uid && n.kind !== 'analysis'; }); };
     var repaired = !!o.marker.repaired_at;
     if (!repaired && !wrote(o.me)) out.push({ kind: 'add' });
