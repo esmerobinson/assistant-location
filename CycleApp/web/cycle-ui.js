@@ -363,9 +363,11 @@ function hprog(x) {
 // Small pills under a to do's title: whose it is, and its kind when not a plain task.
 var TYPE_TAG = { habit: 'Habit', ownup: 'Own up', response: 'Response' };
 function edited(x) { return C.isEdited(x, L('todo_events'), St.me()) ? '<small class="ed">Edited</small>' : ''; }
-function tags(x) {
-  return '<span class="tts"><span class="tt">' + (x.owner_id === St.me() ? 'You' : pnx(nameOf(x.owner_id))) + '</span>' + (TYPE_TAG[x.type] ? '<span class="tt">' + TYPE_TAG[x.type] + '</span>' : '') + '</span>';
+function tags(x, noType) {
+  return '<span class="tts"><span class="tt">' + (x.owner_id === St.me() ? 'You' : pnx(nameOf(x.owner_id))) + '</span>' + (!noType && TYPE_TAG[x.type] ? '<span class="tt">' + TYPE_TAG[x.type] + '</span>' : '') + '</span>';
 }
+// The live fight a to do belongs to, or null (no link, or the fight was deleted).
+function todoFight(x) { var mk = x.fight_marker_id && S.rows.fight_markers[x.fight_marker_id]; return mk && !mk.deleted_at ? mk : null; }
 var DONE_SHOWN = 10; // Done rows shown before "All": a guess at a few days' worth, short enough that Open stays the first thing seen.
 SCREEN.todo = function () {
   var rem = ui.todoSeg === 'rem';
@@ -375,12 +377,29 @@ SCREEN.todo = function () {
     return phone('p2 nd', '<header class="hd"><div><h2>To-dos</h2></div><span class="plus" data-a="nudgenew">' + ic('plus') + '</span></header>' + seg2 + remBody(), { sheet: sh });
   }
   var held = heldItems(), sched = scheduledTodos();
+  // One list: mine first (late and due-today at the top), then the partner's; the tag says whose.
+  var mineL = urgentFirst(openTodos(myTodos())), theirs = urgentFirst(theirTodos());
   // Every row opens its view page (the Edit pill there is the author's only way into the edit sheet); the Done / +1
   // buttons inside a row carry their own data-a, and the click handler takes the closest one, so they never open it.
-  function row(x) {
-    var mine = x.owner_id === St.me(), habit = x.type === 'habit', h = habit && hprog(x), resp = x.type === 'response';
+  // sub: the row sits under its fight's parent row, so the fight arrow and the Response tag would only repeat it.
+  function row(x, sub) {
+    var mine = x.owner_id === St.me(), habit = x.type === 'habit', h = habit && hprog(x), resp = x.type === 'response' && !sub;
     var btn = !mine ? '' : habit ? '<span class="p1b" data-a="tally:' + x.id + '">+1</span>' : '<span class="done" data-a="done:' + x.id + '">Done</span>';
-    return '<div class="td-row" data-todo="' + x.id + '" data-a="tview:' + x.id + '"><span class="om">' + (resp ? '<svg><use href="#fa"/></svg>' : '') + '</span><div class="tx"><p>' + esc(x.title) + '</p>' + tdDesc(x) + (habit ? lastNote(x) + h.bar : dueTag(x)) + edited(x) + ns('todos', x.id) + tags(x) + '</div>' + (habit ? '<span class="hv">' + h.hv + '</span>' : '') + btn + '</div>';
+    return '<div class="td-row' + (sub ? ' sub' : '') + '" data-todo="' + x.id + '" data-a="tview:' + x.id + '"><span class="om">' + (resp ? '<svg><use href="#fa"/></svg>' : '') + '</span><div class="tx"><p>' + esc(x.title) + '</p>' + tdDesc(x) + (habit ? lastNote(x) + h.bar : dueTag(x)) + edited(x) + ns('todos', x.id) + tags(x, sub) + '</div>' + (habit ? '<span class="hv">' + h.hv + '</span>' : '') + btn + '</div>';
+  }
+  // A fight's open to dos (both people's) sit under one parent row naming the fight, at the place its first to do would take.
+  var all = mineL.concat(theirs), shownFight = {};
+  function rows(list) {
+    return list.map(function (x) {
+      var mk = todoFight(x);
+      if (!mk) return row(x);
+      if (shownFight[mk.id]) return '';
+      shownFight[mk.id] = true;
+      var d = C.localDay(C.ms(mk.at), tz()), text = fightSummary(mk);
+      return '<div class="td-fg"><div class="td-row fgp" data-a="openfight:' + mk.id + '"><span class="om">' + ic('i-fight') + '</span><div class="tx">' + (text ? '<p>' + esc(text) + '</p>' : '') +
+        '<small>Fight &middot; ' + dayName(d) + ' ' + (+d.slice(8)) + ' ' + MON[+d.slice(5, 7) - 1] + '</small></div>' + ic('chevr', 'chv') + '</div>' +
+        all.filter(function (t) { return t.fight_marker_id === mk.id; }).map(function (t) { return row(t, true); }).join('') + '</div>';
+    }).join('');
   }
   var heldHtml = held.length ? section('Held', held.map(function (i) {
     var rd = C.ms(i.held_until) <= now();
@@ -389,11 +408,9 @@ SCREEN.todo = function () {
   var schedHtml = sched.length ? section('Scheduled', sched.map(function (t) {
     return '<div class="td-row hrow2"><span class="om"></span><p class="ht">' + esc(t.title) + '</p><p class="hm2">' + fmtWhen(C.ms(t.created_at)) + ' &middot; ' + (t.owner_id === St.me() ? 'You' : pn()) + '</p><div class="hact"><span class="elink" data-a="schedcancel:' + t.id + '">Cancel</span></div></div>';
   }).join(''), 'held') : '';
-  // One list: mine first (late and due-today at the top), then the partner's; the tag says whose.
-  var mineL = urgentFirst(openTodos(myTodos())), theirs = urgentFirst(theirTodos());
-  var open = mineL.map(row).join('') + S.priv.queued.map(function (q) {
+  var open = rows(mineL) + S.priv.queued.map(function (q) {
     return '<div class="td-row"><span class="om"></span><div class="tx"><p>' + esc(q.body) + '</p>' + tdDesc(q) + '<small>Queued</small><span class="tts"><span class="tt">' + pn() + '</span></span></div></div>';
-  }).join('') + theirs.map(row).join('');
+  }).join('') + rows(theirs);
   var done = L('todos').filter(function (x) { return !x.deleted_at && x.done_at; }).sort(function (a, b) { return C.ms(b.done_at) - C.ms(a.done_at); });
   // Done is collapsed by default: only its label and count show, and tapping the label toggles the rows (and the
   // All / Fewer row past DONE_SHOWN). The chevron points right when closed, down when open.
@@ -690,9 +707,13 @@ function fightActionChips(mk) {
       : a.kind === 'add' ? '<span class="rc a">Add your side</span>' : a.kind === 'details' ? '<span class="rc a">Add details</span>' : '<span class="rc">Waiting on ' + esc(a.name) + '</span>';
   }).join('');
 }
+// A fight's one-line gist: the shared summary, else the logger's own on-device text, else the first shared note.
+function fightSummary(mk) {
+  var rec = ownFight(mk), first = fightNotes(mk.id).filter(function (n) { return !n.deleted_at; })[0];
+  return mk.summary || (rec && rec.about ? rec.about : first ? first.body : '');
+}
 function fightRow(mk) {
-  var own = mk.logged_by === St.me(), rec = ownFight(mk), notes = fightNotes(mk.id).filter(function (n) { return !n.deleted_at; }), first = notes[0];
-  var text = mk.summary || (own && rec && rec.about ? rec.about : first ? first.body : '');
+  var own = mk.logged_by === St.me(), rec = ownFight(mk), text = fightSummary(mk);
   var d = C.localDay(C.ms(mk.at), tz()), chips = fightActionChips(mk);
   return '<div class="rf" data-a="openfight:' + mk.id + '"><div class="meta"><span>' + (own ? 'You' : pnx(nameOf(mk.logged_by))) + ' &middot; ' + dayName(d) + ' ' + (+d.slice(8)) + ' ' + MON[+d.slice(5, 7) - 1] + ' &middot; ' + fmtTime(C.ms(mk.at)) + '</span>' + (rec ? ix(rec.intensity) : '') + ns('fight_markers', mk.id) + '</div>' +
     (text ? '<p class="sm">' + esc(text) + '</p>' : '') + (chips ? '<div class="rcs">' + chips + '</div>' : '') + '</div>';

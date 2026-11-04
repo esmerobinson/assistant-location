@@ -40,15 +40,15 @@ const item = (id, o) => ({ ...base, id, sender_id: ME, recipient_id: HER, kind: 
 const nudge = (id, body, o) => ({ ...base, id, author_id: ME, body, tag: 'Calm', pinned: false, sort_order: 0, archived_at: null, ...o });
 
 const TODOS = [
-  td('t-mine', { title: 'Book the dentist appointment', description: 'Ask about the Tuesday slot', due_date: '2026-10-23' }),
+  td('t-mine', { fight_marker_id: 'fm5', title: 'Book the dentist appointment', description: 'Ask about the Tuesday slot', due_date: '2026-10-23' }),
   td('t-habit', { title: 'Stretch for ten minutes every morning', type: 'habit', target: 3, period: 'week' }),
   td('t-month', { title: 'Call mum', type: 'habit', target: 20, period: 'month' }),
   td('t-from-her', { title: 'Take the bins out', created_by: HER }),
-  td('t-resp', { title: 'Apologise', type: 'response', created_by: HER }),
+  td('t-resp', { fight_marker_id: 'fm5', title: 'Apologise', type: 'response', created_by: HER }),
   td('t-note', { title: 'Water the plants', needs_note: true }),
   td('t-late-mine', { title: 'Sort out the whole of the paperwork for the car before the end of the month', due_date: '2026-10-15' }),
   td('t-late-long', { title: 'Can you tell me what you are doing for the whole of next weekend so that I can plan around it please', owner_id: HER, created_by: ME, due_date: '2026-10-15' }),
-  td('t-hers', { title: 'Renew the car insurance', owner_id: HER, created_by: ME, due_date: '2026-10-25' }),
+  td('t-hers', { fight_marker_id: 'fm5', title: 'Renew the car insurance', owner_id: HER, created_by: ME, due_date: '2026-10-25' }),
   td('t-hers-h', { title: 'Run', owner_id: HER, created_by: ME, type: 'habit', target: 2, period: 'day' }),
   // Owning up: one open of mine, one she finished with a long note (Home card + view page).
   td('t-ownup-open', { title: 'I went quiet when you asked about Friday and left the room', type: 'ownup', needs_note: true, points_earn: 0, points_miss: 0 }),
@@ -87,7 +87,8 @@ const SHARED = {
     todo_nudges: { tn1: { ...base, id: 'tn1', todo_id: 't-hers-h', sender_id: ME, created_at: iso(1) } },
     todo_events: { e2: { ...base, id: 'e2', todo_id: 't-ownup-done', user_id: HER, kind: 'done', at: iso(6), note: 'I went quiet because I felt judged, and next time I will say so instead of leaving' }, e1: { ...base, id: 'e1', todo_id: 't-habit', user_id: ME, kind: 'tally', at: iso(2), note: null } },
     checkins: {},
-    fight_markers: { fm4: { ...base, id: 'fm4', logged_by: ME, at: iso(0.1), created_at: iso(0.1), repaired_at: null, hit_self: false, hit_related: false }, fm1: { ...base, id: 'fm1', logged_by: ME, at: iso(30), repaired_at: null, hit_self: false, hit_related: false, intensity: 3 },
+    fight_markers: { fm5: { ...base, id: 'fm5', logged_by: HER, at: iso(26), repaired_at: null, hit_self: false, hit_related: false, intensity: 3, summary: 'We argued about the weekend plans and it escalated into whether either of us ever really listens to the other one' },
+      fm4: { ...base, id: 'fm4', logged_by: ME, at: iso(0.1), created_at: iso(0.1), repaired_at: null, hit_self: false, hit_related: false }, fm1: { ...base, id: 'fm1', logged_by: ME, at: iso(30), repaired_at: null, hit_self: false, hit_related: false, intensity: 3 },
       fm2: { ...base, id: 'fm2', logged_by: HER, at: iso(5), repaired_at: null, hit_self: null, hit_related: null, intensity: 2 },
       fm3: { ...base, id: 'fm3', logged_by: HER, at: iso(29), repaired_at: iso(20), hit_self: true, hit_related: false, hit_count: 1, intensity: 4 } },
     // One challenge per card state, with a long partner name and a long title so the card row is swept at its worst.
