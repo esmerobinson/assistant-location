@@ -42,7 +42,13 @@ static NSTimeInterval GLDefaultTabResumeThresholdSeconds(void) {
 // After the default tab has been auto-selected, no further resume reset for
 // this long, and no cold-launch selection either; the start time is persisted
 // so a relaunch does not reset it. Overridable for sim-test, like the threshold above.
-static NSTimeInterval const kGLDefaultTabCooldownSecondsDefault = 4 * 60 * 60;
+// 0 = off (2026-11-04, Oliver: Growth "wasn't opening enough"; it was shown
+// once, ignored, then skipped on every open for 4 hours). The rest after a
+// real Growth answer/pick is Growth's own quiet window (GLGrowthQuietWindow:
+// 30 min after a card, 4 hours after a tile pick), so this cooldown only ever
+// suppressed the default tab when nothing had been done with it. Kept as a
+// knob rather than deleted because sim-test.yml drives it via the override.
+static NSTimeInterval const kGLDefaultTabCooldownSecondsDefault = 0;
 
 static NSTimeInterval GLDefaultTabCooldownSeconds(void) {
     NSString *override = [[NSProcessInfo processInfo] environment][@"UITEST_DEFAULT_TAB_COOLDOWN_SECONDS"];
