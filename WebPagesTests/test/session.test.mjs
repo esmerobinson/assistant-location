@@ -3118,7 +3118,7 @@ test('typed Start carries autoSkill true for a default skill, omits it after a m
   await page.click('#session-start-btn');
   await waitFor(() => bodies.length === 1, 'first start');
   assert.equal(bodies[0].autoSkill, true);
-  assert.equal(await page.locator('#session-confirmation-title').textContent(), 'Started · no skill');
+  await page.waitForFunction(() => document.getElementById('session-confirmation-title').textContent === 'Started · no skill');
   await openTray(page);
   await trayRowLocator(page, 'project-02').click();
   await page.fill('#session-prompt', 'second one');

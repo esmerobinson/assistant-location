@@ -232,13 +232,14 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
 
   test('partner-logged marker shows "not related to <partner>" on Points', async () => {
     const { context, page } = await open();
+    // pagehide now flushes the page's own state over storage; stop that (S.loaded = false, in the same
+    // evaluate as the seed so no pending debounced persist can overwrite the row) so it survives the reload.
     await page.evaluate(([pid]) => {
+      CycleStore.S.loaded = false;
       const k = 'cycle:shared.u-me', sh = JSON.parse(localStorage.getItem(k));
       sh.rows.fight_markers.fp = { id: 'fp', couple_id: 'c1', logged_by: pid, at: new Date(Date.now() - 36e5).toISOString(), repaired_at: null, hit_self: true, hit_related: false };
       localStorage.setItem(k, JSON.stringify(sh));
     }, [PID]);
-    // pagehide now flushes the page's own state over storage; stop that so the seeded row survives the reload.
-    await page.evaluate(() => { CycleStore.S.loaded = false; });
     await page.reload({ waitUntil: 'domcontentloaded' });
     assert.ok((await pointsText(page)).includes('\u22125Fight · Hit herself, not related to Her'), 'Points Fight line');
     await context.close();

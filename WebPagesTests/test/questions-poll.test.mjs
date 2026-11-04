@@ -22,14 +22,20 @@ async function open(handler) {
   }));
   const page = await context.newPage();
   await page.clock.install();
-  const state = { count: 0, urls: [] };
-  await page.route('http://x.test/questions*', (r) => { state.count++; state.urls.push(r.request().url()); return handler(r, state); });
+  const state = { count: 0, done: 0, urls: [] };
+  await page.route('http://x.test/questions*', async (r) => { state.count++; state.urls.push(r.request().url()); await handler(r, state); state.done++; });
   await page.goto(PAGE_URL);
   while (state.count < 1) await page.waitForTimeout(20);
   await page.waitForTimeout(100);
   return { page, state };
 }
 const ok = (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ questions: [], visits: [], pending: [], takeovers: [] }) });
+// A reload is over once its response is fulfilled and the page has processed it; the page ignores
+// a reload request while one is in flight, so every step waits for the previous load to finish.
+const settled = async (page, state, n = state.count) => {
+  while (state.count < n || state.done < state.count) await page.waitForTimeout(20);
+  await page.waitForTimeout(300);
+};
 const setVisibility = (page, v) => page.evaluate((state) => {
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
   document.dispatchEvent(new Event('visibilitychange'));
@@ -39,14 +45,14 @@ test('reloads every 30s while visible, stops while hidden, reloads when visible 
   const { page, state } = await open(ok);
   assert.equal(state.count, 1);
   await page.clock.runFor(30000);
-  await page.waitForTimeout(100);
+  await settled(page, state, 2);
   assert.equal(state.count, 2);
   await setVisibility(page, 'hidden');
   await page.clock.runFor(90000);
   await page.waitForTimeout(100);
   assert.equal(state.count, 2);
   await setVisibility(page, 'visible');
-  await page.waitForTimeout(100);
+  await settled(page, state, 3);
   assert.equal(state.count, 3);
 });
 
@@ -61,7 +67,7 @@ test('a tick is skipped while a load is still in flight', async () => {
 test('only the initial load, a foreground and a visibility return ask for ?fresh=1; the 30s poll never does', async () => {
   const { page, state } = await open(ok);
   const last = () => state.urls[state.urls.length - 1];
-  const reached = async (n) => { while (state.count < n) await page.waitForTimeout(20); };
+  const reached = (n) => settled(page, state, n);
   assert.equal(state.count, 1);
   assert.equal(last(), 'http://x.test/questions?fresh=1');
   await page.clock.runFor(30000);
