@@ -587,13 +587,13 @@ function fightEditable(mk) {
 function hmOf(ms) { return new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz() }); }
 // A person's analysis shown word for word: author, paragraphs, then chips that open the earlier fights it points at.
 function analysisCard(n) {
-  var del = n.author_id === St.me() ? ' <span class="lnk" data-a="notedel:' + n.id + '">Delete</span>' : '';
+  var del = n.author_id === St.me() ? ' <span class="lnk" data-a="notedit:' + n.id + '">Edit</span> <span class="lnk" data-a="notedel:' + n.id + '">Delete</span>' : '';
   var links = (n.linked_fight_ids || []).map(function (id) { return S.rows.fight_markers[id]; }).filter(function (m) { return m && !m.deleted_at; })
     .sort(function (x, y) { return C.ms(x.at) - C.ms(y.at); }).map(function (m) {
       var d = C.localDay(C.ms(m.at), tz());
       return '<span class="lk" data-a="openfight:' + m.id + '">Also ' + dayName(d) + ' ' + (+d.slice(8)) + ' ' + MON[+d.slice(5, 7) - 1] + ic('chevr', 'sm') + '</span>';
     }).join('');
-  return '<div class="pcard"><p class="who">' + pnx(nameOf(n.author_id)) + del + '</p>' + n.body.split('\n').filter(function (l) { return l.trim(); }).map(function (l) { return '<p>' + esc(l) + '</p>'; }).join('') +
+  return '<div class="pcard"><p class="who">' + pnx(nameOf(n.author_id)) + (n.edited_at ? ' &middot; Edited' : '') + del + '</p>' + n.body.split('\n').filter(function (l) { return l.trim(); }).map(function (l) { return '<p>' + esc(l) + '</p>'; }).join('') +
     (links ? '<div class="chips">' + links + '</div>' : '') + '</div>';
 }
 // The story beats with each analysis card after the beat the summarizer placed it by; analysis it did not place (written since,
@@ -620,8 +620,8 @@ SCREEN.fightdetail = function () {
   var oldNote = old && old.about ? '<div class="fn"><p class="meta">' + pnx(nameOf(mk.logged_by)) + ' &middot; ' + noteStamp(C.ms(mk.at)) + '</p><p>' + esc(old.about) + '</p></div>' : '';
   // A deleted note stays as a marker, so a reply under it never reads as answering nothing.
   var list = oldNote + notes.map(function (n) {
-    var del = n.author_id === St.me() && !n.deleted_at ? ' <span class="lnk" data-a="notedel:' + n.id + '">Delete</span>' : '';
-    return '<div class="fn' + (n.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + (n.kind === 'analysis' && !n.deleted_at ? ' &middot; Analysis' : '') + ns('fight_notes', n.id).replace('<span', ' <span') + '</p><p>' + (n.deleted_at ? 'Deleted' : esc(n.body)) + '</p></div>' + (del ? '<p class="meta fna">' + del + '</p>' : '');
+    var del = n.author_id === St.me() && !n.deleted_at ? ' <span class="lnk" data-a="notedit:' + n.id + '">Edit</span> <span class="lnk" data-a="notedel:' + n.id + '">Delete</span>' : '';
+    return '<div class="fn' + (n.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + (n.kind === 'analysis' && !n.deleted_at ? ' &middot; Analysis' : '') + (n.edited_at && !n.deleted_at ? ' &middot; Edited' : '') + ns('fight_notes', n.id).replace('<span', ' <span') + '</p><p>' + (n.deleted_at ? 'Deleted' : esc(n.body)) + '</p></div>' + (del ? '<p class="meta fna">' + del + '</p>' : '');
   }).join('');
   var chips = fightChips(mk), gap = C.fightGap({ me: St.me(), marker: mk, notes: notes.filter(function (n) { return !n.deleted_at; }) });
   var hasBeats = !!(mk.summary_beats && mk.summary_beats.length), hidden = !!mk.summary_hidden_at;
@@ -648,6 +648,8 @@ SCREEN.fightdetail = function () {
   if (ui.sheet && ui.sheet.type === 'fightedit' && fightEditable(mk)) {
     sh = sheet('t3', '<div class="bsh"><h3>Edit</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Intensity</p><div class="arrows">' + intensityArrows(ui.d.int || 3) + '</div><div class="ends"><span>Low</span><span>High</span></div>' +
       hitFields(ui.d, St.myMember().hits_self) + whenRow('ew') + '<div class="acts"><div class="save" data-a="fighteditsave">Save</div></div>');
+  } else if (ui.sheet && ui.sheet.type === 'notedit' && S.rows.fight_notes[ui.sheet.id] && !S.rows.fight_notes[ui.sheet.id].deleted_at) {
+    sh = sheet('t3', '<div class="bsh"><h3>Edit note</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div>' + micTa('nedit', 'nt') + '<div class="acts"><div class="save" data-a="noteditsave">Save</div></div>');
   } else if (ui.sheet && ui.sheet.type === 'fightdel' && me && !mk.delete_requested_at) {
     sh = sheet('t3', '<div class="bsh"><h3>Delete?</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="ask">Ask ' + pn() + '</p><div class="acts" style="margin-top:44px"><div class="save" data-a="fightdelreq">Ask</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>');
   }
@@ -1849,6 +1851,19 @@ var ACT = {
     var n = S.rows.fight_notes[id];
     if (!n || n.author_id !== St.me() || n.deleted_at) throw new Error('Cannot delete');
     St.patch('fight_notes', id, { deleted_at: nowIso() }); render();
+  }),
+  // 2026-11-05: the author may rewrite their own note's body any time; the server stamps edited_at so the partner sees "Edited".
+  notedit: guard(function (id) {
+    var n = S.rows.fight_notes[id];
+    if (!n || n.author_id !== St.me() || n.deleted_at) throw new Error('Cannot edit');
+    ui.sheet = { type: 'notedit', id: id }; ui.d = { nedit: n.body }; render();
+  }),
+  noteditsave: guard(function () {
+    var n = S.rows.fight_notes[ui.sheet.id], b = (ui.d.nedit || '').trim();
+    if (!n || n.author_id !== St.me() || n.deleted_at) throw new Error('Cannot edit');
+    if (!b) throw new Error('Note needed');
+    if (b !== n.body) St.patch('fight_notes', n.id, { body: b });
+    ui.sheet = null; ui.d = {}; render();
   }),
   fightedit: guard(function () {
     var mk = S.rows.fight_markers[ui.fightId];

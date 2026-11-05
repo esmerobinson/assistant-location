@@ -206,6 +206,24 @@ describe('detail actions (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     await context.close();
   });
 
+  test('fight note edit: the author rewrites their own note (Edit offered only on their own), Edited shows once the server stamps it', async () => {
+    const notes = [{ id: 'n1', couple_id: 'c1', fight_marker_id: 'f1', author_id: ME, body: 'my side', created_at: iso(NOWMS - 4 * MIN), edited_at: null, deleted_at: null },
+      { id: 'n2', couple_id: 'c1', fight_marker_id: 'f1', author_id: HER, body: 'her side', created_at: iso(NOWMS - 3 * MIN), edited_at: iso(NOWMS - MIN), deleted_at: null }];
+    const { context, page } = await open(seed({ fights: [fm('f1')], notes }));
+    await openFight(page, 'f1');
+    assert.deepEqual(await page.$$eval('[data-a^="notedit:"]', (e) => e.map((x) => x.dataset.a)), ['notedit:n1'], 'only my note offers Edit');
+    assert.match(await page.textContent('.fn:nth-of-type(2) .meta'), /Edited/, 'her edited note shows Edited to me');
+    await page.click('[data-a="notedit:n1"]');
+    assert.equal(await page.inputValue('.bs textarea'), 'my side', 'prefilled');
+    await page.fill('.bs textarea', '  my side, revised ');
+    await page.click('[data-a="noteditsave"]');
+    await page.waitForFunction(() => window.CycleStore.S.outbox.length > 0);
+    assert.deepEqual(await patches(page, 'fight_notes'), [{ body: 'my side, revised' }]);
+    assert.equal(await page.$('.bs'), null, 'sheet closed');
+    assert.match(await page.textContent('.fns'), /my side, revised/);
+    await context.close();
+  });
+
   test('to-do undo: done and tally are taken back together with their event', async () => {
     const todos = [td('a', { done_at: iso(NOWMS - 60 * MIN) }), td('h', { type: 'habit', target: 3, period: 'week', tally: 2 })];
     const evs = [{ id: 'ea', couple_id: 'c1', todo_id: 'a', user_id: ME, kind: 'done', at: iso(NOWMS - 60 * MIN), note: null },
