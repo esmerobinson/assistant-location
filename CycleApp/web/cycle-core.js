@@ -147,6 +147,16 @@ var CycleCore = (function () {
     var b = String(base || '').replace(/\s+$/, ''), t = String(text || '').trim();
     return b && t ? b + ' ' + t : b || t;
   }
+  // speechReset(prev, next): true when next is a fresh utterance, not a revision of prev. The iOS recognizer restarts its
+  // transcript from empty after a pause; a revision keeps at least one of prev's first three words in its first three and doesn't collapse a long prev to under half its length.
+  function speechReset(prev, next) {
+    function head(t) { return String(t || '').toLowerCase().replace(/[^\w\s']/g, '').split(/\s+/).filter(Boolean).slice(0, 3); }
+    var p = head(prev), n = head(next);
+    if (!p.length || !n.length) return false;
+    var pt = String(prev || '').trim(), nt = String(next || '').trim();
+    if (pt.split(/\s+/).length >= 6 && nt.length < pt.length / 2) return true;
+    return !p.some(function (w) { return n.indexOf(w) >= 0; });
+  }
 
   function ms(v) { return typeof v === 'number' ? v : Date.parse(v); }
 
@@ -586,7 +596,7 @@ var CycleCore = (function () {
 
   return {
     localDay: localDay, addDays: addDays, dayDiff: dayDiff, dow: dow, weekStart: weekStart,
-    appendSpeech: appendSpeech, dueInfo: dueInfo, holdMinutes: holdMinutes, heldUntil: heldUntil, countdown: countdown, heldLabel: heldLabel, durText: durText, ms: ms,
+    appendSpeech: appendSpeech, speechReset: speechReset, dueInfo: dueInfo, holdMinutes: holdMinutes, heldUntil: heldUntil, countdown: countdown, heldLabel: heldLabel, durText: durText, ms: ms,
     isScheduled: isScheduled, scheduleAt: scheduleAt, buildItem: buildItem, askToTodo: askToTodo,
     zonedMs: zonedMs, deliverAt: deliverAt, issueHeldUntil: issueHeldUntil, sectionNudges: sectionNudges,
     addMonths: addMonths, splitPayout: splitPayout, awardStatus: awardStatus,

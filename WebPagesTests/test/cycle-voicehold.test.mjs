@@ -122,3 +122,17 @@ test('no hold menu on a mic that is not recording', async () => {
   await page.mouse.up();
   await context.close();
 });
+
+test('a recognizer restart after a pause keeps the earlier sentence; Cancel still restores the pre-dictation text', async () => {
+  const { context, page } = await open();
+  await page.click('[data-a="mic:note"]');
+  await page.waitForSelector('.mic.rec[data-a="mic:note"]');
+  await hear(page, 'A minute ago I went');
+  await hear(page, 'A minute ago I went home');
+  await hear(page, 'She starts to hit herself');
+  assert.equal(await note(page), 'We argued A minute ago I went home She starts to hit herself');
+  await hold(page, 'cancel');
+  await page.waitForSelector('.mic:not(.rec)[data-a="mic:note"]');
+  assert.equal(await note(page), 'We argued');
+  await context.close();
+});

@@ -1747,7 +1747,7 @@ var ACT = {
   sheet: function () { ui.sheet = null; ui.d = {}; render(); },
   mic: guard(function (field) {
     if (ui.rec) return stopRec().then(render);
-    ui.rec = { field: field, base: ui.d[field] || '' }; render();
+    ui.rec = { field: field, base: ui.d[field] || '', orig: ui.d[field] || '', last: '' }; render();
     return St.native.speechStart().catch(function (e) { ui.rec = null; throw e; });
   }),
   // Talk: open from a note field (restoring this fight's saved conversation), and the controls inside it.
@@ -2359,7 +2359,7 @@ function applyRoute(r, synced) {
 }
 // Hold menu on a recording dictation mic (voice-hold.js, the one gesture every app's mics share): holding the mic while it
 // listens pops Cancel / Insert. Insert stops and keeps what was heard, which is what a tap does here too, since these mics
-// fill their box and never send. Cancel stops and puts the box back to what it held before the mic started (ui.rec.base),
+// fill their box and never send. Cancel stops and puts the box back to what it held before the mic started (ui.rec.orig),
 // so a dictation that came out wrong costs nothing. The Talk screen's mic (.tkmic) is a turn-taking control, not
 // dictation, and is not matched by '.mic.rec'.
 VoiceHold.init({
@@ -2372,7 +2372,7 @@ VoiceHold.init({
     return {
       insert: guard(function () { return stopRec().then(render); }),
       cancel: guard(function () {
-        var base = ui.rec.base, el = document.querySelector('[data-d="' + f + '"]');
+        var base = ui.rec.orig, el = document.querySelector('[data-d="' + f + '"]');
         ui.d[f] = base; if (el) el.value = base; saveDraft(draftKey()); if (f === 'more') noteSaveSync();
         // stopRec clears ui.rec first, so a late partial or final transcript from the shell is dropped (cycleNative.speech).
         return stopRec().then(render);
@@ -2389,7 +2389,9 @@ window.cycleNative = {
     if (!ui.rec) return;
     if (ui.rec.field === 'talk') return talkHeard(text, final);
     var f = ui.rec.field, el = document.querySelector('[data-d="' + f + '"]');
-    if (text) { ui.d[f] = C.appendSpeech(ui.rec.base, text); if (el) el.value = ui.d[f]; saveDraft(draftKey()); if (f === 'more') noteSaveSync(); }
+    // The recognizer restarts its transcript after a pause: bank the previous utterance into base so it isn't overwritten.
+    if (text && C.speechReset(ui.rec.last, text)) ui.rec.base = C.appendSpeech(ui.rec.base, ui.rec.last);
+    if (text) { ui.rec.last = text; ui.d[f] = C.appendSpeech(ui.rec.base, text); if (el) el.value = ui.d[f]; saveDraft(draftKey()); if (f === 'more') noteSaveSync(); }
     if (final) { ui.rec = null; render(); }
   },
   speechError: function (msg) { ui.rec = null; showErr(plain(new Error(msg))); },
