@@ -14,7 +14,14 @@ typedef void (^CycleResult)(id result, NSString *error);
 @property (nonatomic, assign) BOOL ready;
 @property (nonatomic, strong) NSMutableArray<NSString *> *queuedRoutes;
 @property (nonatomic, copy) NSString *pushToken;
+// The last route handed to a ready page, kept so a reload right after a notification tap (a fresh web copy activating
+// on open, a long-absence reload, a killed web process) re-delivers it to the new page instead of booting on Home.
+@property (nonatomic, copy) NSString *lastRoute;
+@property (nonatomic, strong) NSDate *lastRouteAt;
+@property (nonatomic, copy) NSString *replayRoute; // lastRoute, carried across a reload; a newer queued tap wins
 @end
+
+static const NSTimeInterval CycleRouteRedeliverWindow = 60;
 
 static NSString *const CycleLockDefaultsKey = @"cycle.lockEnabled";
 static NSString *const CycleLockPassedDefaultsKey = @"cycle.lockPassed";
@@ -201,9 +208,10 @@ static NSString *CycleKeychainError(NSString *op, OSStatus st) {
     } else if ([cmd isEqualToString:@"ready"]) {
         done(NSNull.null, nil);
         self.ready = YES;
-        NSArray *queued = [self.queuedRoutes copy];
+        NSArray *queued = self.queuedRoutes.count ? [self.queuedRoutes copy] : (self.replayRoute ? @[self.replayRoute] : @[]);
         [self.queuedRoutes removeAllObjects];
-        for (NSString *route in queued) [self callNative:@"route" arguments:@[route]];
+        self.replayRoute = nil;
+        for (NSString *route in queued) [self deliverRoute:route];
         if (self.pushToken) [self callNative:@"pushToken" arguments:@[self.pushToken]];
     } else {
         done(nil, [NSString stringWithFormat:@"unsupported bridge command %@", cmd]);
@@ -211,8 +219,10 @@ static NSString *CycleKeychainError(NSString *op, OSStatus st) {
 }
 
 - (void)deliverRoute:(NSString *)route {
-    if (self.ready) [self callNative:@"route" arguments:@[route]];
-    else [self.queuedRoutes addObject:route];
+    if (!self.ready) { [self.queuedRoutes addObject:route]; return; }
+    [self callNative:@"route" arguments:@[route]];
+    self.lastRoute = route;
+    self.lastRouteAt = [NSDate date];
 }
 
 - (void)deliverPushToken:(NSString *)hex {
@@ -238,6 +248,8 @@ static NSString *CycleKeychainError(NSString *op, OSStatus st) {
 }
 
 - (void)pageWillReload {
+    if (self.ready) self.replayRoute = self.lastRoute && -[self.lastRouteAt timeIntervalSinceNow] < CycleRouteRedeliverWindow ? self.lastRoute : nil;
+    self.lastRoute = nil;
     self.ready = NO;
 }
 

@@ -329,6 +329,33 @@
     XCTAssertEqual(self.js.count, 2u, @"the queued route goes out on the new page's ready");
 }
 
+// A notification tap opens the app, the route reaches the page, then a fresh web copy reloads it: the new page must
+// still get the route, or the tap ends on Home (Oliver's "Log fight" tap, 2026-11-05). An old route is not replayed.
+- (void)testRouteDeliveredJustBeforeReloadIsRedeliveredToTheNewPage {
+    NSString *prefix = @"window.cycleNative.route.apply(window.cycleNative, ";
+    [self run:@"ready" args:@{}];
+    [self.bridge deliverRoute:@"fight/f1"];
+    XCTAssertEqual(self.js.count, 1u);
+    [self.bridge pageWillReload];
+    [self.bridge pageWillReload]; // provisional navigation can start twice; still one redelivery
+    [self run:@"ready" args:@{}];
+    XCTAssertEqual(self.js.count, 2u, @"%@", self.js);
+    XCTAssertEqualObjects([self argsOfJS:self.js[1] prefix:prefix], (@[@"fight/f1"]));
+    // A newer tap queued during the reload wins over the replay.
+    [self.bridge pageWillReload];
+    [self.bridge deliverRoute:@"todo/t1"];
+    [self run:@"ready" args:@{}];
+    NSMutableArray *routes = [NSMutableArray array];
+    for (NSString *js in self.js) if ([js hasPrefix:prefix]) [routes addObject:[self argsOfJS:js prefix:prefix][0]];
+    XCTAssertEqualObjects(routes, (@[@"fight/f1", @"fight/f1", @"todo/t1"]), @"%@", self.js);
+    // Past the window the tap is old news: a later reload boots wherever the page boots.
+    [self.bridge setValue:[NSDate dateWithTimeIntervalSinceNow:-120] forKey:@"lastRouteAt"];
+    NSUInteger before = self.js.count;
+    [self.bridge pageWillReload];
+    [self run:@"ready" args:@{}];
+    XCTAssertEqual(self.js.count, before, @"%@", self.js);
+}
+
 // The APNs token is held until the page is ready, goes straight through after, and is resent on every new page's ready.
 - (void)testPushTokenWaitsForReadyAndIsResentAfterReload {
     [self.bridge deliverPushToken:@"abcd"];
