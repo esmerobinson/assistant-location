@@ -114,9 +114,17 @@ const SHARED = {
   },
   cursors: {}, outbox: [],
 };
-const seed = (couple) => ({
+// Fight detail with a summary, the Missing block and the collapsed note row. Its own page (seed 'fightsum'): these rows on the shared
+// page changed the Week ledger that the week scenario measures.
+const FIGHT_SUMMARY = {
+  fight_markers: { fm6: { ...base, id: 'fm6', logged_by: HER, at: iso(24 * 40), repaired_at: null, hit_self: false, hit_related: false, intensity: 3, summary_notes_at: iso(24 * 39),
+    summary_beats: [{ lead: 'It started small', text: 'The weekend plans were never settled, and each of you read the silence as the other not caring.', after: [] }, { lead: 'It escalated', text: 'Voices went up about the dishes, then about who listens, until you both stopped talking.', after: [] }],
+    gaps: { [ME]: 'What you were feeling right before the dishes comment, and whether anything had happened earlier that day.' } } },
+  fight_notes: { fn6: { ...base, id: 'fn6', fight_marker_id: 'fm6', author_id: HER, created_at: iso(24 * 40 - 1), body: 'I felt unheard and said things I did not mean' } },
+};
+const seed = (couple, extra) => ({
   session: { access_token: 't', refresh_token: 'r', expires_at: 4102444800, user: { id: ME, email: 'me@x.test' } },
-  ['shared.' + ME]: couple ? SHARED : { couple: null, members: [], rows: {}, cursors: {}, outbox: [] },
+  ['shared.' + ME]: couple ? (extra ? { ...SHARED, rows: Object.fromEntries(Object.entries(SHARED.rows).map(([t, r]) => [t, { ...r, ...extra[t] }])) } : SHARED) : { couple: null, members: [], rows: {}, cursors: {}, outbox: [] },
   ['priv.' + ME]: { fights: [{ id: 'fm4', at: Date.parse(NOW) - 0.1 * 36e5, logged_at: Date.parse(NOW) - 0.1 * 36e5, intensity: 3 }, { id: 'f1', at: iso(30), intensity: 3 }, { id: 'f2', at: iso(24 * 20), intensity: 2 }], affirmations: [], prefs: {}, ownupSeen: [], ownupSince: 0,
     queued: [{ body: 'Pick up milk on the way home' }], nudges: [], nudge_sends: [], kudos: [{ id: 'pk1', body: 'I walked away instead of arguing', created_at: iso(8) }] },
 });
@@ -149,7 +157,8 @@ const SCENARIOS = [
   ['todo-done-all', ['tab:todo', 'doneopen', 'doneall']], ['rem-sent', ['tab:todo', 'todoseg:rem', 'remview:sent']], ['rem-recv', ['tab:todo', 'todoseg:rem', 'remview:recv']],
   ['rem-arch', ['tab:todo', 'todoseg:rem', 'remview:arch']], ['shop-edit', ['go:points', 'go:shop', 'shopedit']], ['shop-edit-sheet', ['go:points', 'go:shop', 'shopedit', 'reward:r1']],
   ['issues', ['go:issues']], ['issue-still', ['go:issues', 'still:i-iss-held']], ['issue-still-ready', ['go:issues', 'still:i-iss-ready']],
-  ['issue-new', ['go:issues', 'issuenew']], ['issue-new-long', ['go:issues', 'issuenew', 'fill:ibody=You said you would plan the weekend and then left it all to me again, and I would like that to change because it keeps happening', 'itype:change']]
+  ['issue-new', ['go:issues', 'issuenew']], ['issue-new-long', ['go:issues', 'issuenew', 'fill:ibody=You said you would plan the weekend and then left it all to me again, and I would like that to change because it keeps happening', 'itype:change']],
+  ['fight-detail-summary', { seed: 'fightsum', steps: ['go:fight', 'openfight:fm6'] }]
 ];
 
 // Runs in the page. Returns violation strings: "<selector> <what> <numbers>".
@@ -270,7 +279,7 @@ describe('layout sweep (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_
     await context.addInitScript((s) => {
       window.CYCLE_CONFIG = { supabaseUrl: 'https://x.test', supabaseAnonKey: 'k', boxUrl: '' };
       if (!localStorage.getItem('cycle:session')) for (const k in s) localStorage.setItem('cycle:' + k, JSON.stringify(s[k]));
-    }, kind === 'auth' ? {} : seed(kind !== 'setup'));
+    }, kind === 'auth' ? {} : seed(kind !== 'setup', kind === 'fightsum' ? FIGHT_SUMMARY : null));
     await context.route('**/cycle.css', (r) => r.fulfill({ contentType: 'text/css', body: CSS }));
     await context.route('https://x.test/**', (r) => r.abort()); // offline: everything comes from the seed
     const page = await context.newPage();
@@ -297,7 +306,7 @@ describe('layout sweep (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_
         const solo = !Array.isArray(spec);
         const { context, page, errors } = solo ? await open(w, spec.seed) : main;
         try {
-          if (!solo) { await act(page, 'tab:home'); for (const a of spec) { await act(page, a); } }
+          if (!solo) { await act(page, 'tab:home'); for (const a of spec) { await act(page, a); } } else for (const a of spec.steps || []) await act(page, a);
           await page.waitForTimeout(60);
           if (SHOTS) await page.screenshot({ path: path.join(SHOTS, `${screen}-${w}.png`) });
           assert.deepEqual(errors.splice(0), [], `${screen} @ ${w}px threw`);
