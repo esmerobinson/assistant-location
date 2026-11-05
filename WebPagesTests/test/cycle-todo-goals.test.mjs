@@ -73,6 +73,41 @@ describe('todo goals (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_WE
   const queued = async (page, n) => { await page.waitForFunction((k) => JSON.parse(localStorage.getItem('cycle:priv.u-me')).queued?.length === k, n); };
   const shot = (page, name) => SHOTS && page.screenshot({ path: path.join(SHOTS, name + '.png') });
 
+  test('points are opt-in: a new to do hides Earn/Lose and saves 0/0; the Points toggle shows them with the type defaults', async () => {
+    const { page } = await open(seed({}));
+    const newTask = async (title) => {
+      await page.click('.hd [data-a="addpick"]'); await page.click('.bs [data-a="newtodo:task"]'); await page.click('[data-a="nfor:me"]');
+      await page.fill('input[data-d="title"]', title);
+    };
+    await newTask('Plain');
+    assert.equal(await page.$('[data-a="stp:pe:1"]'), null, 'Earn hidden by default');
+    assert.equal(await page.$('[data-a="stp:pm:1"]'), null, 'Lose hidden by default');
+    assert.equal(await page.$eval('[data-a="npts"]', (e) => e.classList.contains('on')), false);
+    await shot(page, '0-new-no-points');
+    await page.click('[data-a="savetodo"]');
+    let s = await stored(page, (x) => Object.values(x.rows.todos).some((t) => t.title === 'Plain'));
+    let t = Object.values(s.rows.todos).find((r) => r.title === 'Plain');
+    assert.deepEqual([t.points_earn, t.points_miss], [0, 0]);
+    // toggled on: Earn/Lose appear at the task defaults and save what was set
+    await newTask('Scored');
+    await page.click('[data-a="npts"]');
+    assert.equal(await page.$eval('.bs .frow:has([data-a="stp:pe:1"]) b', (e) => e.textContent), '3');
+    await shot(page, '0-new-points-on');
+    await page.click('[data-a="stp:pe:1"]');
+    await page.click('[data-a="savetodo"]');
+    s = await stored(page, (x) => Object.values(x.rows.todos).some((t) => t.title === 'Scored'));
+    const sc = Object.values(s.rows.todos).find((r) => r.title === 'Scored');
+    assert.deepEqual([sc.points_earn, sc.points_miss], [4, 3]);
+    // the pointless one's view page has no Earn/Lose lines, and its edit sheet opens with Points off
+    await page.click('[data-todo="' + t.id + '"] .tx p');
+    await page.waitForSelector('.fight[data-a="etodo:' + t.id + '"]');
+    assert.equal(await page.$('.frow .lab0:text-is("Earn")'), null, 'no Earn line on a pointless to do');
+    await page.click('.fight[data-a="etodo:' + t.id + '"]');
+    await page.waitForSelector('[data-a="npts"]');
+    assert.equal(await page.$eval('[data-a="npts"]', (e) => e.classList.contains('on')), false);
+    assert.equal(await page.$('[data-a="stp:pe:1"]'), null);
+  });
+
   test('edit round trip: reopen shows the saved values, edit back restores, outbox patches, Delete soft-deletes', async () => {
     const { page, context } = await open(seed({ todos: [td('t1', { title: 'Book flight', due_date: '2026-10-30' })] }));
     await page.click('[data-todo="t1"] .tx p'); await page.click('.fight[data-a="etodo:t1"]');
@@ -211,7 +246,7 @@ describe('todo goals (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_WE
     // A new to do is for the partner by default, even before they have joined.
     assert.equal(await page.getAttribute('[data-a="nfor:them"]', 'class'), 'on');
     await page.fill('[data-d="title"]', 'Water the plants');
-    await page.click('[data-a="nkind:habit"]'); await page.click('[data-a="nper:day"]'); await page.click('[data-a="stp:pe:1"]');
+    await page.click('[data-a="nkind:habit"]'); await page.click('[data-a="nper:day"]'); await page.click('[data-a="npts"]'); await page.click('[data-a="stp:pe:1"]');
     await page.click('[data-a="savetodo"]');
     await page.waitForSelector('.td-row small:has-text("Queued")');
     assert.equal(await page.$eval('.td-row small:has-text("Queued")', (e) => e.textContent), 'Queued');

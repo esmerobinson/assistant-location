@@ -449,7 +449,9 @@ function newTodoSheet() {
     '<div class="frow"><span class="lab0">Type</span>' + seg([['task', 'Task'], ['habit', 'Habit'], ['ownup', 'Owning up']], s.kind, 'nkind') + '</div>' +
     (s.kind !== 'habit' ? '<div class="frow"><span class="lab0">Due</span><span class="chip' + (val('due') ? '' : ' on') + '" data-a="nodue">None</span>' + dpick('date', 'due', val('due')) + '</div>' : '') +
     (s.kind === 'habit' ? '<div class="frow"><span class="lab0">Per</span>' + seg([['day', 'Day'], ['week', 'Week'], ['month', 'Month']], s.period, 'nper', 'hs') + '</div><div class="frow"><span class="lab0">Times</span>' + stepper('tgt') + '</div>' : '') +
-    '<div class="frow"><span class="lab0">Earn</span>' + stepper('pe') + '</div><div class="frow"><span class="lab0">Lose</span>' + stepper('pm') + '</div>' +
+    // Points are opt-in: a new to do has none, and Earn/Lose only show once the Points toggle is on (savetodo writes 0/0 while it is off).
+    '<div class="frow"><span class="lab0">Points</span>' + tgl('pts', 'npts') + '</div>' +
+    (s.pts ? '<div class="frow"><span class="lab0">Earn</span>' + stepper('pe') + '</div><div class="frow"><span class="lab0">Lose</span>' + stepper('pm') + '</div>' : '') +
     // An owning-up is its note, so the toggle is hidden and savetodo forces needs_note on.
     (s.kind === 'ownup' ? '' : '<div class="frow"><span class="lab0">Needs a note</span>' + tgl('nn', 'nnote') + '</div>') +
     (t ? '' : laterRow(s.when === 'later', 'nwhen')) +
@@ -477,7 +479,7 @@ SCREEN.tododetail = function () {
   function dueFact(x) { var d = dueOf(x.due_date), hot = !closed(x) && d.state; return fmtDay(x.due_date) + (hot ? ' <span class="due ' + d.state + '">' + d.text + '</span>' : ''); }
   var facts = fr('For', mineOwn ? 'You' : pnx(nameOf(t.owner_id))) + fr('From', t.created_by === St.me() ? 'You' : pnx(nameOf(t.created_by))) +
     (habit ? fr('Progress', h.hv + (t.period ? ' ' + { day: 'today', week: 'this week', month: 'this month' }[t.period] : '')) : t.due_date ? fr('Due', dueFact(t)) : '') +
-    (t.type === 'response' ? '' : fr('Earn', C.earnPts(t)) + fr('Lose', C.missPts(t))) + (t.done_at ? fr('Done', fmtDay(C.localDay(C.ms(t.done_at), tz()))) : '') + (t.declined_at ? fr('Declined', fmtDay(C.localDay(C.ms(t.declined_at), tz()))) + (t.decline_note ? fr('Note', esc(t.decline_note)) : '') : '');
+    (t.type === 'response' || (!C.earnPts(t) && !C.missPts(t)) ? '' : fr('Earn', C.earnPts(t)) + fr('Lose', C.missPts(t))) + (t.done_at ? fr('Done', fmtDay(C.localDay(C.ms(t.done_at), tz()))) : '') + (t.declined_at ? fr('Declined', fmtDay(C.localDay(C.ms(t.declined_at), tz()))) + (t.decline_note ? fr('Note', esc(t.decline_note)) : '') : '');
   var undo = mineOwn && habit && t.tally > 0 ? '<div class="ghost" data-a="tundo:' + t.id + '">Undo tally</div>' : mineOwn && !habit && t.done_at ? '<div class="ghost" data-a="tundo:' + t.id + '">Undo done</div>' : mineOwn && t.declined_at ? '<div class="ghost" data-a="tundecline:' + t.id + '">Undo decline</div>' : '';
   var decline = mineOwn && t.type === 'response' && !closed(t) ? '<div class="ghost" data-a="tdecline:' + t.id + '">Decline</div>' : '';
   var canNudge = !mineOwn && !closed(t), nudged = nudgedToday(t.id);
@@ -1665,7 +1667,7 @@ function flushQueued() {
 function todoTally(t, el, note) {
   St.patch('todos', t.id, { tally: t.tally + 1 });
   St.insert('todo_events', { id: St.uuid(), couple_id: S.couple.id, todo_id: t.id, user_id: St.me(), kind: 'tally', at: nowIso(), note: note || null });
-  M.play('points', el, C.earnPts(t));
+  if (C.earnPts(t)) M.play('points', el, C.earnPts(t)); // a to do with Points off has 0, and the pop would read "\u22120"
 }
 // Opening a to do the partner owned up to is what clears its Home card. Any other to do is a no-op.
 function markOwnupSeen(id) {
@@ -1822,10 +1824,10 @@ var ACT = {
   newtodo: function (kind) {
     // From Home the sheet has no host screen: open the To-dos tab first.
     if (ui.route !== 'todo') { ui.todoSeg = 'todo'; tab('todo'); }
-    ui.sheet = { type: 'newtodo', who: 'them', when: 'now', kind: 'task', period: 'week', tgt: 3, pe: 3, pm: 3, pt: false, nn: false }; ui.d = {}; ACT.nkind(kind); },
+    ui.sheet = { type: 'newtodo', who: 'them', when: 'now', kind: 'task', period: 'week', tgt: 3, pe: 3, pm: 3, pt: false, pts: false, nn: false }; ui.d = {}; ACT.nkind(kind); },
   etodo: function (id) {
     var t = S.rows.todos[id];
-    ui.sheet = { type: 'newtodo', edit: id, kind: t.type, period: t.period || 'week', tgt: t.target || 3, pe: C.earnPts(t), pm: C.missPts(t), pt: true, nn: t.needs_note };
+    ui.sheet = { type: 'newtodo', edit: id, kind: t.type, period: t.period || 'week', tgt: t.target || 3, pe: C.earnPts(t), pm: C.missPts(t), pt: true, pts: C.earnPts(t) > 0 || C.missPts(t) > 0, nn: t.needs_note };
     ui.d = { title: t.title, desc: t.description || '', due: t.due_date || '' }; render();
   },
   tview: function (id) { markOwnupSeen(id); go('tododetail', { todoId: id }); },
@@ -1969,6 +1971,7 @@ var ACT = {
   nper: function (v) { ui.sheet.period = v; render(); },
   stp: function (a) { var p = a.split(':'), s = ui.sheet; s[p[0]] = Math.max(p[0] === 'tgt' ? 1 : 0, s[p[0]] + +p[1]); if (p[0] !== 'tgt') s.pt = true; render(); },
   nnote: function () { ui.sheet.nn = !ui.sheet.nn; render(); },
+  npts: function () { ui.sheet.pts = !ui.sheet.pts; render(); },
   nwhen: function (v) { ui.sheet.when = v; render(); },
   awhen: function (v) { ui.awhen = v; render(); },
   schedcancel: guard(function (id) {
@@ -1980,7 +1983,9 @@ var ACT = {
   nodue: function () { ui.d.due = ''; render(); },
   savetodo: guard(function () {
     var s = ui.sheet, title = (ui.d.title || '').trim(), habit = s.kind === 'habit', nn = s.kind === 'ownup' || s.nn; if (!title) throw new Error('Title needed');
-    var f = { title: title, description: (ui.d.desc || '').trim() || null, type: s.kind, due_date: !habit ? ui.d.due || null : null, target: habit ? s.tgt : null, period: habit ? s.period : null, points_earn: s.pe, points_miss: s.pm, needs_note: nn };
+    // Points toggle off saves an explicit 0/0 (null would fall back to the per-type defaults in C.earnPts/missPts).
+    var pe = s.pts ? s.pe : 0, pm = s.pts ? s.pm : 0;
+    var f = { title: title, description: (ui.d.desc || '').trim() || null, type: s.kind, due_date: !habit ? ui.d.due || null : null, target: habit ? s.tgt : null, period: habit ? s.period : null, points_earn: pe, points_miss: pm, needs_note: nn };
     var at = !s.edit && s.when === 'later' ? laterMs() : null;
     if (at !== null && s.who === 'me' && at <= now()) throw new Error('Pick a future time');
     if (s.edit) {
@@ -1993,7 +1998,7 @@ var ACT = {
       if (cur.item_id && renamed) St.patch('items', cur.item_id, { body: title }); // the sender's own record of the ask
     }
     else if (s.who === 'them') {
-      var ask = { at: at, body: title, description: f.description, ask_type: s.kind, due_date: f.due_date, target: f.target, period: f.period, points_earn: s.pe, points_miss: s.pm, needs_note: nn };
+      var ask = { at: at, body: title, description: f.description, ask_type: s.kind, due_date: f.due_date, target: f.target, period: f.period, points_earn: pe, points_miss: pm, needs_note: nn };
       if (St.partner()) sendItem('ask', ask); else { S.priv.queued.push(ask); St.savePriv(); }
     }
     else St.insert('todos', Object.assign({ id: St.uuid(), couple_id: S.couple.id, owner_id: St.me(), created_by: St.me(), item_id: null, fight_marker_id: null, tally: 0, done_at: null, edited_at: null, created_at: at !== null ? new Date(at).toISOString() : nowIso(), updated_at: nowIso(), deleted_at: null }, f));

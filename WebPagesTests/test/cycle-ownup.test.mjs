@@ -62,7 +62,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
   const shot = async (page, name) => { if (process.env.OWNUP_SHOTS) await page.screenshot({ path: path.join(process.env.OWNUP_SHOTS, name), clip: { x: 0, y: 0, width: 390, height: 844 } }); };
   const openNew = async (page) => { await page.click('[data-a="tab:todo"]'); await page.click('[data-a="addpick"]'); await page.click('[data-a="newtodo:ownup"]'); };
 
-  test('Add picker offers Task, Habit, Owning up (challenges live on Progress); the sheet has a three-option Type, Earn and Lose at task defaults and no Needs a note', async () => {
+  test('Add picker offers Task, Habit, Owning up (challenges live on Progress); the sheet has a three-option Type, a Points toggle (off) and no Needs a note', async () => {
     const a = await open();
     await a.page.click('[data-a="tab:todo"]');
     await a.page.click('[data-a="addpick"]');
@@ -71,7 +71,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     assert.deepEqual(await a.page.$$eval('[data-a^="nkind:"]', (els) => els.map((e) => e.textContent.trim())), ['Task', 'Habit', 'Owning up']);
     assert.equal(await a.page.$eval('[data-a="nkind:ownup"]', (e) => e.classList.contains('on')), true);
     const labs = await a.page.$$eval('.frow .lab0', (els) => els.map((e) => e.textContent));
-    assert.deepEqual(labs, ['For', 'Type', 'Due', 'Earn', 'Lose', 'When']);
+    assert.deepEqual(labs, ['For', 'Type', 'Due', 'Points', 'When']);
     assert.equal(await a.page.$('[data-a="nnote"]'), null, 'toggle hidden');
     await shot(a.page, '1-new-ownup-sheet.png');
     // Switching to Task brings the toggle back (it is hidden for ownup only).
@@ -80,13 +80,14 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await a.context.close();
   });
 
-  test('for me: saved as an ownup to do with needs_note on and task points; completing needs the note, and the ledger pays the task +3', async () => {
+  test('for me: saved as an ownup to do with needs_note on; Points on gives task points; completing needs the note, and the ledger pays the task +3', async () => {
     const a = await open();
     await openNew(a.page);
     await a.page.click('[data-a="nfor:me"]');
     await a.page.click('[data-a="savetodo"]');
     assert.equal((await rowsOf(a, 'todos')).length, 0, 'empty title saves nothing');
     await a.page.fill('input[data-d="title"]', 'I raised my voice');
+    await a.page.click('[data-a="npts"]');
     await a.page.click('[data-a="savetodo"]');
     await a.page.waitForSelector('.td-row');
     const [t] = await rowsOf(a, 'todos');
@@ -116,6 +117,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     const a = await open();
     await openNew(a.page); // For defaults to her
     await a.page.fill('input[data-d="title"]', 'Own the tone');
+    await a.page.click('[data-a="npts"]');
     await a.page.click('[data-a="savetodo"]');
     const [item] = await rowsOf(a, 'items');
     assert.deepEqual([item.kind, item.ask_type, item.status, item.recipient_id, item.needs_note, item.points_earn, item.points_miss], ['ask', 'ownup', 'held', HER, true, 3, 3]);

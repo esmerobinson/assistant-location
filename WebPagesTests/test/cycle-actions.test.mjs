@@ -192,7 +192,7 @@ describe('actions tab (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_W
     await context.close();
   });
 
-  test('a habit made through Add > Habit saves as a habit with the habit point defaults', async () => {
+  test('a habit made through Add > Habit saves as a habit with no points by default', async () => {
     const { context, page } = await open(seed({}));
     await page.click('.hd [data-a="addpick"]'); await page.click('.bs [data-a="newtodo:habit"]');
     await page.click('[data-a="nfor:me"]');
@@ -201,7 +201,7 @@ describe('actions tab (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_W
     const key = 'cycle:shared.' + ME;
     await page.waitForFunction((k) => Object.keys(JSON.parse(localStorage.getItem(k)).rows.todos).length === 1, key);
     const t = await page.evaluate((k) => Object.values(JSON.parse(localStorage.getItem(k)).rows.todos)[0], key);
-    assert.deepEqual([t.type, t.title, t.points_earn, t.points_miss], ['habit', 'Stretch', 1, 0]);
+    assert.deepEqual([t.type, t.title, t.points_earn, t.points_miss], ['habit', 'Stretch', 0, 0]);
     await context.close();
   });
 });
