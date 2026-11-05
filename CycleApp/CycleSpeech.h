@@ -1,19 +1,25 @@
 #import <Foundation/Foundation.h>
 
-/// Live speech-to-text for a page field (bridge `speech.start` / `speech.stop`): SFSpeechRecognizer fed by an
-/// AVAudioEngine tap, partial transcripts streamed to `onText`. On-device whenever the recognizer supports it.
-/// Nothing is recorded to disk or uploaded by us.
+/// Voice capture for a page field or Talk (bridge `speech.start` / `speech.stop` / `speech.cancel`): records the microphone
+/// to a temp m4a (AAC, 16 kHz mono). The page uploads the clip to the Cycle box, which transcribes it with Deepgram, so no
+/// recognition happens on the device. The recording lives only in the temp file until `finish` or `cancel` deletes it.
 @interface CycleSpeech : NSObject
 
-/// Main queue. The whole transcript so far; `final` = capture ended (the recognizer finished or hit a normal end).
-@property (nonatomic, copy) void (^onText)(NSString *text, BOOL final);
-/// Main queue. A short user-facing reason a running capture failed.
+/// Main queue. Once speech has been heard and then silence has held for a while (thresholds are guesses, see the .m).
+@property (nonatomic, copy) void (^onSilence)(void);
+/// Main queue. A short user-facing reason a running recording failed.
 @property (nonatomic, copy) void (^onError)(NSString *message);
 
-/// Asks for the speech and microphone permissions on first use, then starts capture. `done(nil)` once capturing,
-/// else `done(@"Mic off")` when either permission is denied or `done(<short reason>)`. Main queue, exactly once.
+/// Asks for the microphone permission on first use, then starts recording. `done(nil)` once recording, else
+/// `done(@"Mic off")` when denied or `done(<short reason>)` ("Mic busy"). Main queue, exactly once.
 - (void)startWithCompletion:(void (^)(NSString *error))done;
-/// Stops capture and releases the microphone and the audio session. Safe when idle.
-- (void)stop;
+/// Stops recording, deletes the file and returns its bytes; nil when nothing was recording (or it was empty).
+/// Releases the microphone and the audio session.
+- (NSData *)finish;
+/// Stops recording and deletes the file. Safe when idle.
+- (void)cancel;
+/// The app went to the background: iOS stops the microphone, so finalize the file and keep it for the pending `finish`,
+/// and report silence so Talk ends its turn. A dictated field keeps its mic lit until the person taps it.
+- (void)interrupt;
 
 @end

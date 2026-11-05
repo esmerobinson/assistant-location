@@ -45,7 +45,7 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
     await context.clock.setFixedTime(new Date(now));
     await context.addInitScript(({ sd, raw, nat }) => {
-      window.CYCLE_CONFIG = { supabaseUrl: 'https://x.test', supabaseAnonKey: 'k', boxUrl: '' };
+      window.CYCLE_CONFIG = { supabaseUrl: 'https://x.test', supabaseAnonKey: 'k', boxUrl: nat ? 'https://box.test' : '' };
       if (!sessionStorage.getItem('seeded')) { // once per tab: a reload after sign-out must not re-seed the session
         sessionStorage.setItem('seeded', '1');
         for (const k in sd) localStorage.setItem('cycle:' + k, JSON.stringify(sd[k]));
@@ -66,11 +66,14 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
         else if (cmd === 'notify.schedule' && window.__rejectSchedule) err = window.__rejectSchedule;
         // Same rule as CycleNotifier.m, so an empty title or body fails here the way it fails on the phone.
         else if (cmd === 'notify.schedule' && (!args.title || !args.body)) err = "notify.schedule: 'body' must be a non-empty string, got ";
-        else if (cmd === 'speech.start' || cmd === 'speech.stop') r = true;
+        else if (cmd === 'speech.start') r = null;
+        else if (cmd === 'speech.stop') r = { audio: 'QVVESU8=', mime: 'audio/mp4' }; // base64 'AUDIO'
         setTimeout(() => window.__cycleReply(id, r, err), 0);
       } } } };
     }, { sd, raw: rawStorage, nat: native });
     await context.route('**/cycle.css', (route) => route.fulfill({ contentType: 'text/css', body: CSS }));
+    await context.route('https://box.test/**', (route) => route.abort());
+    await context.route('https://box.test/transcribe', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ text: 'and then some' }) }));
     await context.route('https://x.test/**', async (route) => {
       const req = route.request(), u = new URL(req.url()), rec = { method: req.method(), url: req.url(), path: u.pathname.replace('/rest/v1/', ''), search: u.search, body: req.postData() ? JSON.parse(req.postData()) : null };
       sent.push(rec);
@@ -408,18 +411,22 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
   // Fight detail with a mic field; draft key fightdetail:<id>.
   const openFight = async (page) => { await page.click('[data-a="tab:fights"]'); await page.click('[data-a="openfight:fm"]'); await page.waitForSelector('.fd textarea'); };
   const fightSeed = () => seed({ rows: { fight_markers: [mine] }, priv: { fights: [{ id: 'fm', at: Date.parse(mine.at), intensity: 3 }] } });
-  test('B10 dictated text survives a re-render and a reload; an interrupted recording keeps what was heard', async () => {
+  test('B10 dictated text (after the mic tap) survives a re-render and a reload; a recording the shell reports as failed ends with an error and adds nothing', async () => {
     // Offline: fight_markers is pulled whole, so the empty mock server would otherwise drop the seeded marker as deleted.
     const { context, page } = await open({ sd: fightSeed(), native: {}, offline: true });
     await ready(page); await openFight(page);
     await page.fill('.fd textarea', 'typed first');
     await page.click('.fd .mic');
-    await page.evaluate(() => window.cycleNative.speech('and then some', false));
-    assert.equal(await page.inputValue('.fd textarea'), 'typed first and then some');
+    await page.click('.fd .mic'); // stop: the clip goes to the box and the transcript joins the typed text
+    await page.waitForFunction(() => document.querySelector('.fd textarea').value === 'typed first and then some');
     await page.evaluate(() => window.dispatchEvent(new Event('online'))); // forces a render
     assert.equal(await page.inputValue('.fd textarea'), 'typed first and then some', 'survives a re-render');
-    await page.evaluate(() => window.cycleNative.speechError('Mic cut off')); // interrupted: shell reports an error, no final
-    assert.equal(await page.inputValue('.fd textarea'), 'typed first and then some', 'interrupted recording keeps the text');
+    await page.click('.fd .mic');
+    await page.waitForSelector('.fd .mic.rec');
+    await page.evaluate(() => window.cycleNative.speechError('Mic busy')); // the recorder failed: the shell reports an error
+    await page.waitForSelector('.errbar');
+    assert.equal(await page.$('.fd .mic.rec'), null, 'recording ended');
+    assert.equal(await page.inputValue('.fd textarea'), 'typed first and then some', 'a failed recording leaves the text');
     assert.equal((await priv(page)).drafts['fightdetail:fm'].d.more, 'typed first and then some', 'persisted as a draft');
     await page.reload(); await ready(page); await openFight(page);
     assert.equal(await page.inputValue('.fd textarea'), 'typed first and then some', 'restored after reload');

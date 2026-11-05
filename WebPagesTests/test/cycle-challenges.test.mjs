@@ -40,12 +40,14 @@ describe('webkit', { skip: !haveWebkit }, () => {
   before(async () => { browser = await pw.webkit.launch({ headless: true, executablePath: process.env.GL_WEBKIT_EXEC }); });
   after(async () => { await browser.close(); });
 
+  let said = ''; // what the box transcribes the next clip as ('' = 422 no speech)
   async function open(tweak, nativeOpts) {
+    said = '';
     const s = seed();
     if (tweak) tweak(s['shared.' + UID]);
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
     await context.addInitScript((sd) => {
-      window.CYCLE_CONFIG = { supabaseUrl: 'https://x.test', supabaseAnonKey: 'k', boxUrl: '' };
+      window.CYCLE_CONFIG = { supabaseUrl: 'https://x.test', supabaseAnonKey: 'k', boxUrl: 'https://box.test' };
       if (!localStorage.getItem('cycle:session')) for (const k in sd) localStorage.setItem('cycle:' + k, JSON.stringify(sd[k]));
     }, s);
     if (nativeOpts) await context.addInitScript((o) => {
@@ -61,12 +63,16 @@ describe('webkit', { skip: !haveWebkit }, () => {
           else if (cmd === 'notify.status') r = 'granted';
           else if (cmd === 'lock.get') r = false;
           else if (cmd === 'speech.start' && window.__speechDenied) e = 'Mic off';
+          else if (cmd === 'speech.stop') r = { audio: 'QVVESU8=', mime: 'audio/mp4' }; // base64 'AUDIO'
           window.__cycleReply(id, r, e);
         }, 0);
       } } } };
     }, nativeOpts);
     await context.route('**/cycle.css', (route) => route.fulfill({ contentType: 'text/css', body: CSS }));
     const sent = [];
+    await context.route('https://box.test/**', (route) => route.abort());
+    await context.route('https://box.test/transcribe', (route) => said ? route.fulfill({ contentType: 'application/json', body: JSON.stringify({ text: said }) }) : route.fulfill({ status: 422, contentType: 'application/json', body: '{"error":"no speech"}' }));
+
     await context.route('https://x.test/**', (route) => {
       const rq = route.request();
       if (rq.method() === 'PATCH' && /\/rest\/v1\/challenge/.test(rq.url())) { sent.push({ url: rq.url(), body: rq.postDataJSON() }); return route.fulfill({ status: 204, body: '' }); }
@@ -498,12 +504,11 @@ describe('webkit', { skip: !haveWebkit }, () => {
     sh.rows.challenge_days = { a: logRow('a', day(-2), 'first paper', by), ...(o.today === false ? {} : { b: logRow('b', today, 'second paper', by) }) };
   }, o.native === false ? undefined : { denied: !!o.denied });
   const bridgeCmds = (page) => page.evaluate(() => window.__bridge.map((x) => x.cmd).filter((c) => c.startsWith('speech')));
-  const speak = (page, text, final = false) => page.evaluate(([t, f]) => window.cycleNative.speech(t, f), [text, final]);
   const field = (page) => page.inputValue('.bs [data-d="chlognote"]');
   const dayReq = (sent, method) => sent.filter((x) => /challenge_days/.test(x.url) && (method === 'PATCH' ? /id=eq/.test(x.url) : !/id=eq/.test(x.url)));
   const flush = async (page, sent, n) => { for (let i = 0; i < 60 && dayReq(sent, 'PATCH').length + dayReq(sent, 'POST').length < n; i++) await page.waitForTimeout(100); };
 
-  test('voice: mic sends speech.start, partials append to typed text and survive a re-render, tap stops, late partials are ignored', async () => {
+  test('voice: mic sends speech.start, the tap stops, uploads and appends the transcript to typed text; busy while it transcribes', async () => {
     const { context, page } = await openLogs({ today: false });
     await page.click('.ach[data-a="challenge:bpd"]');
     await page.click('[data-a="chlog"]');
@@ -513,63 +518,56 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await page.click('.bs .mic');
     assert.deepEqual(await bridgeCmds(page), ['speech.start']);
     assert.equal(await page.$eval('.bs .mic', (e) => e.classList.contains('rec')), true, 'recording state shown');
-    await speak(page, 'and a paper');
-    assert.equal(await field(page), 'read intro and a paper');
-    await speak(page, 'and a paper on DBT');
-    assert.equal(await field(page), 'read intro and a paper on DBT', 'partials replace each other, not stack');
+    said = 'and a paper on DBT';
     await page.evaluate(() => window.dispatchEvent(new Event('online'))); // forces render()
-    assert.equal(await field(page), 'read intro and a paper on DBT', 'survives a re-render');
+    assert.equal(await field(page), 'read intro', 'nothing is inserted while recording');
     assert.equal(await page.$eval('.bs .mic', (e) => e.classList.contains('rec')), true, 'still recording after re-render');
     await shot(page, 'voice-recording');
     await page.click('.bs .mic');
+    await page.waitForFunction(() => document.querySelector('.bs [data-d="chlognote"]').value === 'read intro and a paper on DBT');
     assert.deepEqual(await bridgeCmds(page), ['speech.start', 'speech.stop']);
-    assert.equal(await page.$eval('.bs .mic', (e) => e.classList.contains('rec')), false);
-    await speak(page, 'ghost words');
-    assert.equal(await field(page), 'read intro and a paper on DBT', 'a late partial after stop is dropped');
+    assert.equal(await page.$('.bs .mic.rec, .bs .mic.busy'), null);
     await context.close();
   });
 
-  test('voice: Save while recording stops the mic and saves the current text; closing the sheet stops it; typing stops it', async () => {
+  test('voice: Save while recording drops the clip and saves the current text; closing the sheet, a dim tap and typing drop it too', async () => {
     let { context, page, sent } = await openLogs({ today: false });
     await page.click('.ach[data-a="challenge:bpd"]');
     await page.click('[data-a="chlog"]');
+    await page.fill('.bs [data-d="chlognote"]', 'typed note');
     await page.click('.bs .mic');
-    await speak(page, 'spoken note');
     await page.click('[data-a="chlogsave"]');
-    assert.deepEqual(await bridgeCmds(page), ['speech.start', 'speech.stop']);
+    assert.deepEqual(await bridgeCmds(page), ['speech.start', 'speech.cancel']);
     assert.equal(await page.$('.bs'), null);
     await flush(page, sent, 1);
-    assert.equal(dayReq(sent, 'POST')[0].body.note, 'spoken note');
+    assert.equal(dayReq(sent, 'POST')[0].body.note, 'typed note');
     await context.close();
     ({ context, page } = await openLogs({ today: false }));
     await page.click('.ach[data-a="challenge:bpd"]');
     await page.click('[data-a="chlog"]');
     await page.click('.bs .mic');
     await page.click('.bs .xb');
-    assert.deepEqual(await bridgeCmds(page), ['speech.start', 'speech.stop'], 'close stops');
+    assert.deepEqual(await bridgeCmds(page), ['speech.start', 'speech.cancel'], 'close cancels');
     assert.equal(await page.$('.bs'), null);
     await page.click('[data-a="chlog"]');
     await page.click('.bs .mic');
     await page.click('.bs .dim, .dim', { position: { x: 5, y: 5 } });
-    assert.deepEqual(await bridgeCmds(page), ['speech.start', 'speech.stop', 'speech.start', 'speech.stop'], 'dim tap stops');
+    assert.deepEqual(await bridgeCmds(page), ['speech.start', 'speech.cancel', 'speech.start', 'speech.cancel'], 'dim tap cancels');
     await page.click('[data-a="chlog"]');
     await page.click('.bs .mic');
     await page.fill('.bs [data-d="chlognote"]', 'typed instead');
-    assert.deepEqual((await bridgeCmds(page)).slice(-2), ['speech.start', 'speech.stop'], 'typing stops');
-    await speak(page, 'late');
+    assert.deepEqual((await bridgeCmds(page)).slice(-2), ['speech.start', 'speech.cancel'], 'typing cancels');
     assert.equal(await field(page), 'typed instead');
     await context.close();
   });
 
-  test('voice: a native end (final) clears the recording state; denied shows Mic off; no bridge means no mic button', async () => {
+  test('voice: a recorder error clears the recording state; denied shows Mic off; no bridge means no mic button', async () => {
     let { context, page } = await openLogs({ today: false });
     await page.click('.ach[data-a="challenge:bpd"]');
     await page.click('[data-a="chlog"]');
     await page.click('.bs .mic');
-    await speak(page, 'all done', true);
-    assert.equal(await field(page), 'all done');
-    assert.equal(await page.$eval('.bs .mic', (e) => e.classList.contains('rec')), false);
-    await page.click('.bs .mic');
+    await page.evaluate(() => window.cycleNative.speechSilence()); // not a Talk turn: a dictated field waits for its own mic tap
+    assert.equal(await page.$eval('.bs .mic', (e) => e.classList.contains('rec')), true);
     await page.evaluate(() => window.cycleNative.speechError('Speech failed'));
     assert.equal(await page.textContent('.errbar'), 'Speech failed');
     assert.equal(await page.$eval('.bs .mic', (e) => e.classList.contains('rec')), false);
@@ -603,8 +601,9 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await page.waitForTimeout(200);
     assert.notEqual(await page.$('.bs'), null, 'empty rejected');
     await page.click('.bs .mic');
-    await speak(page, 'plus a podcast');
-    assert.equal(await field(page), 'plus a podcast', 'blank base: no leading space');
+    said = 'plus a podcast';
+    await page.click('.bs .mic');
+    await page.waitForFunction(() => document.querySelector('.bs [data-d="chlognote"]').value === 'plus a podcast'); // blank base: no leading space
     await page.fill('.bs [data-d="chlognote"]', 'first paper, revised');
     await page.click('[data-a="chlogeditsave"]');
     assert.equal(await page.$('.bs'), null);

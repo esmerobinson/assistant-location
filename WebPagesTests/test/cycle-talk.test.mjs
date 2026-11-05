@@ -42,6 +42,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
   before(async () => { browser = await type.launch({ headless: true }); });
   after(async () => { await browser.close(); });
 
+  let said = '';
   // opts.native: fake shell (bridge + speech + speechSynthesis); opts.talk: queue of /talk answers ({status, body, delay});
   // opts.voicesLate: getVoices() is empty until the test calls __setVoices (WebKit loads them late).
   async function open({ native = false, talk = [], boxUrl = 'https://box.test', voicesLate = false } = {}) {
@@ -60,6 +61,7 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
           else if (cmd === 'store.keys') r = Object.keys(localStorage).filter((k) => k.startsWith('cycle:' + args.prefix)).map((k) => k.slice(6));
           else if (cmd === 'notify.status') r = 'granted';
           else if (cmd === 'lock.get') r = false;
+          else if (cmd === 'speech.stop') r = { audio: 'QVVESU8=', mime: 'audio/mp4' }; // base64 'AUDIO'
           window.__cycleReply(id, r, null);
         }, 0);
       } } } };
@@ -80,6 +82,10 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await context.route('**/cycle.css', (route) => route.fulfill({ contentType: 'text/css', body: CSS }));
     await context.route('https://x.test/**', (route) => route.abort());
     const posts = [];
+    said = ''; // what the person said into the next clip; the box's /transcribe answers with it ('' = no speech, 422)
+    await context.route('https://box.test/transcribe', (route) => said
+      ? route.fulfill({ contentType: 'application/json', body: JSON.stringify({ text: said }) })
+      : route.fulfill({ status: 422, contentType: 'application/json', body: '{"error":"no speech"}' }));
     await context.route('https://box.test/talk', async (route) => {
       posts.push(route.request().postDataJSON());
       const a = talk.shift();
@@ -99,7 +105,8 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
   const sendTyped = async (page, text) => { await page.fill('[data-t="tk"]', text); await page.click('[data-a="tksend"]'); };
   const ok = (reply, draft = null) => ({ body: { reply, draft } });
   const bridge = (page) => page.evaluate(() => window.__bridge.filter((c) => c.startsWith('speech')));
-  const hear = (page, text, final = false) => page.evaluate(([t, f]) => window.cycleNative.speech(t, f), [text, final]);
+  // The person says `text`; `final` = the shell then reports silence (cycleNative.speechSilence). Without it the clip is still recording.
+  const hear = async (page, text, final = false) => { said = text; if (final) await page.evaluate(() => window.cycleNative.speechSilence()); };
   const rows = (page) => page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('cycle:shared.u-me')).rows.fight_notes));
   const starts = (page) => page.evaluate(() => window.__bridge.filter((c) => c === 'speech.start').length);
   const replyIs = (page, text) => page.waitForFunction((t) => { const e = document.querySelector('.tkrep'); return e && e.textContent === t; }, text);
@@ -142,10 +149,11 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await openTalk(page);
     await page.waitForFunction(() => window.__bridge.includes('speech.start'));
     await stateIs(page, 'listening');
-    await hear(page, 'he said');
     await hear(page, 'he said he would call');
-    assert.equal(posts.length, 0, 'not sent while the text is still changing');
-    assert.equal(await pill(page), 'he said he would call', 'live transcript in the pill');
+    await page.waitForTimeout(150);
+    assert.equal(posts.length, 0, 'nothing is sent until the shell reports silence');
+    assert.equal(await state(page), 'listening');
+    await hear(page, 'he said he would call', true);
     await stateIs(page, 'thinking');
     await replyIs(page, 'Tell me more.');
     assert.equal(posts[0].messages[0].text, 'he said he would call');
@@ -153,10 +161,26 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     assert.equal(await page.evaluate(() => window.__spoken[0].text), 'Tell me more.');
     await stateIs(page, 'speaking');
     // Ordering: the audio session is stopped (awaited) before the reply is spoken, and listening restarts only after it ends.
-    assert.deepEqual(await bridge(page), ['speech.start', 'speech.stop', 'speech.stop']);
+    assert.deepEqual(await bridge(page), ['speech.start', 'speech.stop', 'speech.cancel']);
     await page.evaluate(() => window.__spoken[0].onend());
     await page.waitForFunction(() => window.__bridge.filter((c) => c === 'speech.start').length === 2);
     await stateIs(page, 'listening');
+    await context.close();
+  });
+
+  test('native: silence with nothing said (422 no speech) goes back to idle and sends nothing; the clip is uploaded as audio/mp4 with the bearer', async () => {
+    const { context, page, posts } = await open({ native: true });
+    const uploads = [];
+    await context.route('https://box.test/transcribe', (route) => { const r = route.request(); uploads.push({ type: r.headers()['content-type'], auth: r.headers().authorization }); return route.fulfill({ status: 422, contentType: 'application/json', body: '{"error":"no speech"}' }); });
+    await logFight(page);
+    await openTalk(page);
+    await page.waitForFunction(() => window.__bridge.includes('speech.start'));
+    await page.evaluate(() => window.cycleNative.speechSilence());
+    await page.waitForFunction(() => window.__bridge.includes('speech.stop'));
+    await stateIs(page, 'idle');
+    assert.deepEqual(uploads, [{ type: 'audio/mp4', auth: 'Bearer t' }]);
+    assert.equal(posts.length, 0);
+    assert.equal(await page.$('.errbar'), null);
     await context.close();
   });
 
@@ -460,10 +484,12 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await hear(page, 'still talking');
     await page.type('[data-t="tk"]', 'x');
     await page.waitForFunction(() => window.__bridge.includes('speech.stop'));
+    await page.waitForSelector('[data-a="tkmic"]:not(.rec)');
     assert.ok(await page.$('[data-a="tkmic"]:not(.rec)'), 'mic no longer recording');
     assert.ok(await page.$('.tkpill.has'), 'still the typing pill, not the failure buttons');
-    // Without the halt the silence timer would still send the heard words 1800ms later; wait it out.
-    await page.waitForTimeout(2300);
+    // A silence event arriving after the halt must not send the turn.
+    await page.evaluate(() => window.cycleNative.speechSilence());
+    await page.waitForTimeout(300);
     assert.equal(posts.length, 0, 'typing cancelled the pending voice turn');
     assert.equal(await page.inputValue('[data-t="tk"]'), 'x');
     assert.deepEqual((await saved(page)).msgs, [{ role: 'user', text: 'still talking' }], 'heard words kept');

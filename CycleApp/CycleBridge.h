@@ -4,11 +4,11 @@
 
 /// Native side of the page <-> shell contract (handler name `cycle`).
 /// JS -> native: {id, cmd, args}. Native answers with window.__cycleReply(id, result, error).
-/// Commands: store.get/set/keys, notify.permission/status/schedule/cancel, app.openSettings, speech.start/speech.stop, haptic, share, share.text, clipboard.set, lock.get/set,
+/// Commands: store.get/set/keys, notify.permission/status/schedule/cancel, app.openSettings, speech.start/speech.stop/speech.cancel, haptic, share, share.text, clipboard.set, lock.get/set,
 /// creds.set/get/clear (Keychain), ready.
 /// Native -> JS: window.cycleNative.route(route) (queued until the page sends `ready`) and
 /// window.cycleNative.foreground() (only once the page is ready), window.cycleNative.pushToken(hex) (on `ready` and when a token arrives),
-/// window.cycleNative.speech(text, final) and window.cycleNative.speechError(message) while speech.start is capturing.
+/// window.cycleNative.speechSilence() and window.cycleNative.speechError(message) while speech.start is recording.
 /// Everything runs on the main thread; script evaluation goes through `evaluateJS` so the bridge
 /// has no WebKit dependency.
 @interface CycleBridge : NSObject
@@ -26,11 +26,16 @@
 /// Opens this app's page in iOS Settings (the `app.openSettings` command). Wired by the view controller.
 @property (nonatomic, copy) void (^openSettings)(void);
 
-/// Starts live speech-to-text (the `speech.start` command); `done(nil)` once capturing, else a short reason ("Mic off" when denied).
-/// Wired by the view controller. The transcript comes back through deliverSpeech:final:.
+/// Starts recording (the `speech.start` command); `done(nil)` once recording, else a short reason ("Mic off" when denied).
+/// Wired by the view controller. The page, not native, uploads the clip for transcription.
 @property (nonatomic, copy) void (^speechStart)(void (^done)(NSString *error));
-/// Stops it and releases the microphone (the `speech.stop` command). Wired by the view controller.
-@property (nonatomic, copy) void (^speechStop)(void);
+/// Stops recording and returns the m4a bytes, nil when nothing was recorded (the `speech.stop` command, which replies
+/// `{audio: base64, mime}` or null). Wired by the view controller.
+@property (nonatomic, copy) NSData *(^speechStop)(void);
+/// Stops recording and discards it (the `speech.cancel` command). Wired by the view controller.
+@property (nonatomic, copy) void (^speechCancel)(void);
+/// The app went to the background (see -speechInterrupted). Wired by the view controller.
+@property (nonatomic, copy) void (^speechInterrupt)(void);
 
 /// The Face ID app-lock flag (NSUserDefaults, default ON).
 + (BOOL)lockEnabled;
@@ -51,11 +56,12 @@
 /// The APNs device token (hex): remembered, and handed to the page as cycleNative.pushToken(hex) whenever it is
 /// ready (now, and again after each page reload), so the page can register it with the box.
 - (void)deliverPushToken:(NSString *)hex;
-/// Transcript so far -> window.cycleNative.speech(text, final); `final` = capture ended.
-- (void)deliverSpeech:(NSString *)text final:(BOOL)final;
-/// A running capture failed -> window.cycleNative.speechError(message).
+/// Speech then silence heard while recording -> window.cycleNative.speechSilence().
+- (void)deliverSpeechSilence;
+/// A running recording failed -> window.cycleNative.speechError(message).
 - (void)deliverSpeechError:(NSString *)message;
-/// The app is leaving the foreground: stop any capture and tell the page it ended.
+/// The app is leaving the foreground: iOS stops the microphone, so the recording is finalized but kept for the page's
+/// pending speech.stop, and the page hears speechSilence (Talk ends its turn; a dictated field waits for its mic tap).
 - (void)speechInterrupted;
 /// The app became active.
 - (void)foreground;

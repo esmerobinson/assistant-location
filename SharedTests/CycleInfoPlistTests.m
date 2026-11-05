@@ -42,12 +42,11 @@
     XCTAssertLessThanOrEqual([json[@"minShell"] integerValue], [self.plist[@"CycleShellVersion"] integerValue], @"the committed web must run on the shell it ships with");
 }
 
-- (void)testSpeechAndMicrophonePermissionsAreDescribed {
-    // iOS kills the app the first time it asks for either permission without its usage string.
-    for (NSString *key in @[@"NSSpeechRecognitionUsageDescription", @"NSMicrophoneUsageDescription"]) {
-        XCTAssertTrue([self.plist[key] isKindOfClass:NSString.class] && [self.plist[key] length] > 0, @"%@ missing", key);
-    }
-    XCTAssertGreaterThanOrEqual([self.plist[@"CycleShellVersion"] integerValue], 2, @"the speech bridge commands arrived in shell 2; shell.json minShell gates the web that calls them");
+- (void)testMicrophonePermissionIsDescribedAndSpeechRecognitionIsNotUsed {
+    // iOS kills the app the first time it asks for the microphone without its usage string. Transcription is cloud-side now.
+    XCTAssertTrue([self.plist[@"NSMicrophoneUsageDescription"] isKindOfClass:NSString.class] && [self.plist[@"NSMicrophoneUsageDescription"] length] > 0);
+    XCTAssertNil(self.plist[@"NSSpeechRecognitionUsageDescription"]);
+    XCTAssertGreaterThanOrEqual([self.plist[@"CycleShellVersion"] integerValue], 3, @"speech.cancel and the base64 speech.stop reply arrived in shell 3; shell.json minShell gates the web that calls them");
 }
 
 - (void)testNoBackgroundModesNoUrlScheme {

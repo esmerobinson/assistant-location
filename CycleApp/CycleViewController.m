@@ -85,11 +85,13 @@
 
     self.speech = [[CycleSpeech alloc] init];
     CycleBridge *bridge = self.bridge;
-    self.speech.onText = ^(NSString *text, BOOL final) { [bridge deliverSpeech:text final:final]; };
+    self.speech.onSilence = ^{ [bridge deliverSpeechSilence]; };
     self.speech.onError = ^(NSString *message) { [bridge deliverSpeechError:message]; };
     CycleSpeech *speech = self.speech;
     self.bridge.speechStart = ^(void (^done)(NSString *)) { [speech startWithCompletion:done]; };
-    self.bridge.speechStop = ^{ [speech stop]; };
+    self.bridge.speechStop = ^NSData *{ return [speech finish]; };
+    self.bridge.speechCancel = ^{ [speech cancel]; };
+    self.bridge.speechInterrupt = ^{ [speech interrupt]; };
     self.bridge.lockChanged = ^{ [weakSelf lockSettingChanged]; };
     [self installCover];
     self.needsAuth = [CycleBridge lockNeedsAuth];

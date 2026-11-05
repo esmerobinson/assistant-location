@@ -1,5 +1,5 @@
 // The shared hold menu (voice-hold.js) on Cycle's dictation mics: hold a recording mic for Cancel / Insert. Native shell
-// (bridge + speech) is faked; the field is the Log fight note.
+// (bridge + recording) is faked and the box's /transcribe is stubbed; the field is the Log fight note.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -26,10 +26,12 @@ let browser;
 before(async () => { browser = await chromium.launch({ headless: true }); });
 after(async () => { await browser.close(); });
 
+let said = '', delay = 0, uploads = 0; // what the box transcribes the next clip as ('' = 422), how long it takes, clips received
 async function open() {
+  said = ''; delay = 0;
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   await context.addInitScript((sd) => {
-    window.CYCLE_CONFIG = { supabaseUrl: 'https://x.test', supabaseAnonKey: 'k' };
+    window.CYCLE_CONFIG = { supabaseUrl: 'https://x.test', supabaseAnonKey: 'k', boxUrl: 'https://box.test' };
     if (!localStorage.getItem('cycle:session')) for (const k in sd) localStorage.setItem('cycle:' + k, JSON.stringify(sd[k]));
     window.__bridge = [];
     window.webkit = { messageHandlers: { cycle: { postMessage: ({ id, cmd, args }) => {
@@ -41,12 +43,19 @@ async function open() {
         else if (cmd === 'store.keys') r = Object.keys(localStorage).filter((k) => k.startsWith('cycle:' + args.prefix)).map((k) => k.slice(6));
         else if (cmd === 'notify.status') r = 'granted';
         else if (cmd === 'lock.get') r = false;
+        else if (cmd === 'speech.stop') r = { audio: 'QVVESU8=', mime: 'audio/mp4' }; // base64 'AUDIO'
         window.__cycleReply(id, r, null);
       }, 0);
     } } } };
   }, seed());
   await context.route('**/cycle.css', (route) => route.fulfill({ contentType: 'text/css', body: CSS }));
   await context.route('https://x.test/**', (route) => route.abort());
+  uploads = 0;
+  await context.route('https://box.test/transcribe', async (route) => {
+    uploads++;
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    return said ? route.fulfill({ contentType: 'application/json', body: JSON.stringify({ text: said }) }) : route.fulfill({ status: 422, contentType: 'application/json', body: '{"error":"no speech"}' });
+  });
   const page = await context.newPage();
   page.on('pageerror', (e) => { throw e; });
   await page.goto(URL_, { waitUntil: 'domcontentloaded' });
@@ -55,8 +64,9 @@ async function open() {
   await page.fill('[data-d="note"]', 'We argued');
   return { context, page };
 }
-const hear = (page, text) => page.evaluate((t) => window.cycleNative.speech(t, false), text);
-const stops = (page) => page.evaluate(() => window.__bridge.filter((c) => c === 'speech.stop').length);
+const hear = async (_page, text) => { said = text; };
+const count = (page, cmd) => page.evaluate((c) => window.__bridge.filter((x) => x === c).length, cmd);
+const stops = (page) => count(page, 'speech.stop');
 const note = (page) => page.inputValue('[data-d="note"]');
 async function startAndHear(page) {
   await page.click('[data-a="mic:note"]');
@@ -82,18 +92,20 @@ async function hold(page, target) {
 test('hold on a recording mic offers Cancel and Insert; Cancel puts the box back to before the mic', async () => {
   const { context, page } = await open();
   await startAndHear(page);
-  assert.equal(await note(page), 'We argued at dinner');
+  assert.equal(await note(page), 'We argued', 'nothing is inserted while recording');
   assert.deepEqual(await hold(page, 'cancel'), ['Cancel ✕', 'Insert ↵']);
   await page.waitForSelector('.mic:not(.rec)[data-a="mic:note"]');
   assert.equal(await note(page), 'We argued');
-  assert.equal(await stops(page), 1);
-  await hear(page, 'late words'); // a partial that arrives after the stop is dropped
+  assert.equal(await count(page, 'speech.cancel'), 1);
+  assert.equal(await stops(page), 0);
+  await page.waitForTimeout(150);
+  assert.equal(uploads, 0, 'a cancelled clip is never uploaded');
   assert.equal(await note(page), 'We argued');
   assert.equal(await page.$('.vhold'), null);
   await context.close();
 });
 
-test('Insert stops and keeps what was heard; releasing elsewhere keeps recording; a plain tap still stops', async () => {
+test('Insert stops and transcribes into the box; releasing elsewhere keeps recording; a plain tap still stops', async () => {
   const { context, page } = await open();
   await startAndHear(page);
   await hold(page, null);
@@ -101,14 +113,13 @@ test('Insert stops and keeps what was heard; releasing elsewhere keeps recording
   assert.ok(await page.$('.mic.rec[data-a="mic:note"]'), 'still recording after releasing off the targets');
   assert.equal(await stops(page), 0);
   await hold(page, 'insert');
-  await page.waitForSelector('.mic:not(.rec)[data-a="mic:note"]');
-  assert.equal(await note(page), 'We argued at dinner');
+  await page.waitForFunction(() => document.querySelector('[data-d="note"]').value === 'We argued at dinner');
   assert.equal(await stops(page), 1, 'one stop: the release click did not also run the tap action');
   await startAndHear(page);
-  assert.equal(await note(page), 'We argued at dinner at dinner');
+  assert.equal(await note(page), 'We argued at dinner');
   await page.click('[data-a="mic:note"]');
-  await page.waitForSelector('.mic:not(.rec)[data-a="mic:note"]');
-  assert.equal(await note(page), 'We argued at dinner at dinner');
+  await page.waitForFunction(() => document.querySelector('[data-d="note"]').value === 'We argued at dinner at dinner');
+  assert.equal(await page.$('.mic.rec'), null);
   await context.close();
 });
 
@@ -123,16 +134,22 @@ test('no hold menu on a mic that is not recording', async () => {
   await context.close();
 });
 
-test('a recognizer restart after a pause keeps the earlier sentence; Cancel still restores the pre-dictation text', async () => {
+test('a tap stops, the mic is busy while the clip uploads, then the transcript is appended to the box; no speech leaves it alone', async () => {
   const { context, page } = await open();
+  delay = 400;
+  await startAndHear(page);
   await page.click('[data-a="mic:note"]');
-  await page.waitForSelector('.mic.rec[data-a="mic:note"]');
-  await hear(page, 'A minute ago I went');
-  await hear(page, 'A minute ago I went home');
-  await hear(page, 'She starts to hit herself');
-  assert.equal(await note(page), 'We argued A minute ago I went home She starts to hit herself');
-  await hold(page, 'cancel');
-  await page.waitForSelector('.mic:not(.rec)[data-a="mic:note"]');
-  assert.equal(await note(page), 'We argued');
+  await page.waitForSelector('.mic.busy[data-a="mic:note"]');
+  assert.equal(await page.$('.mic.rec'), null);
+  await page.waitForFunction(() => document.querySelector('[data-d="note"]').value === 'We argued at dinner');
+  assert.equal(await page.$('.mic.busy'), null);
+  assert.equal(uploads, 1);
+  said = ''; delay = 0;
+  await page.click('[data-a="mic:note"]');
+  await page.waitForSelector('.mic.rec');
+  await page.click('[data-a="mic:note"]');
+  await page.waitForFunction(() => !document.querySelector('.mic.rec, .mic.busy'));
+  assert.equal(await note(page), 'We argued at dinner');
+  assert.equal(await page.$('.errbar'), null);
   await context.close();
 });

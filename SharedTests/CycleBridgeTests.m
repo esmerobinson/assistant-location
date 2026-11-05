@@ -387,9 +387,9 @@
     [d removeObjectForKey:@"cycle.lockPassed"];
 }
 
-// ---- speech.start / speech.stop and the transcript callbacks (the recognizer itself needs a mic and a signed host app) ----
+// ---- speech.start / speech.stop / speech.cancel and the silence callback (the recorder itself needs a mic and a signed host app) ----
 
-- (void)testSpeechStartRunsTheHandlerAndRepliesNullWhenCapturing {
+- (void)testSpeechStartRunsTheHandlerAndRepliesNullWhenRecording {
     __block int starts = 0;
     self.bridge.speechStart = ^(void (^done)(NSString *)) { starts++; done(nil); };
     NSDictionary *out = [self run:@"speech.start" args:@{}];
@@ -404,39 +404,56 @@
     XCTAssertEqualObjects(out[@"result"], NSNull.null);
 }
 
-- (void)testSpeechStopRunsTheHandler {
+- (void)testSpeechStopRepliesTheClipAsBase64WithItsMime {
     __block int stops = 0;
-    self.bridge.speechStop = ^{ stops++; };
-    XCTAssertEqualObjects([self run:@"speech.stop" args:@{}][@"error"], NSNull.null);
+    NSData *clip = [@"m4a-bytes" dataUsingEncoding:NSUTF8StringEncoding];
+    self.bridge.speechStop = ^NSData *{ stops++; return clip; };
+    NSDictionary *out = [self run:@"speech.stop" args:@{}];
     XCTAssertEqual(stops, 1);
+    XCTAssertEqualObjects(out[@"error"], NSNull.null);
+    XCTAssertEqualObjects(out[@"result"], (@{ @"audio": [clip base64EncodedStringWithOptions:0], @"mime": @"audio/mp4" }));
+}
+
+- (void)testSpeechStopWithNothingRecordedRepliesNull {
+    self.bridge.speechStop = ^NSData *{ return nil; };
+    NSDictionary *out = [self run:@"speech.stop" args:@{}];
+    XCTAssertEqualObjects(out[@"error"], NSNull.null);
+    XCTAssertEqualObjects(out[@"result"], NSNull.null);
+}
+
+- (void)testSpeechCancelRunsTheHandler {
+    __block int cancels = 0;
+    self.bridge.speechCancel = ^{ cancels++; };
+    XCTAssertEqualObjects([self run:@"speech.cancel" args:@{}][@"error"], NSNull.null);
+    XCTAssertEqual(cancels, 1);
 }
 
 - (void)testSpeechCommandsWithoutAHandlerAreLoudErrors {
     XCTAssertTrue([[self run:@"speech.start" args:@{}][@"error"] containsString:@"no speech handler"]);
     XCTAssertTrue([[self run:@"speech.stop" args:@{}][@"error"] containsString:@"no speech handler"]);
+    XCTAssertTrue([[self run:@"speech.cancel" args:@{}][@"error"] containsString:@"no speech handler"]);
 }
 
-- (void)testTranscriptAndErrorReachThePageOnlyOnceItIsReady {
-    [self.bridge deliverSpeech:@"hello" final:NO];
-    [self.bridge deliverSpeechError:@"Speech failed"];
+- (void)testSilenceAndErrorReachThePageOnlyOnceItIsReady {
+    [self.bridge deliverSpeechSilence];
+    [self.bridge deliverSpeechError:@"Mic busy"];
     XCTAssertEqual(self.js.count, 0u, @"nothing may reach the page before it sends ready");
     [self run:@"ready" args:@{}];
-    [self.bridge deliverSpeech:@"hello \"there\"\n" final:NO];
-    [self.bridge deliverSpeech:@"hello there" final:YES];
-    [self.bridge deliverSpeechError:@"Speech failed"];
-    XCTAssertEqual(self.js.count, 3u);
-    XCTAssertEqualObjects([self argsOfJS:self.js[0] prefix:@"window.cycleNative.speech.apply(window.cycleNative, "], (@[@"hello \"there\"\n", @NO]));
-    XCTAssertEqualObjects([self argsOfJS:self.js[1] prefix:@"window.cycleNative.speech.apply(window.cycleNative, "], (@[@"hello there", @YES]));
-    XCTAssertEqualObjects([self argsOfJS:self.js[2] prefix:@"window.cycleNative.speechError.apply(window.cycleNative, "], (@[@"Speech failed"]));
+    [self.bridge deliverSpeechSilence];
+    [self.bridge deliverSpeechError:@"Mic busy"];
+    XCTAssertEqual(self.js.count, 2u);
+    XCTAssertEqualObjects([self argsOfJS:self.js[0] prefix:@"window.cycleNative.speechSilence.apply(window.cycleNative, "], (@[]));
+    XCTAssertEqualObjects([self argsOfJS:self.js[1] prefix:@"window.cycleNative.speechError.apply(window.cycleNative, "], (@[@"Mic busy"]));
 }
 
-- (void)testBackgroundingStopsTheCaptureAndTellsThePageItEnded {
-    __block int stops = 0;
-    self.bridge.speechStop = ^{ stops++; };
-    [self run:@"ready" args:@{}];
+- (void)testBackgroundingInterruptsTheRecordingWithoutStoppingIt {
+    __block int interrupts = 0, stops = 0, cancels = 0;
+    self.bridge.speechInterrupt = ^{ interrupts++; };
+    self.bridge.speechStop = ^NSData *{ stops++; return nil; };
+    self.bridge.speechCancel = ^{ cancels++; };
     [self.bridge speechInterrupted];
-    XCTAssertEqual(stops, 1);
-    XCTAssertEqualObjects([self argsOfJS:self.js.lastObject prefix:@"window.cycleNative.speech.apply(window.cycleNative, "], (@[@"", @YES]));
+    XCTAssertEqual(interrupts, 1);
+    XCTAssertEqual(stops + cancels, 0, @"the clip is kept for the page's pending speech.stop");
 }
 
 @end

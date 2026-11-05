@@ -911,15 +911,3 @@ test('homeList: own open to-dos incl. undated; no partner, done, deleted or sche
   assert.deepEqual(C.homeList({ me: ME, now, today, todos: [], cards: [], week: null }), []);
 });
 
-test('speechReset: a recognizer restart is a reset, a growing or rewritten partial is not', () => {
-  assert.equal(C.speechReset('A minute ago I went home', 'She starts to hit herself'), true);
-  assert.equal(C.speechReset('I went to the store and bought milk', 'Then'), true);
-  assert.equal(C.speechReset('', 'Hello'), false);
-  assert.equal(C.speechReset('A minute ago', 'A minute ago I went'), false);
-  assert.equal(C.speechReset('I want to go', 'I wanna go'), false);
-  assert.equal(C.speechReset('I want to go home now', 'I wanna go home'), false);
-  assert.equal(C.speechReset('I went to the store and bought some bread', 'I said no'), true);
-  assert.equal(C.speechReset('I want to go', 'Hi want to go'), false);
-  assert.equal(C.speechReset('their dog ran', 'there dog ran'), false);
-  assert.equal(C.speechReset('hello there my friend', 'Hello there my'), false);
-});

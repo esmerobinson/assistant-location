@@ -1,45 +1,38 @@
 #import "CycleSpeech.h"
 
 #import <AVFoundation/AVFoundation.h>
-#import <Speech/Speech.h>
 
-@interface CycleSpeech ()
-@property (nonatomic, strong) SFSpeechRecognizer *recognizer;
-@property (nonatomic, strong) AVAudioEngine *engine;
-@property (nonatomic, strong) SFSpeechAudioBufferRecognitionRequest *request;
-@property (nonatomic, strong) SFSpeechRecognitionTask *task;
-@property (nonatomic, copy) NSString *lastText;
-@property (nonatomic, assign) NSUInteger generation; // drops callbacks from a capture that was already stopped
+// Silence detection polls the recorder's average power. Both numbers are guesses (dB, 0 = full scale): speech above
+// SPEECH_DB counts as heard, then SILENCE_MS below it ends the turn. Tune on a device.
+static const float SPEECH_DB = -35.0f;
+static const NSTimeInterval SILENCE_S = 1.8;
+static const NSTimeInterval POLL_S = 0.1;
+
+@interface CycleSpeech () <AVAudioRecorderDelegate>
+@property (nonatomic, strong) AVAudioRecorder *recorder;
+@property (nonatomic, strong) NSURL *url;
+@property (nonatomic, strong) NSTimer *meter;
+@property (nonatomic, assign) BOOL heardSpeech;
+@property (nonatomic, assign) NSTimeInterval quietSince; // 0 while loud
+@property (nonatomic, assign) NSUInteger generation;     // a permission prompt answered after cancel must not start a recording
 @end
 
 @implementation CycleSpeech
 
 - (void)startWithCompletion:(void (^)(NSString *))done {
-    [self stop];
+    [self cancel];
     NSUInteger gen = self.generation;
-    void (^finish)(NSString *) = ^(NSString *error) {
-        dispatch_async(dispatch_get_main_queue(), ^{ done(error); });
-    };
-    [SFSpeechRecognizer requestAuthorization:^(SFSpeechRecognizerAuthorizationStatus status) {
-        if (status != SFSpeechRecognizerAuthorizationStatusAuthorized) {
-            NSLog(@"[Cycle] speech authorization status %ld", (long)status);
-            finish(@"Mic off");
-            return;
-        }
-        [AVAudioSession.sharedInstance requestRecordPermission:^(BOOL granted) {
-            if (!granted) { NSLog(@"[Cycle] microphone permission denied"); finish(@"Mic off"); return; }
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (gen != self.generation) { done(@"Speech stopped"); return; } // stopped while the prompts were up
-                done([self beginCaptureGeneration:gen]);
-            });
-        }];
+    [AVAudioSession.sharedInstance requestRecordPermission:^(BOOL granted) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!granted) { NSLog(@"[Cycle] microphone permission denied"); done(@"Mic off"); return; }
+            if (gen != self.generation) { done(@"Speech stopped"); return; }
+            done([self beginRecording]);
+        });
     }];
 }
 
-/// Returns nil once capturing, else the short reason.
-- (NSString *)beginCaptureGeneration:(NSUInteger)gen {
-    SFSpeechRecognizer *recognizer = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:@"en-US"]];
-    if (!recognizer.isAvailable) { NSLog(@"[Cycle] speech recognizer unavailable"); return @"Speech unavailable"; }
+/// Returns nil once recording, else the short reason.
+- (NSString *)beginRecording {
     NSError *error = nil;
     AVAudioSession *session = AVAudioSession.sharedInstance;
     if (![session setCategory:AVAudioSessionCategoryRecord mode:AVAudioSessionModeMeasurement options:AVAudioSessionCategoryOptionDuckOthers error:&error] ||
@@ -47,56 +40,73 @@
         NSLog(@"[Cycle] audio session failed: %@ (%@ %ld)", error.localizedDescription, error.domain, (long)error.code);
         return @"Mic busy";
     }
-    SFSpeechAudioBufferRecognitionRequest *request = [[SFSpeechAudioBufferRecognitionRequest alloc] init];
-    request.shouldReportPartialResults = YES;
-    if (recognizer.supportsOnDeviceRecognition) request.requiresOnDeviceRecognition = YES;
-
-    AVAudioEngine *engine = [[AVAudioEngine alloc] init];
-    AVAudioInputNode *input = engine.inputNode;
-    [input installTapOnBus:0 bufferSize:1024 format:[input outputFormatForBus:0] block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
-        [request appendAudioPCMBuffer:buffer];
-    }];
-    [engine prepare];
-    if (![engine startAndReturnError:&error]) {
-        [input removeTapOnBus:0];
+    NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"cycle-voice-%@.m4a", NSUUID.UUID.UUIDString]]];
+    NSDictionary *settings = @{ AVFormatIDKey: @(kAudioFormatMPEG4AAC), AVSampleRateKey: @16000, AVNumberOfChannelsKey: @1, AVEncoderAudioQualityKey: @(AVAudioQualityMedium) };
+    AVAudioRecorder *recorder = [[AVAudioRecorder alloc] initWithURL:url settings:settings error:&error];
+    if (!recorder || ![recorder prepareToRecord] || ![recorder record]) {
+        NSLog(@"[Cycle] recorder failed: %@ (%@ %ld)", error.localizedDescription, error.domain, (long)error.code);
         [session setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:NULL];
-        NSLog(@"[Cycle] audio engine failed: %@ (%@ %ld)", error.localizedDescription, error.domain, (long)error.code);
         return @"Mic busy";
     }
-    self.recognizer = recognizer; self.engine = engine; self.request = request; self.lastText = @"";
-    self.task = [recognizer recognitionTaskWithRequest:request resultHandler:^(SFSpeechRecognitionResult *result, NSError *err) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (gen != self.generation) return;
-            if (result) {
-                self.lastText = result.bestTranscription.formattedString;
-                if (self.onText) self.onText(self.lastText, result.isFinal);
-                if (result.isFinal) { [self stop]; return; }
-            }
-            if (!err) return;
-            // 1110 = no speech detected, 301 = cancelled: normal ends, not failures.
-            BOOL normal = [err.domain isEqualToString:@"kAFAssistantErrorDomain"] && (err.code == 1110 || err.code == 301);
-            NSLog(@"[Cycle] recognition ended: %@ (%@ %ld)", err.localizedDescription, err.domain, (long)err.code);
-            [self stop];
-            if (normal) { if (self.onText) self.onText(self.lastText, YES); }
-            else if (self.onError) self.onError(@"Speech failed");
-        });
-    }];
+    recorder.delegate = self;
+    recorder.meteringEnabled = YES;
+    self.recorder = recorder; self.url = url; self.heardSpeech = NO; self.quietSince = 0;
+    __weak CycleSpeech *weakSelf = self;
+    self.meter = [NSTimer scheduledTimerWithTimeInterval:POLL_S repeats:YES block:^(NSTimer *t) { [weakSelf poll]; }];
     return nil;
 }
 
-- (void)stop {
-    self.generation++;
-    BOOL wasCapturing = self.engine != nil;
-    if (self.engine.isRunning) [self.engine stop];
-    [self.engine.inputNode removeTapOnBus:0];
-    [self.request endAudio];
-    [self.task cancel];
-    self.engine = nil; self.request = nil; self.task = nil; self.recognizer = nil;
-    if (!wasCapturing) return;
+- (void)poll {
+    if (!self.recorder.isRecording) return;
+    [self.recorder updateMeters];
+    float db = [self.recorder averagePowerForChannel:0];
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    if (db > SPEECH_DB) { self.heardSpeech = YES; self.quietSince = 0; return; }
+    if (!self.heardSpeech) return;
+    if (self.quietSince == 0) self.quietSince = now;
+    if (now - self.quietSince >= SILENCE_S) {
+        self.heardSpeech = NO; // once per utterance; the page decides whether to stop
+        if (self.onSilence) self.onSilence();
+    }
+}
+
+- (void)audioRecorderEncodeErrorDidOccur:(AVAudioRecorder *)recorder error:(NSError *)error {
+    NSLog(@"[Cycle] recorder error: %@", error);
+    if (recorder != self.recorder) return;
+    [self cancel];
+    if (self.onError) self.onError(@"Mic busy");
+}
+
+/// Ends the timer and the recorder (-stop finalizes the m4a container, -pause would not) and frees the audio session.
+- (void)halt {
+    [self.meter invalidate]; self.meter = nil;
+    if (!self.recorder) return;
+    [self.recorder stop];
     NSError *error = nil;
     if (![AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&error]) {
         NSLog(@"[Cycle] could not deactivate audio session: %@", error);
     }
+}
+
+- (NSData *)finish {
+    self.generation++;
+    [self halt];
+    NSURL *url = self.url;
+    self.recorder = nil; self.url = nil;
+    if (!url) return nil;
+    NSData *audio = [NSData dataWithContentsOfURL:url];
+    [NSFileManager.defaultManager removeItemAtURL:url error:NULL];
+    return audio.length ? audio : nil;
+}
+
+- (void)cancel {
+    [self finish];
+}
+
+- (void)interrupt {
+    if (!self.recorder) return;
+    [self halt]; // keeps self.url and the file; finish still returns it
+    if (self.onSilence) self.onSilence();
 }
 
 @end

@@ -217,7 +217,7 @@ function inp(k, ph, extra) { return '<input class="inp" data-d="' + k + '" value
 function seg(items, cur, act, cls) {
   return '<div class="seg ' + (cls || '') + '">' + items.map(function (x) { return '<span class="' + (String(x[0]) === String(cur) ? 'on' : '') + '" data-a="' + act + ':' + x[0] + '">' + x[1] + '</span>'; }).join('') + '</div>';
 }
-// ---- voice input (bridge speech.start / speech.stop; the transcript comes back through cycleNative.speech) ----
+// ---- voice input (bridge speech.start records; speech.stop hands back the clip and St.transcribe sends it to the box) ----
 // A single-line field with a mic at its right end (only where a native shell can listen).
 function micField(k, ph) {
   var f = inp(k, ph).replace('class="inp"', 'class="inp fill"');
@@ -225,8 +225,8 @@ function micField(k, ph) {
   return '<div class="micw">' + f + micBtn(k) + '</div>';
 }
 function micBtn(k) {
-  var on = ui.rec && ui.rec.field === k;
-  return '<span class="mic' + (on ? ' rec' : '') + '" data-a="mic:' + k + '" role="button" aria-label="' + (on ? 'Stop' : 'Voice') + '">' + ic('mic') + '</span>';
+  var on = ui.rec && ui.rec.field === k, busy = ui.busy === k;
+  return '<span class="mic' + (on ? ' rec' : '') + (busy ? ' busy' : '') + '" data-a="mic:' + k + '" role="button" aria-label="' + (on ? 'Stop' : 'Voice') + '">' + ic('mic') + '</span>';
 }
 // A multi-line field (textarea in its .ta box) with a mic: for every place a lot of text could be dictated. `cls` is the box's own classes.
 function micTa(k, cls, ph) {
@@ -239,10 +239,26 @@ function noteSaveSync() {
   var ns = document.querySelector('[data-a="notesave"]');
   if (ns) ns.hidden = !val('more').trim();
 }
+// Drops the recording unsent: the field is going away, the person started typing, or a Save is already underway.
 function stopRec() {
   if (!ui.rec) return Promise.resolve();
   ui.rec = null;
-  return St.native.speechStop();
+  return St.native.speechCancel();
+}
+// Ends a field's recording and appends the transcript to it (the mic tap, VoiceHold Insert, backgrounding). The mic shows .busy
+// meanwhile. Appends to what the field holds NOW, so anything typed while the clip uploaded is kept; if the field left the
+// screen in the meantime there is nowhere to put the words and they are dropped.
+async function finishRec() {
+  var rec = ui.rec;
+  if (!rec) return;
+  var f = rec.field;
+  ui.rec = null; ui.busy = f; render();
+  var text;
+  try { text = await St.transcribe(); } finally { ui.busy = null; render(); }
+  var el = document.querySelector('[data-d="' + f + '"]');
+  if (!text || !el) return;
+  ui.d[f] = C.appendSpeech(ui.d[f] || '', text); el.value = ui.d[f];
+  saveDraft(draftKey()); if (f === 'more') noteSaveSync(); render();
 }
 function sheet(cls, inner, closeA) {
   return '<div class="sheetlayer"><div class="dim" data-a="' + (closeA || 'sheet:close') + '"></div><div class="bs ' + (cls || '') + '"><div class="grab"></div>' + inner + '</div></div>';
@@ -1385,7 +1401,7 @@ function render() {
     html = errScreen(true);
   }
   app.innerHTML = html;
-  // The mic only lives while its field is on screen. What was heard is already in ui.d and the draft, so stopping loses nothing.
+  // The mic only lives while its field is on screen; with the field gone there is nowhere to put the words, so the recording is dropped.
   if (ui.rec && ui.rec.field !== 'talk' && !app.querySelector('[data-d="' + ui.rec.field + '"]')) guard(stopRec)();
   // Before scrollTop is restored below: a box still at its min height would make .scr too short and clamp it.
   app.querySelectorAll('.ta.nt textarea').forEach(fitNote);
@@ -1454,12 +1470,9 @@ app.addEventListener('input', function (e) {
 
 // ---- Talk: a spoken back-and-forth about a fight ---------------------------------------------------------------
 // Drawn INSTEAD of the current screen while ui.talk is set (not a route): ui.d holds the unsaved Log-a-fight form, and
-// every route change wipes it. ui.talk = {field, key, route, fid, msgs[{role,text}], draft, text (composer), heard
-// (live transcript), listen, speak, pending, failed, finish, seq, spk}. The words are kept in St.kv (on this device
+// every route change wipes it. ui.talk = {field, key, route, fid, msgs[{role,text}], draft, text (composer),
+// listen, speak, pending, failed, finish, seq, spk}. The words are kept in St.kv (on this device
 // only, never synced) on every change, so a crash or Close loses nothing; Use this / Use my words / Save clear them.
-// Native recognition has no silence detection (CycleSpeech.m ends only on stop), so the turn ends when the transcript
-// has not changed for this long. 1800ms is a guess: long enough to survive a breath, short enough to feel live.
-var TALK_SILENCE_MS = 1800;
 // Fallback for a speechSynthesis whose `end` never fires: proportional to the text, then fall back to idle.
 function talkSpeakMs(text) { return 5000 + text.length * 120; }
 function firstName(n) { return String(n || '').trim().split(/\s+/)[0]; }
@@ -1491,7 +1504,7 @@ function talkScreen() {
     bar = '<div class="tkact">' + (t.draft ? '<span class="save" data-a="tkuse">Use this</span><span class="ghost" data-a="tkkeep">Keep talking</span>' :
       '<span class="save" data-a="tkretry">Retry</span><span class="ghost" data-a="tkwords">Use my words</span>') + x + '</div>';
   } else {
-    var ph = t.heard || talkLast(t, 'user'); // the live transcript, then the last sent turn until the next one starts
+    var ph = talkLast(t, 'user'); // the last sent turn until the next one starts
     var mic = St.hasNative ? '<span class="tkb tkmic' + (t.listen ? ' rec' : '') + (t.muted ? ' off' : '') + '" data-a="tkmic" role="button" aria-label="Mute">' + ic('mic') + '</span>' : '<span class="tksp"></span>';
     bar = '<div class="tkpill' + (t.text.trim() ? ' has' : '') + '"><span class="tkph">' + esc(ph) + '</span>' +
       '<input class="tkin" data-t="tk" aria-label="Message" autocomplete="off" autocapitalize="sentences" value="' + esc(t.text) + '">' +
@@ -1521,20 +1534,20 @@ function talkVoices(ss) {
     ss.addEventListener('voiceschanged', fin); setTimeout(fin, 800);
   });
 }
-// Stops speech and recognition, keeping a just-heard partial transcript as an unsent turn (shown with Retry) so Close,
-// backgrounding or typing never drops it. Awaits speechStop so the native audio session is free before anything else.
-function talkHalt(t, quiet) {
+// Stops speech and recording, keeping what was said so far as an unsent turn (shown with Retry) so Close, backgrounding or
+// typing never drops it. Awaits the transcription, so the native audio session is free before anything else.
+async function talkHalt(t, quiet) {
   t = t || ui.talk;
-  if (!t) return Promise.resolve();
-  clearTimeout(t.silence); t.spk++; t.speak = false;
+  if (!t) return;
+  t.spk++; t.speak = false;
   if (window.speechSynthesis) window.speechSynthesis.cancel();
-  if (!(ui.rec && ui.rec.field === 'talk')) return Promise.resolve();
+  if (!(ui.rec && ui.rec.field === 'talk')) return;
   ui.rec = null; t.listen = false;
-  var h = (t.heard || '').trim(); t.heard = '';
+  if (ui.talk === t) render(); // else the mic stays lit after typing or backgrounding
+  var h = (await St.transcribe()).trim();
   // `quiet` (typing took over): keep the words but stay on the pill, since Retry/Use my words would replace the field being typed in.
   if (h) { t.msgs.push({ role: 'user', text: h }); t.failed = !quiet; talkSave(t); }
-  if (ui.talk === t) render(); // else the mic stays lit and the live bubble stays on screen after typing or backgrounding
-  return St.native.speechStop();
+  if (ui.talk === t) render();
 }
 // Begin a listening turn (native only). Cuts any speech first; the tap that got here is the user gesture.
 async function talkListen() {
@@ -1542,25 +1555,20 @@ async function talkListen() {
   if (!t || !St.hasNative || t.pending || ui.rec) return;
   t.spk++; t.speak = false;
   if (window.speechSynthesis) window.speechSynthesis.cancel();
-  ui.rec = { field: 'talk', base: '' }; t.listen = true; t.heard = ''; render();
+  ui.rec = { field: 'talk' }; t.listen = true; render();
   try { await St.native.speechStart(); } catch (e) { ui.rec = null; t.listen = false; render(); throw e; }
 }
-// Silence (or the final callback, or a mic tap) ends the turn: stop recognition, then send what was heard.
+// The shell's silence event (cycleNative.speechSilence) or a mic tap ends the turn: stop recording, transcribe (the glow shows
+// 'thinking'), then send what was said. Nothing said goes back to idle.
 async function talkEndTurn() {
   var t = ui.talk;
   if (!t || !(ui.rec && ui.rec.field === 'talk')) return;
-  clearTimeout(t.silence); ui.rec = null; t.listen = false;
-  var h = t.heard.trim(); t.heard = '';
-  await St.native.speechStop();
+  ui.rec = null; t.listen = false; t.pending = true; render();
+  var h;
+  try { h = (await St.transcribe()).trim(); } catch (e) { t.pending = false; if (ui.talk === t) render(); throw e; }
   if (ui.talk !== t) return;
+  t.pending = false;
   if (h) await talkSend(h, false); else render();
-}
-// Live transcript from the shell (cycleNative.speech): every change restarts the silence countdown.
-function talkHeard(text, final) {
-  var t = ui.talk;
-  if (!t) return;
-  if (text && text !== t.heard) { t.heard = text; clearTimeout(t.silence); t.silence = setTimeout(guard(talkEndTurn), TALK_SILENCE_MS); render(); }
-  if (final) guard(talkEndTurn)();
 }
 // One request. A failure keeps the user's turn on screen with Retry; a stale answer (Closed meanwhile) is dropped.
 async function talkSend(text, finish) {
@@ -1581,12 +1589,12 @@ async function talkSend(text, finish) {
   return talkSpeak(t, r.reply);
 }
 // Speak the reply, then listen again. No speechSynthesis, an error, or an `end` that never comes all land on idle with the
-// mic tappable and no error: the text is on screen regardless. Recognition is stopped (awaited) first because it holds the audio session.
+// mic tappable and no error: the text is on screen regardless. Any recording is cancelled (awaited) first because it holds the audio session.
 async function talkSpeak(t, text) {
   var ss = window.speechSynthesis;
   if (!St.hasNative || !ss || typeof SpeechSynthesisUtterance === 'undefined') return;
   var id = ++t.spk;
-  await St.native.speechStop();
+  await St.native.speechCancel();
   if (ui.talk !== t || t.spk !== id) return;
   var voice = talkPickVoice(await talkVoices(ss));
   if (ui.talk !== t || t.spk !== id) return;
@@ -1752,8 +1760,9 @@ var ACT = {
   tab: tab,
   sheet: function () { ui.sheet = null; ui.d = {}; render(); },
   mic: guard(function (field) {
-    if (ui.rec) return stopRec().then(render);
-    ui.rec = { field: field, base: ui.d[field] || '', orig: ui.d[field] || '', last: '' }; render();
+    if (ui.busy) return;
+    if (ui.rec) return finishRec();
+    ui.rec = { field: field, orig: ui.d[field] || '' }; render();
     return St.native.speechStart().catch(function (e) { ui.rec = null; throw e; });
   }),
   // Talk: open from a note field (restoring this fight's saved conversation), and the controls inside it.
@@ -1761,12 +1770,12 @@ var ACT = {
     var fid = talkFid(), key = talkStoreKey(fid), sc = document.querySelector('.scr');
     var saved = JSON.parse((await St.kv.get(key)) || 'null') || { msgs: [], draft: null };
     var last = saved.msgs[saved.msgs.length - 1];
-    ui.talk = { field: field, key: key, route: ui.route, fid: fid, top: sc ? sc.scrollTop : 0, msgs: saved.msgs, draft: saved.draft, text: '', heard: '', listen: false, speak: false,
+    ui.talk = { field: field, key: key, route: ui.route, fid: fid, top: sc ? sc.scrollTop : 0, msgs: saved.msgs, draft: saved.draft, text: '', listen: false, speak: false,
       pending: false, failed: !!last && last.role === 'user' && !saved.draft, finish: false, seq: 0, spk: 0 };
     render();
     if (St.hasNative && !ui.talk.failed) await talkListen();
   }),
-  // Mic and glow: speaking -> cut it and listen; listening -> mute (what was heard is sent, no auto-relisten); muted -> listen.
+  // Mic and glow: speaking -> cut it and listen; listening -> mute (what was said is sent, no auto-relisten); muted -> listen.
   tkmic: guard(function () { return talkMic(); }),
   tkglow: guard(function () { return talkMic(); }),
   // X: with an answer, a draft or an unsent turn on screen it just leaves (words stay saved); otherwise with at least one
@@ -2382,9 +2391,9 @@ function applyRoute(r, synced) {
   else throw new Error('unknown route ' + r);
 }
 // Hold menu on a recording dictation mic (voice-hold.js, the one gesture every app's mics share): holding the mic while it
-// listens pops Cancel / Insert. Insert stops and keeps what was heard, which is what a tap does here too, since these mics
-// fill their box and never send. Cancel stops and puts the box back to what it held before the mic started (ui.rec.orig),
-// so a dictation that came out wrong costs nothing. The Talk screen's mic (.tkmic) is a turn-taking control, not
+// listens pops Cancel / Insert. Insert stops and transcribes into the box, which is what a tap does here too, since these mics
+// fill their box and never send. Cancel discards the recording and puts the box back to what it held before the mic started
+// (ui.rec.orig), so a dictation that came out wrong costs nothing. The Talk screen's mic (.tkmic) is a turn-taking control, not
 // dictation, and is not matched by '.mic.rec'.
 VoiceHold.init({
   mic: '.mic.rec',
@@ -2394,11 +2403,10 @@ VoiceHold.init({
     // Asked again at release: a recording that already ended (final transcript, field gone) has nothing to cancel.
     if (!ui.rec || ui.rec.field !== f) return null;
     return {
-      insert: guard(function () { return stopRec().then(render); }),
+      insert: guard(finishRec),
       cancel: guard(function () {
         var base = ui.rec.orig, el = document.querySelector('[data-d="' + f + '"]');
         ui.d[f] = base; if (el) el.value = base; saveDraft(draftKey()); if (f === 'more') noteSaveSync();
-        // stopRec clears ui.rec first, so a late partial or final transcript from the shell is dropped (cycleNative.speech).
         return stopRec().then(render);
       })
     };
@@ -2408,17 +2416,10 @@ window.cycleNative = {
   route: function (r) { if (ui.ready) guard(applyRoute)(r); else routeQ.push(r); },
   ready: function () { while (ui.ready && routeQ.length) guard(applyRoute)(routeQ.shift()); },
   pushToken: function (t) { St.setPushToken(t); },
-  // Transcript so far (the whole utterance, not a delta); final = capture ended (natural end, or the shell stopped it).
-  speech: function (text, final) {
-    if (!ui.rec) return;
-    if (ui.rec.field === 'talk') return talkHeard(text, final);
-    var f = ui.rec.field, el = document.querySelector('[data-d="' + f + '"]');
-    // The recognizer restarts its transcript after a pause: bank the previous utterance into base so it isn't overwritten.
-    if (text && C.speechReset(ui.rec.last, text)) ui.rec.base = C.appendSpeech(ui.rec.base, ui.rec.last);
-    if (text) { ui.rec.last = text; ui.d[f] = C.appendSpeech(ui.rec.base, text); if (el) el.value = ui.d[f]; saveDraft(draftKey()); if (f === 'more') noteSaveSync(); }
-    if (final) { ui.rec = null; render(); }
-  },
-  speechError: function (msg) { ui.rec = null; showErr(plain(new Error(msg))); },
+  // The shell heard speech and then silence (also sent when the app is backgrounded mid-recording; the clip is kept for the
+  // stop). Only Talk acts on it; a dictated field waits for its mic tap.
+  speechSilence: function () { if (ui.rec && ui.rec.field === 'talk') guard(talkEndTurn)(); },
+  speechError: function (msg) { var talk = ui.rec && ui.rec.field === 'talk'; ui.rec = null; if (talk && ui.talk) { ui.talk.listen = false; render(); } showErr(plain(new Error(msg))); },
   foreground: function () { St.retryPush(); if (S.session) St.sync(); render(); checkNotif(); }
 };
 
@@ -2428,7 +2429,7 @@ St.boot().then(function () { return St.hasNative ? St.native.lockGet() : false; 
   // 15s repaint that moves countdowns and promotes a held item to "ready".
   setInterval(function () { if (document.visibilityState === 'visible' && S.session) St.sync(); }, 5000);
   setInterval(function () { if (!typing()) render(); }, 15000);
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') { guard(talkHalt)(); guard(stopRec)(); } if (document.visibilityState === 'visible') window.cycleNative.foreground(); });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') { guard(talkHalt)(); guard(finishRec)(); } if (document.visibilityState === 'visible') window.cycleNative.foreground(); });
 }).catch(function (e) {
   // Boot failed (unreadable storage, bridge error). Say so instead of leaving a blank page; storage is left exactly as found.
   console.error('cycle boot failed:', e);

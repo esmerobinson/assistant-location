@@ -118,7 +118,11 @@ static NSString *CycleKeychainError(NSString *op, OSStatus st) {
         self.speechStart(^(NSString *error) { if (error) done(nil, error); else done(NSNull.null, nil); });
     } else if ([cmd isEqualToString:@"speech.stop"]) {
         if (!self.speechStop) { done(nil, @"speech.stop: no speech handler wired"); return; }
-        self.speechStop();
+        NSData *audio = self.speechStop();
+        done(audio ? @{ @"audio": [audio base64EncodedStringWithOptions:0], @"mime": @"audio/mp4" } : NSNull.null, nil);
+    } else if ([cmd isEqualToString:@"speech.cancel"]) {
+        if (!self.speechCancel) { done(nil, @"speech.cancel: no speech handler wired"); return; }
+        self.speechCancel();
         done(NSNull.null, nil);
     } else if ([cmd isEqualToString:@"notify.schedule"]) {
         [self.notifier scheduleArgs:args now:[NSDate date] completion:^(NSError *error) {
@@ -230,8 +234,8 @@ static NSString *CycleKeychainError(NSString *op, OSStatus st) {
     if (self.ready) [self callNative:@"pushToken" arguments:@[hex]];
 }
 
-- (void)deliverSpeech:(NSString *)text final:(BOOL)final {
-    if (self.ready) [self callNative:@"speech" arguments:@[text ?: @"", @(final)]];
+- (void)deliverSpeechSilence {
+    if (self.ready) [self callNative:@"speechSilence" arguments:@[]];
 }
 
 - (void)deliverSpeechError:(NSString *)message {
@@ -239,8 +243,7 @@ static NSString *CycleKeychainError(NSString *op, OSStatus st) {
 }
 
 - (void)speechInterrupted {
-    if (self.speechStop) self.speechStop();
-    [self deliverSpeech:@"" final:YES];
+    if (self.speechInterrupt) self.speechInterrupt(); // the recorder reports speechSilence itself when it had a recording
 }
 
 - (void)foreground {

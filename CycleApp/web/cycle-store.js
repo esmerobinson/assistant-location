@@ -57,9 +57,11 @@ var CycleStore = (function () {
       return navigator.share({ text: text });
     },
     // Face ID app lock flag (native only; the browser has no lock).
-    // Live speech-to-text into a page field: start resolves once capture runs (rejects 'Mic off' when denied); text arrives via cycleNative.speech.
+    // Voice input: start resolves once recording runs (rejects 'Mic off' when denied). stop resolves the clip as {audio: base64, mime}
+    // (null when nothing was recorded) for St.transcribe to upload; cancel discards it. cycleNative.speechSilence fires while recording.
     speechStart: function () { return bridge('speech.start'); },
     speechStop: function () { return bridge('speech.stop'); },
+    speechCancel: function () { return bridge('speech.cancel'); },
     lockGet: function () { return hasNative ? bridge('lock.get') : Promise.resolve(false); },
     lockSet: function (on) { return hasNative ? bridge('lock.set', { on: on }) : Promise.resolve(); }
   };
@@ -524,6 +526,25 @@ var CycleStore = (function () {
     if (!r.ok) { var e = new Error('talk failed: HTTP ' + r.status); e.status = r.status; throw e; }
     return r.json();
   }
+  // Stops the recording and returns its transcript ('' when nothing was said). The box forwards the clip to Deepgram and keeps
+  // nothing; a fetch TypeError means offline (same convention as talk).
+  async function transcribe() {
+    var rec = await native.speechStop();
+    if (!rec) return '';
+    await ensureFresh();
+    var bin = atob(rec.audio), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    var r;
+    try {
+      r = await fetch(cfg.boxUrl + '/transcribe', { method: 'POST', headers: { 'Content-Type': rec.mime, Authorization: 'Bearer ' + S.session.access_token }, body: new Blob([bytes], { type: rec.mime }) });
+    } catch (e) {
+      if (e instanceof TypeError) throw new Error('Offline');
+      throw e;
+    }
+    if (r.status === 422) return '';
+    if (!r.ok) throw new Error('Transcription failed');
+    return (await r.json()).text;
+  }
   // ---- local notifications -----------------------------------------------------------------
   // Everything the shell must have scheduled is derived from state on every change; ids that
   // were scheduled before but are no longer wanted are cancelled. Native replaces a re-used id.
@@ -646,6 +667,6 @@ var CycleStore = (function () {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
     kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, upsert: upsert, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
-    talk: talk, canTalk: !!cfg.boxUrl, api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
+    talk: talk, transcribe: transcribe, canTalk: !!cfg.boxUrl, api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
   };
 })();
