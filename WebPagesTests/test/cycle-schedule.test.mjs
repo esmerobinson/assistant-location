@@ -15,6 +15,11 @@ const iso = (ms) => new Date(ms).toISOString();
 const ME = 'u-me', HER = 'u-her';
 const couple = { id: 'c1', tz: TZ, created_at: '2026-01-01T00:00:00Z', hold_ask_min: 60, hold_focus_min: 0, hold_truth_min: 0, hold_kudos_min: 0 };
 
+// The import must run before the first describe: under `node --test` (Node 20) a describe registered after a top-level
+// await, once an earlier describe exists, is silently never run, which hid this file's whole webkit block until 2026-11.
+const haveWebkit = !!(process.env.GL_WEBKIT_PW && process.env.GL_WEBKIT_EXEC);
+const pw = haveWebkit ? await import(process.env.GL_WEBKIT_PW) : null;
+
 describe('core', () => {
   test('isScheduled: future delivered_at / created_at is scheduled, now and past are not', () => {
     assert.equal(C.isScheduled({ created_at: iso(T) }, NOW), true);
@@ -65,8 +70,6 @@ describe('core', () => {
 
 const URL_ = 'file://' + path.join(path.dirname(fileURLToPath(import.meta.url)), '../../CycleApp/web/index.html');
 const CSS = fs.readFileSync(fileURLToPath(new URL('../../CycleApp/web/cycle.css', import.meta.url)), 'utf8') + '\n#fx{display:none}';
-const haveWebkit = !!(process.env.GL_WEBKIT_PW && process.env.GL_WEBKIT_EXEC);
-const pw = haveWebkit ? await import(process.env.GL_WEBKIT_PW) : null;
 
 const base = { couple_id: 'c1', updated_at: iso(NOW - 864e5), deleted_at: null };
 const td = (id, o) => ({ ...base, id, owner_id: ME, created_by: ME, item_id: null, fight_marker_id: null, title: id, description: null, type: 'task', due_date: null, target: null, period: null, points_earn: null, points_miss: null, needs_note: false, edited_at: null, tally: 0, done_at: null, created_at: iso(NOW - 864e5), ...o });
@@ -206,6 +209,38 @@ describe('webkit', { skip: !haveWebkit }, () => {
     const ob = await outbox(page);
     const patched = (table, id) => ob.some((o) => JSON.stringify(o).includes(table) && JSON.stringify(o).includes(id) && JSON.stringify(o).includes('deleted_at'));
     assert.ok(patched('todos', 'Take bins') && patched('items', 'i1'), JSON.stringify(ob));
+    await context.close();
+  });
+
+  test('Edit on a scheduled row opens the edit sheet; Save renames the todo and its item and keeps it scheduled', async () => {
+    const rows = { items: [item('i1')], todos: [td('Take bins', { owner_id: HER, item_id: 'i1', created_at: iso(T), type: 'ownup' })] };
+    const { context, page } = await open({ rows });
+    await act(page, 'tab:todo');
+    const shots = process.env.LAYOUT_SHOTS; // optional evidence screenshots, same env as the layout sweep
+    if (shots) await page.screenshot({ path: path.join(shots, 'sched-edit-row.png') });
+    await page.click('[data-a="etodo:Take bins"]');
+    if (shots) await page.screenshot({ path: path.join(shots, 'sched-edit-sheet.png') });
+    assert.equal(await page.inputValue('[data-d=title]'), 'Take bins');
+    await page.fill('[data-d=title]', 'Charger');
+    await page.click('[data-a="savetodo"]');
+    const t = await text(page);
+    assert.ok(t.includes('Charger') && !t.includes('Take bins'), t);
+    const ob = await outbox(page), s = JSON.stringify(ob);
+    const todoPatch = ob.find((o) => o.table === 'todos' && JSON.stringify(o).includes('Charger'));
+    assert.ok(todoPatch && !JSON.stringify(todoPatch).includes('created_at'), 'schedule time untouched: ' + s);
+    assert.ok(ob.some((o) => o.table === 'items' && JSON.stringify(o).includes('Charger')), s);
+    await context.close();
+  });
+
+  test('Delete in a scheduled row\'s edit sheet soft-deletes the todo and its item, like Cancel', async () => {
+    const rows = { items: [item('i1')], todos: [td('Take bins', { owner_id: HER, item_id: 'i1', created_at: iso(T) })] };
+    const { context, page } = await open({ rows });
+    await act(page, 'tab:todo');
+    await page.click('[data-a="etodo:Take bins"]');
+    await page.click('[data-a="tododel:Take bins"]');
+    assert.ok(!(await text(page)).includes('Take bins'));
+    const ob = await outbox(page), del = (table, id) => ob.some((o) => o.table === table && o.id === id && JSON.stringify(o).includes('deleted_at'));
+    assert.ok(del('todos', 'Take bins') && del('items', 'i1'), JSON.stringify(ob));
     await context.close();
   });
 });

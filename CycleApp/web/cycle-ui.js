@@ -408,8 +408,10 @@ SCREEN.todo = function () {
     var rd = C.ms(i.held_until) <= now();
     return '<div class="td-row hrow2"><span class="om"><svg class="hold-ic"><use href="#hg"/></svg></span><p class="ht">' + esc(itemTitle(i)) + '</p><p class="hm2">To ' + pn() + '</p><div class="hact"><span class="cd">' + C.countdown(C.ms(i.held_until), now()) + '</span><span class="elink" data-a="still:' + i.id + '">' + (rd ? 'Send' : 'Edit') + '</span></div></div>';
   }).join(''), 'held') : '';
+  // A scheduled row has no view page (the partner cannot see it yet), so Edit sits on the row itself. canEditTodo
+  // allows it: the edit window runs from created_at, which for a scheduled to do is its future delivery time.
   var schedHtml = sched.length ? section('Scheduled', sched.map(function (t) {
-    return '<div class="td-row hrow2"><span class="om"></span><p class="ht">' + esc(t.title) + '</p><p class="hm2">' + fmtWhen(C.ms(t.created_at)) + ' &middot; ' + (t.owner_id === St.me() ? 'You' : pn()) + '</p><div class="hact"><span class="elink" data-a="schedcancel:' + t.id + '">Cancel</span></div></div>';
+    return '<div class="td-row hrow2"><span class="om"></span><p class="ht">' + esc(t.title) + '</p><p class="hm2">' + fmtWhen(C.ms(t.created_at)) + ' &middot; ' + (t.owner_id === St.me() ? 'You' : pn()) + '</p><div class="hact"><span class="elink" data-a="etodo:' + t.id + '">Edit</span><span class="elink" data-a="schedcancel:' + t.id + '">Cancel</span></div></div>';
   }).join(''), 'held') : '';
   var open = rows(mineL) + S.priv.queued.map(function (q) {
     return '<div class="td-row"><span class="om"></span><div class="tx"><p>' + esc(q.body) + '</p>' + tdDesc(q) + '<small>Queued</small><span class="tts"><span class="tt">' + pn() + '</span></span></div></div>';
@@ -1985,8 +1987,10 @@ var ACT = {
       var cur = S.rows.todos[s.edit];
       if (!cur || cur.deleted_at) throw new Error('To-do is gone');
       if (!canEditTodo(cur)) throw new Error('Too late to edit');
+      // Read before the patch: St.patch mutates cur in place, so comparing cur.title afterwards never saw a rename.
+      var renamed = cur.title !== title;
       St.patch('todos', s.edit, Object.assign(f, { edited_at: nowIso() })); // the owner sees Edited until they next log it
-      if (cur.item_id && cur.title !== title) St.patch('items', cur.item_id, { body: title }); // the sender's own record of the ask
+      if (cur.item_id && renamed) St.patch('items', cur.item_id, { body: title }); // the sender's own record of the ask
     }
     else if (s.who === 'them') {
       var ask = { at: at, body: title, description: f.description, ask_type: s.kind, due_date: f.due_date, target: f.target, period: f.period, points_earn: s.pe, points_miss: s.pm, needs_note: nn };
@@ -1995,7 +1999,8 @@ var ACT = {
     else St.insert('todos', Object.assign({ id: St.uuid(), couple_id: S.couple.id, owner_id: St.me(), created_by: St.me(), item_id: null, fight_marker_id: null, tally: 0, done_at: null, edited_at: null, created_at: at !== null ? new Date(at).toISOString() : nowIso(), updated_at: nowIso(), deleted_at: null }, f));
     draftSent(); ui.sheet = null; ui.d = {}; render();
   }),
-  tododel: guard(function (id) { St.patch('todos', id, { deleted_at: nowIso() }); draftSent('todo:' + id); ui.sheet = null; ui.d = {}; if (ui.route === 'tododetail') back(); else render(); }),
+  // A scheduled to do's Delete (from its row's Edit sheet) is the row's Cancel: the item goes too, or it would still deliver.
+  tododel: guard(function (id) { var t = S.rows.todos[id]; St.patch('todos', id, { deleted_at: nowIso() }); if (t.item_id && C.isScheduled(t, now())) St.patch('items', t.item_id, { deleted_at: nowIso() }); draftSent('todo:' + id); ui.sheet = null; ui.d = {}; if (ui.route === 'tododetail') back(); else render(); }),
   done: guard(function (id) {
     var t = S.rows.todos[id];
     if (t.needs_note) { ui.sheet = { type: 'note', id: id, kind: 'done' }; ui.d = {}; render(); }
