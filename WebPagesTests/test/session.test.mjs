@@ -3949,7 +3949,8 @@ test('slow /sessions/start (25s): no unreachable error, the one request succeeds
 async function inboxPage(names, { fakeClock = false } = {}) {
   const state = { names, recentsCalls: 0 };
   const context = await browser.newContext();
-  await context.addInitScript(buildMockBridgeScript(baseConfig()));
+  // A native build without the camera-roll methods: the page falls back to the inbox.
+  await context.addInitScript(buildMockBridgeScript({ ...baseConfig(), errors: { recentPhotos: 'unknown method recentPhotos' } }));
   await routeProjects(context);
   await routeRecent(context);
   await context.route(`${API_BASE}/sessions/inbox-recents*`, (route) => {
@@ -4034,6 +4035,61 @@ test('inbox strip: visibilitychange while the page is hidden does not refetch', 
   });
   await page.waitForTimeout(300);
   assert.equal(state.recentsCalls, 1);
+  await context.close();
+});
+
+
+// --- camera-roll quick-select strip (native bridge recentPhotos / photoData) ---
+
+const PNG_B64 = REAL_PNG.toString('base64');
+async function cameraRollPage(ids) {
+  const uploads = [];
+  const context = await browser.newContext();
+  const photos = ids.map((id, i) => ({ id, thumb: PNG_B64, created: 2000 - i }));
+  await context.addInitScript(buildMockBridgeScript({ ...baseConfig(), responses: { recentPhotos: { photos }, photoData: { data: PNG_B64 } } }));
+  await routeProjects(context);
+  await routeRecent(context);
+  let inboxCalls = 0;
+  await context.route(`${API_BASE}/sessions/inbox-recents*`, (route) => { inboxCalls += 1; return route.fulfill({ status: 200, contentType: 'application/json', body: '{"recents":[]}' }); });
+  await context.route(`${API_BASE}/sessions/upload`, (route) => {
+    uploads.push(route.request().headers()['content-type']);
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: '00000000-0000-4000-8000-00000000000' + uploads.length + '.jpg' }) });
+  });
+  const page = await newSessionPage(context);
+  return { context, page, uploads, inboxCalls: () => inboxCalls };
+}
+
+test('camera roll strip: shows the bridge photos newest-first, tap uploads via /sessions/upload, second tap removes', async () => {
+  const { context, page, uploads, inboxCalls } = await cameraRollPage(['p-new', 'p-mid', 'p-old']);
+  await waitForInboxNames(page, ['p-new', 'p-mid', 'p-old']);
+  assert.equal(await page.$eval('.gl-inbox-cell img', (i) => i.src.startsWith('data:image/jpeg;base64,')), true);
+  assert.equal(await page.evaluate(() => window.__glCallLog.find((c) => c.method === 'recentPhotos').params.limit), 8);
+  await page.click('.gl-inbox-cell[aria-label="p-mid"]');
+  await page.waitForSelector('.gl-inbox-cell[aria-label="p-mid"].selected');
+  await waitFor(() => uploads.length === 1, 'one upload');
+  assert.equal(uploads[0], 'image/jpeg');
+  assert.equal(await page.evaluate(() => window.__glCallLog.find((c) => c.method === 'photoData').params.id), 'p-mid');
+  await page.waitForSelector('.gl-thumb.done');
+  await page.click('.gl-inbox-cell[aria-label="p-mid"]');
+  await page.waitForSelector('.gl-thumb', { state: 'detached' });
+  assert.equal(await page.$('.gl-inbox-cell.selected'), null);
+  assert.equal(inboxCalls(), 0, 'the server inbox is not used when the bridge has photos');
+  await context.close();
+});
+
+test('camera roll strip: a denied Photos permission is logged, not hidden behind the inbox', async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(buildMockBridgeScript({ ...baseConfig(), errors: { recentPhotos: 'photos access denied' } }));
+  await routeProjects(context);
+  await routeRecent(context);
+  let inboxCalls = 0;
+  await context.route(`${API_BASE}/sessions/inbox-recents*`, (route) => { inboxCalls += 1; return route.fulfill({ status: 200, contentType: 'application/json', body: '{"recents":[]}' }); });
+  const logs = [];
+  const page = await context.newPage();
+  page.on('console', (m) => { if (m.type() === 'error') logs.push(m.text()); });
+  await page.goto(SESSION_URL);
+  await waitFor(() => logs.some((l) => l.includes('photos access denied') || l.includes('camera roll strip')), 'console error');
+  assert.equal(inboxCalls, 0);
   await context.close();
 });
 

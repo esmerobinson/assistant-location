@@ -3,6 +3,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <CoreLocation/CoreLocation.h>
 #import <LocalAuthentication/LocalAuthentication.h>
+#import <Photos/Photos.h>
 #import <UIKit/UIKit.h>
 
 #import "BakedConfig.h"
@@ -238,6 +239,18 @@ NSString *const GLWebBridgeWillOpenModuleNotification = @"GLWebBridgeWillOpenMod
     } else if ([methodName isEqualToString:@"setPref"]) {
         [self setPrefWithParams:params reply:reply];
 
+    } else if ([methodName isEqualToString:@"recentPhotos"]) {
+        NSInteger limit = [params[@"limit"] isKindOfClass:[NSNumber class]] ? [params[@"limit"] integerValue] : 8;
+        [self recentPhotosWithLimit:limit reply:reply];
+
+    } else if ([methodName isEqualToString:@"photoData"]) {
+        NSString *photoId = [params[@"id"] isKindOfClass:[NSString class]] ? params[@"id"] : nil;
+        if (photoId.length == 0) {
+            reply(nil, @"photoData: id must be a string");
+        } else {
+            [self photoDataForIdentifier:photoId reply:reply];
+        }
+
     } else if ([methodName isEqualToString:@"voiceStart"]) {
         [self voiceStartWithReply:reply];
 
@@ -308,6 +321,107 @@ NSString *const GLWebBridgeWillOpenModuleNotification = @"GLWebBridgeWillOpenMod
             } else {
                 reply(nil, [NSString stringWithFormat:@"failed: %@", error.localizedDescription ?: @"unknown"]);
             }
+        });
+    }];
+}
+
+#pragma mark - Photos
+
+// Calls `done` on the main queue with YES once Photos read access is granted
+// (full or limited), NO when denied/restricted.
+- (void)withPhotoLibraryAccess:(void (^)(BOOL granted))done {
+    PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelReadWrite];
+    if (status == PHAuthorizationStatusNotDetermined) {
+        [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelReadWrite
+                                                   handler:^(PHAuthorizationStatus newStatus) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                done(newStatus == PHAuthorizationStatusAuthorized || newStatus == PHAuthorizationStatusLimited);
+            });
+        }];
+        return;
+    }
+    done(status == PHAuthorizationStatusAuthorized || status == PHAuthorizationStatusLimited);
+}
+
+// Renders `asset` to JPEG data no larger than maxDimension on a side. Blocks
+// (synchronous request), so call it off the main queue. Returns nil and sets
+// *errorOut on failure; iCloud originals are downloaded when needed.
+- (NSData *)jpegDataForAsset:(PHAsset *)asset
+                maxDimension:(CGFloat)maxDimension
+                     quality:(CGFloat)quality
+                       error:(NSString **)errorOut {
+    PHImageRequestOptions *options = [[PHImageRequestOptions alloc] init];
+    options.synchronous = YES;
+    options.networkAccessAllowed = YES;
+    options.deliveryMode = PHImageRequestOptionsDeliveryModeHighQualityFormat;
+    options.resizeMode = PHImageRequestOptionsResizeModeExact;
+    __block UIImage *image = nil;
+    __block NSString *failure = nil;
+    [[PHImageManager defaultManager] requestImageForAsset:asset
+                                               targetSize:CGSizeMake(maxDimension, maxDimension)
+                                              contentMode:PHImageContentModeAspectFit
+                                                  options:options
+                                            resultHandler:^(UIImage *result, NSDictionary *info) {
+        image = result;
+        NSError *err = info[PHImageErrorKey];
+        if (err) failure = err.localizedDescription;
+    }];
+    NSData *jpeg = image ? UIImageJPEGRepresentation(image, quality) : nil;
+    if (jpeg == nil && errorOut) *errorOut = failure ?: @"image unavailable";
+    return jpeg;
+}
+
+- (void)recentPhotosWithLimit:(NSInteger)limit reply:(GLWebBridgeReplyBlock)reply {
+    [self withPhotoLibraryAccess:^(BOOL granted) {
+        if (!granted) {
+            reply(nil, @"photos access denied");
+            return;
+        }
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            PHFetchOptions *fetchOptions = [[PHFetchOptions alloc] init];
+            fetchOptions.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"creationDate" ascending:NO]];
+            fetchOptions.fetchLimit = (NSUInteger)MAX(limit, 1);
+            PHFetchResult<PHAsset *> *assets = [PHAsset fetchAssetsWithMediaType:PHAssetMediaTypeImage options:fetchOptions];
+            NSMutableArray *photos = [NSMutableArray array];
+            NSString *failure = nil;
+            for (PHAsset *asset in assets) {
+                NSString *err = nil;
+                NSData *jpeg = [self jpegDataForAsset:asset maxDimension:240 quality:0.7 error:&err];
+                if (jpeg == nil) { failure = err; break; }
+                [photos addObject:@{
+                    @"id": asset.localIdentifier,
+                    @"thumb": [jpeg base64EncodedStringWithOptions:0],
+                    @"created": @((long long)([asset.creationDate timeIntervalSince1970] * 1000.0)),
+                }];
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (failure) {
+                    reply(nil, [NSString stringWithFormat:@"recentPhotos: %@", failure]);
+                } else {
+                    reply(@{@"photos": photos}, nil);
+                }
+            });
+        });
+    }];
+}
+
+- (void)photoDataForIdentifier:(NSString *)identifier reply:(GLWebBridgeReplyBlock)reply {
+    [self withPhotoLibraryAccess:^(BOOL granted) {
+        if (!granted) {
+            reply(nil, @"photos access denied");
+            return;
+        }
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            PHAsset *asset = [PHAsset fetchAssetsWithLocalIdentifiers:@[identifier] options:nil].firstObject;
+            NSString *err = nil;
+            NSData *jpeg = asset ? [self jpegDataForAsset:asset maxDimension:2048 quality:0.85 error:&err] : nil;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (jpeg) {
+                    reply(@{@"data": [jpeg base64EncodedStringWithOptions:0]}, nil);
+                } else {
+                    reply(nil, [NSString stringWithFormat:@"photoData: %@", asset ? err : @"photo not found"]);
+                }
+            });
         });
     }];
 }

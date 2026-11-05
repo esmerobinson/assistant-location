@@ -2166,7 +2166,86 @@
   // Runs on load and again every time the page becomes visible. The tab's web
   // view stays alive in the background between visits, so a one-time fetch
   // shows screenshots from whenever the app was first opened.
+  // Inside the app the strip shows the Photos library's 8 newest images via
+  // the native bridge (recentPhotos / photoData). A plain browser, or a native
+  // build that predates those methods ("unknown method"), falls back to the
+  // server inbox. A real bridge error (e.g. Photos access denied) is logged,
+  // never papered over with the inbox.
+  var inboxFolderMode = !GLBridge.isAvailable();
   function loadInboxStrip() {
+    if (inboxFolderMode) { loadInboxFolderStrip(); return; }
+    GLBridge.call('recentPhotos', { limit: 8 }, { timeoutMs: 60000 }).then(function (res) {
+      if (!res || !Array.isArray(res.photos)) throw new Error('recentPhotos: bad reply');
+      var ids = res.photos.map(function (p) { return p.id; });
+      Object.keys(inboxCells).forEach(function (id) {
+        if (ids.indexOf(id) !== -1) return;
+        inboxCells[id].remove();
+        delete inboxCells[id];
+        delete inboxSelected[id];
+      });
+      res.photos.forEach(function (photo) {
+        inboxStripEl.appendChild(inboxCells[photo.id] || buildPhotoCell(photo));
+      });
+    }).catch(function (err) {
+      if (String(err && err.message).indexOf('unknown method') !== -1) {
+        inboxFolderMode = true;
+        loadInboxFolderStrip();
+        return;
+      }
+      console.error('camera roll strip:', err);
+    });
+  }
+
+  // One tappable camera-roll thumbnail. Tap fetches the full image from
+  // native and adds it through addAttachment, the same path as the picker.
+  function buildPhotoCell(photo) {
+    var cell = document.createElement('div');
+    cell.className = 'gl-inbox-cell';
+    cell.setAttribute('role', 'button');
+    cell.setAttribute('aria-label', photo.id);
+    var img = document.createElement('img');
+    img.src = 'data:image/jpeg;base64,' + photo.thumb;
+    img.alt = '';
+    cell.appendChild(img);
+    var check = document.createElement('div');
+    check.className = 'gl-inbox-cell-check';
+    check.textContent = '\u2713';
+    cell.appendChild(check);
+    inboxCells[photo.id] = cell;
+
+    cell.addEventListener('click', function () {
+      var state = inboxSelected[photo.id];
+      if (state && state.entry) {
+        removeAttachment(state.entry.localId);
+        delete inboxSelected[photo.id];
+        cell.classList.remove('selected');
+        return;
+      }
+      if (state && state.pending) return;
+      if (attachments.length >= MAX_ATTACHMENTS) {
+        showError('Up to ' + MAX_ATTACHMENTS + ' screenshots.');
+        return;
+      }
+      inboxSelected[photo.id] = { pending: true, entry: null };
+      GLBridge.call('photoData', { id: photo.id }, { timeoutMs: 60000 }).then(function (res) {
+        if (!res || typeof res.data !== 'string') throw new Error('photoData: bad reply');
+        var bin = atob(res.data);
+        var bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        var file = new File([bytes], 'photo-' + Date.now() + '.jpg', { type: 'image/jpeg' });
+        inboxSelected[photo.id] = { pending: false, entry: addAttachment(file) };
+        cell.classList.add('selected');
+        saveDraft();
+      }).catch(function (err) {
+        delete inboxSelected[photo.id];
+        console.error('camera roll photo:', err);
+        showError("Couldn't load that photo: " + err.message);
+      });
+    });
+    return cell;
+  }
+
+  function loadInboxFolderStrip() {
     authedFetch('/sessions/inbox-recents').then(function (res) {
       if (!res.ok) return;
       return res.json();
@@ -2266,7 +2345,7 @@
   // directory listing. Hidden web views don't run it at all.
   var INBOX_POLL_MS = 4000;
   setInterval(function () {
-    if (!document.hidden && !detail) loadInboxStrip();
+    if (inboxFolderMode && !document.hidden && !detail) loadInboxStrip();
   }, INBOX_POLL_MS);
 
 
@@ -2457,6 +2536,7 @@
     // restores it (idbLoud already reported a failed write).
     storedWrites[entry.localId].then(saveDraft, function () {});
     uploadAttachment(entry);
+    return entry;
   }
 
   var sharedFileCount = 0;
