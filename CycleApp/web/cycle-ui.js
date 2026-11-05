@@ -1861,7 +1861,7 @@ var ACT = {
   }),
   fighteditsave: guard(function () {
     var mk = S.rows.fight_markers[ui.fightId], d = ui.d;
-    // Re-checked at save: the window may have closed while the sheet was open.
+    // Re-checked at save: a delete request (from this phone or a stale sheet) may have arrived while the sheet was open.
     if (!mk || !fightEditable(mk)) throw new Error('Fight is not editable');
     var at = whenMs('ew'), f = { hit_self: ynVal(d.hit), hit_related: d.hit === 'yes' && d.hitNot ? false : null, hit_count: d.hit === 'yes' ? d.hitN || 1 : null }, ch = {};
     Object.keys(f).forEach(function (k) { if ((mk[k] == null ? null : mk[k]) !== f[k]) ch[k] = f[k]; });

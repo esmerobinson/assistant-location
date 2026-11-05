@@ -144,7 +144,8 @@ describe('detail actions (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     await page.waitForFunction(() => window.CycleStore.S.outbox.length > 0);
     const p = await patches(page, 'fight_markers');
     assert.deepEqual(p, [{ hit_self: true, hit_count: 2 }]);
-    assert.equal(JSON.stringify(await outbox(page)).includes('intensity'), false, 'intensity never queued');
+    // Intensity is shared only through my fight_ratings row; the marker patch never carries it.
+    assert.equal(JSON.stringify(p).includes('intensity'), false, 'intensity never on the marker');
     const priv = await page.evaluate(() => window.CycleStore.S.priv.fights.find((f) => f.id === 'old'));
     assert.equal(priv.intensity, 5, 'intensity changed on the device only');
     assert.equal(await page.$('.bs'), null, 'sheet closed');
