@@ -655,9 +655,9 @@ SCREEN.fightdetail = function () {
   } else if (ui.sheet && ui.sheet.type === 'notedit' && S.rows.fight_notes[ui.sheet.id] && !S.rows.fight_notes[ui.sheet.id].deleted_at) {
     sh = sheet('t3', '<div class="bsh"><h3>Edit note</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div>' + micTa('nedit', 'nt') + '<div class="acts"><div class="save" data-a="noteditsave">Save</div></div>');
   } else if (ui.sheet && ui.sheet.type === 'notedel' && S.rows.fight_notes[ui.sheet.id] && !S.rows.fight_notes[ui.sheet.id].deleted_at) {
-    sh = sheet('t3', '<div class="bsh"><h3>Delete note?</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><div class="acts" style="margin-top:44px"><div class="save" data-a="notedelok">Delete</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>');
+    sh = sheet('t3 nf dq', '<div class="bsh"><h3>Delete note?</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><div class="acts"><div class="save" data-a="notedelok">Delete</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>');
   } else if (ui.sheet && ui.sheet.type === 'fightdel' && me && !mk.delete_requested_at) {
-    sh = sheet('t3', '<div class="bsh"><h3>Delete?</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="ask">Ask ' + pn() + '</p><div class="acts" style="margin-top:44px"><div class="save" data-a="fightdelreq">Ask</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>');
+    sh = sheet('t3 nf dq', '<div class="bsh"><h3>Delete?</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="ask">Ask ' + pn() + '</p><div class="acts"><div class="save" data-a="fightdelreq">Ask</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>');
   }
   var pending = mk.delete_requested_at && !me ? '<div class="pair"><span class="save" data-a="fightdelok:' + mk.id + '">Approve</span><span class="ghost" data-a="fightdeldecl:' + mk.id + '">Decline</span></div>' : '';
   var del = me && !mk.delete_requested_at ? '<div class="ghost" data-a="fightdelq">Delete</div>' : '';
