@@ -621,7 +621,7 @@ SCREEN.fightdetail = function () {
   // A deleted note stays as a marker, so a reply under it never reads as answering nothing.
   var list = oldNote + notes.map(function (n) {
     var del = n.author_id === St.me() && !n.deleted_at ? ' <span class="lnk" data-a="notedit:' + n.id + '">Edit</span> <span class="lnk" data-a="notedel:' + n.id + '">Delete</span>' : '';
-    return '<div class="fn' + (n.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + (n.kind === 'analysis' && !n.deleted_at ? ' &middot; Analysis' : '') + (n.edited_at && !n.deleted_at ? ' &middot; Edited' : '') + ns('fight_notes', n.id).replace('<span', ' <span') + '</p><p>' + (n.deleted_at ? 'Deleted' : esc(n.body)) + '</p></div>' + (del ? '<p class="meta fna">' + del + '</p>' : '');
+    return '<div class="fn' + (n.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + (n.kind === 'analysis' && !n.deleted_at ? ' &middot; Analysis' : '') + (n.edited_at && !n.deleted_at ? ' &middot; Edited' : '') + ns('fight_notes', n.id).replace('<span', ' <span') + del + '</p><p>' + (n.deleted_at ? 'Deleted' : esc(n.body)) + '</p></div>';
   }).join('');
   var chips = fightChips(mk), gap = C.fightGap({ me: St.me(), marker: mk, notes: notes.filter(function (n) { return !n.deleted_at; }) });
   var hasBeats = !!(mk.summary_beats && mk.summary_beats.length), hidden = !!mk.summary_hidden_at;

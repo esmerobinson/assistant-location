@@ -476,7 +476,9 @@ svg.zoomchart{display:block;width:100%;height:auto;touch-action:pan-y;user-selec
 .ixw{display:inline-flex;align-items:center;gap:6px;flex:none}
 .ixl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#bdbdbd}
 
-.fna{margin:10px 0 12px;text-align:right}
+/* Fight detail: the band clears the date line at its low left end; the Intensity divider keeps off the numbers. */
+.p2.fd .band{height:120px}
+.p2.fd .arrows{padding-bottom:12px}
 
 /* Talk: full-screen, pure black, Gemini-Live style. Only the newest assistant reply is drawn (top, large); the pill and
    button row are pinned (a sibling of .scr, order:1) so they ride above the keyboard and the home indicator like Home's add row. */
