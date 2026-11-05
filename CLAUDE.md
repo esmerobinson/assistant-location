@@ -29,3 +29,12 @@ file, how it wraps errors, UIKit layout).
   capability key) gets a test that loads the real file and evaluates it the
   way iOS does. Never pass substitution variables or a shape iOS doesn't use.
   Green code tests say nothing about it.
+
+## MANDATORY: Screenshots of UI work get reviewed before reporting
+
+After taking screenshots of any UI change, spawn the `ui-review` agent on them
+(screenshot paths, app, screen, what changed) before reporting or sending a
+demo link. Also spawn `gen-z-tastemaker` in parallel when copy or visual style
+changed. Fix what they find and re-screenshot. The standard is
+`~/coding/assistant/docs/ui-review-checklist.md` (in the parent assistant repo);
+when Oliver corrects a visual or interaction detail, append it there the same turn.
