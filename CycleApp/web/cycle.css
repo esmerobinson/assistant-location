@@ -441,6 +441,11 @@ svg.zoomchart{display:block;width:100%;height:auto;touch-action:pan-y;user-selec
 .micta .mic{top:8px;right:8px;transform:none}
 /* Soft-deleted comment or reply, and the small text link that deletes one */
 .fn.gone p,.bub.gone{color:#bdbdbd;font-style:italic}
+.nm{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.nm>span:first-child{min-width:0}
+.ibs{display:flex;flex:none;margin:-9px -8px -9px 0}
+.ib{display:flex;align-items:center;justify-content:center;width:32px;height:32px;color:#bdbdbd;cursor:pointer}
+.ib .ic{width:13px;height:13px;stroke-width:2.2}
 .lnk{cursor:pointer;color:var(--pk);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:12px}
 .p2 .it.ed{outline:2px dashed var(--pk);outline-offset:-2px}
 

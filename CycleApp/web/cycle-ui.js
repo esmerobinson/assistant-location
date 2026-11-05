@@ -586,14 +586,18 @@ function fightEditable(mk) {
 }
 function hmOf(ms) { return new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz() }); }
 // A person's analysis shown word for word: author, paragraphs, then chips that open the earlier fights it points at.
+// Pencil and trash at the right end of a note's meta line; the glyphs stay small, the 32px hit area is padding.
+function noteActs(id) {
+  return '<span class="ibs"><span class="ib" role="button" aria-label="Edit note" data-a="notedit:' + id + '">' + ic('pen') + '</span><span class="ib" role="button" aria-label="Delete note" data-a="notedel:' + id + '">' + ic('trash') + '</span></span>';
+}
 function analysisCard(n) {
-  var del = n.author_id === St.me() ? ' <span class="lnk" data-a="notedit:' + n.id + '">Edit</span> <span class="lnk" data-a="notedel:' + n.id + '">Delete</span>' : '';
+  var del = n.author_id === St.me() ? noteActs(n.id) : '';
   var links = (n.linked_fight_ids || []).map(function (id) { return S.rows.fight_markers[id]; }).filter(function (m) { return m && !m.deleted_at; })
     .sort(function (x, y) { return C.ms(x.at) - C.ms(y.at); }).map(function (m) {
       var d = C.localDay(C.ms(m.at), tz());
       return '<span class="lk" data-a="openfight:' + m.id + '">Also ' + dayName(d) + ' ' + (+d.slice(8)) + ' ' + MON[+d.slice(5, 7) - 1] + ic('chevr', 'sm') + '</span>';
     }).join('');
-  return '<div class="pcard"><p class="who">' + pnx(nameOf(n.author_id)) + (n.edited_at ? ' &middot; Edited' : '') + del + '</p>' + n.body.split('\n').filter(function (l) { return l.trim(); }).map(function (l) { return '<p>' + esc(l) + '</p>'; }).join('') +
+  return '<div class="pcard"><p class="who nm"><span>' + pnx(nameOf(n.author_id)) + (n.edited_at ? ' &middot; Edited' : '') + '</span>' + del + '</p>' + n.body.split('\n').filter(function (l) { return l.trim(); }).map(function (l) { return '<p>' + esc(l) + '</p>'; }).join('') +
     (links ? '<div class="chips">' + links + '</div>' : '') + '</div>';
 }
 // The story beats with each analysis card after the beat the summarizer placed it by; analysis it did not place (written since,
@@ -620,8 +624,8 @@ SCREEN.fightdetail = function () {
   var oldNote = old && old.about ? '<div class="fn"><p class="meta">' + pnx(nameOf(mk.logged_by)) + ' &middot; ' + noteStamp(C.ms(mk.at)) + '</p><p>' + esc(old.about) + '</p></div>' : '';
   // A deleted note stays as a marker, so a reply under it never reads as answering nothing.
   var list = oldNote + notes.map(function (n) {
-    var del = n.author_id === St.me() && !n.deleted_at ? ' <span class="lnk" data-a="notedit:' + n.id + '">Edit</span> <span class="lnk" data-a="notedel:' + n.id + '">Delete</span>' : '';
-    return '<div class="fn' + (n.deleted_at ? ' gone' : '') + '"><p class="meta">' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + (n.kind === 'analysis' && !n.deleted_at ? ' &middot; Analysis' : '') + (n.edited_at && !n.deleted_at ? ' &middot; Edited' : '') + ns('fight_notes', n.id).replace('<span', ' <span') + del + '</p><p>' + (n.deleted_at ? 'Deleted' : esc(n.body)) + '</p></div>';
+    var del = n.author_id === St.me() && !n.deleted_at ? noteActs(n.id) : '';
+    return '<div class="fn' + (n.deleted_at ? ' gone' : '') + '"><p class="meta nm"><span>' + pnx(nameOf(n.author_id)) + ' &middot; ' + noteStamp(C.ms(n.created_at)) + (n.kind === 'analysis' && !n.deleted_at ? ' &middot; Analysis' : '') + (n.edited_at && !n.deleted_at ? ' &middot; Edited' : '') + ns('fight_notes', n.id).replace('<span', ' <span') + '</span>' + del + '</p><p>' + (n.deleted_at ? 'Deleted' : esc(n.body)) + '</p></div>';
   }).join('');
   var chips = fightChips(mk), gap = C.fightGap({ me: St.me(), marker: mk, notes: notes.filter(function (n) { return !n.deleted_at; }) });
   var hasBeats = !!(mk.summary_beats && mk.summary_beats.length), hidden = !!mk.summary_hidden_at;

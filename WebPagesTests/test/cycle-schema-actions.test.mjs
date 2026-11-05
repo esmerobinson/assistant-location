@@ -213,6 +213,10 @@ describe('detail actions (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     await openFight(page, 'f1');
     assert.deepEqual(await page.$$eval('[data-a^="notedit:"]', (e) => e.map((x) => x.dataset.a)), ['notedit:n1'], 'only my note offers Edit');
     assert.match(await page.textContent('.fn:nth-of-type(2) .meta'), /Edited/, 'her edited note shows Edited to me');
+    // Icon buttons: labelled, and a 32px hit area on each.
+    const box = await page.$eval('[data-a="notedit:n1"]', (e) => { const r = e.getBoundingClientRect(); return [e.getAttribute('aria-label'), r.width, r.height]; });
+    assert.deepEqual(box, ['Edit note', 32, 32]);
+    assert.equal(await page.getAttribute('[data-a="notedel:n1"]', 'aria-label'), 'Delete note');
     await page.click('[data-a="notedit:n1"]');
     assert.equal(await page.inputValue('.bs textarea'), 'my side', 'prefilled');
     await page.fill('.bs textarea', '  my side, revised ');
