@@ -654,6 +654,8 @@ SCREEN.fightdetail = function () {
       hitFields(ui.d, St.myMember().hits_self) + whenRow('ew') + '<div class="acts"><div class="save" data-a="fighteditsave">Save</div></div>');
   } else if (ui.sheet && ui.sheet.type === 'notedit' && S.rows.fight_notes[ui.sheet.id] && !S.rows.fight_notes[ui.sheet.id].deleted_at) {
     sh = sheet('t3', '<div class="bsh"><h3>Edit note</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div>' + micTa('nedit', 'nt') + '<div class="acts"><div class="save" data-a="noteditsave">Save</div></div>');
+  } else if (ui.sheet && ui.sheet.type === 'notedel' && S.rows.fight_notes[ui.sheet.id] && !S.rows.fight_notes[ui.sheet.id].deleted_at) {
+    sh = sheet('t3', '<div class="bsh"><h3>Delete note?</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><div class="acts" style="margin-top:44px"><div class="save" data-a="notedelok">Delete</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>');
   } else if (ui.sheet && ui.sheet.type === 'fightdel' && me && !mk.delete_requested_at) {
     sh = sheet('t3', '<div class="bsh"><h3>Delete?</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="ask">Ask ' + pn() + '</p><div class="acts" style="margin-top:44px"><div class="save" data-a="fightdelreq">Ask</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>');
   }
@@ -1854,7 +1856,12 @@ var ACT = {
   notedel: guard(function (id) {
     var n = S.rows.fight_notes[id];
     if (!n || n.author_id !== St.me() || n.deleted_at) throw new Error('Cannot delete');
-    St.patch('fight_notes', id, { deleted_at: nowIso() }); render();
+    ui.sheet = { type: 'notedel', id: id }; render();
+  }),
+  notedelok: guard(function () {
+    var id = ui.sheet.id, n = S.rows.fight_notes[id];
+    if (!n || n.author_id !== St.me() || n.deleted_at) throw new Error('Cannot delete');
+    ui.sheet = null; St.patch('fight_notes', id, { deleted_at: nowIso() }); render();
   }),
   // 2026-11-05: the author may rewrite their own note's body any time; the server stamps edited_at so the partner sees "Edited".
   notedit: guard(function (id) {

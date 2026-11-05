@@ -199,7 +199,16 @@ describe('detail actions (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     await openFight(page, 'f1');
     assert.equal((await page.$$('[data-a^="notedel:"]')).length, 1, 'only my note offers Delete');
     await page.click('[data-a="notedel:n1"]');
+    assert.equal(await page.textContent('.bs h3'), 'Delete note?', 'a trash tap opens the confirm sheet');
+    assert.deepEqual(await outbox(page), [], 'nothing deleted yet');
+    assert.match(await page.textContent('.fns'), /my side/);
+    await page.click('.bs [data-a="sheet:close"]');
+    assert.equal(await page.$('.bs'), null);
+    assert.deepEqual(await outbox(page), [], 'Cancel leaves the note');
+    await page.click('[data-a="notedel:n1"]');
+    await page.click('[data-a="notedelok"]');
     await page.waitForFunction(() => window.CycleStore.S.outbox.length > 0);
+    assert.equal(await page.$('.bs'), null, 'sheet closed');
     assert.deepEqual((await patches(page, 'fight_notes')).map((p) => Object.keys(p)), [['deleted_at']]);
     assert.equal(await page.$eval('.fn.gone p:last-child', (e) => e.textContent), 'Deleted');
     assert.equal(await page.$('.fns >> text=my side'), null, 'the text is no longer shown');

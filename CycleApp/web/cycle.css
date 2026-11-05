@@ -449,7 +449,11 @@ svg.zoomchart{display:block;width:100%;height:auto;touch-action:pan-y;user-selec
 .nm>span:first-child{min-width:0}
 .ibs{display:flex;flex:none;margin:-9px -8px -9px 0}
 .ib{display:flex;align-items:center;justify-content:center;width:32px;height:32px;color:#bdbdbd;cursor:pointer}
-.ib .ic{width:13px;height:13px;stroke-width:2.2}
+.ib .ic{width:16px;height:16px;stroke-width:2.2}
+.nm>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.p2.fd .pcard:last-child{margin-bottom:0}
+.p2.fd .srow{min-height:48px}
+.p2.fd .srow + .fns{margin-top:-22px}
 .lnk{cursor:pointer;color:var(--pk);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:12px}
 .p2 .it.ed{outline:2px dashed var(--pk);outline-offset:-2px}
 
