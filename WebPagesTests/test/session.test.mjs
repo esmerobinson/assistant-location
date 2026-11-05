@@ -640,6 +640,7 @@ test('an unreachable box (network-level failure, not a server response) shows a 
   await context.route(`${API_BASE}/sessions/start`, (route) => route.abort('connectionrefused'));
   const page = await newSessionPage(context);
   await page.fill('#session-prompt', 'box is down');
+  await page.locator('#session-prompt').blur(); // keyboard down: Start skips the dictation settle wait and clears at the tap
   await page.waitForFunction(() => !document.getElementById('session-start-btn').disabled);
   await page.click('#session-start-btn');
   // The optimistic clear runs synchronously inside startSession(), before
@@ -2998,6 +2999,7 @@ test('OFFLINE queued Start whose upload is rejected (415): kept as a Failed row 
   await page.setInputFiles('#session-attach-input', [fakeImage('bad.png')]);
   await page.waitForSelector('.gl-thumb.pending');
   await page.fill('#session-prompt', 'keep my words');
+  await page.locator('#session-prompt').blur(); // keyboard down: Start queues at the tap, while still offline
   await page.waitForFunction(() => !document.getElementById('session-start-btn').disabled);
   await page.click('#session-start-btn');
   online = true;
@@ -3801,6 +3803,7 @@ test('hanging network, no projects cache: Start is usable and queues the request
   await page.clock.install();
   await page.goto(SESSION_URL);
   await page.fill('#session-prompt', 'typed on a dead link');
+  await page.locator('#session-prompt').blur(); // keyboard down: no dictation settle timer under the frozen clock
   await page.clock.fastForward(30000);
   await page.waitForFunction(() => !document.getElementById('session-start-btn').disabled);
   await page.click('#session-start-btn');
@@ -3830,6 +3833,7 @@ test('hanging /sessions/start: the request stays saved, the hang is abandoned, a
   await page.goto(SESSION_URL);
   await page.waitForFunction(() => !!document.getElementById('session-project-pill').dataset.ready);
   await page.fill('#session-prompt', 'slow link');
+  await page.locator('#session-prompt').blur(); // keyboard down: no dictation settle timer under the frozen clock
   await page.waitForFunction(() => !document.getElementById('session-start-btn').disabled);
   await page.click('#session-start-btn');
   assert.equal(await page.inputValue('#session-prompt'), '');
@@ -4565,5 +4569,85 @@ test('reply mic: voiceStop names the launch, so a transcript polled before it an
   await pollNow(page);
   await waitFor(() => h.replies.length === 1, 'the reply');
   assert.equal(h.replies[0].text, 'polled words');
+  await context.close();
+});
+
+// iOS keyboard dictation keeps running through a button tap (a <button> tap
+// never blurs a focused textarea on iOS), so promptEl.value can hold only part
+// of what was said when Start reads it, and dictation's final commit then
+// refills the emptied box. Seen 2026-11-05: 281 chars sent, 735 left behind.
+// These tests stand in for WebKit's commit by writing the value and firing
+// `input`, which is what that commit does.
+async function startCapture(context) {
+  const bodies = [];
+  await context.route(`${API_BASE}/sessions/start`, (route) => {
+    bodies.push(JSON.parse(route.request().postData()));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'x', name: 'n', project: '' }) });
+  });
+  return bodies;
+}
+function dictate(page, text) {
+  return page.evaluate((t) => {
+    const el = document.getElementById('session-prompt');
+    el.value = t;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, text);
+}
+
+test('Start tapped mid-dictation waits for the commit, so the session gets the whole dictation', async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(buildMockBridgeScript(baseConfig()));
+  await routeProjects(context);
+  await routeRecent(context);
+  const bodies = await startCapture(context);
+  const page = await newSessionPage(context);
+  await page.fill('#session-prompt', 'There should be a cancel button.');
+  await page.waitForFunction(() => !document.getElementById('session-start-btn').disabled);
+  await page.click('#session-start-btn');
+  // Dictation's commit, arriving after the tap but inside the settle window.
+  await dictate(page, 'There should be a cancel button. Also the summary should be readable.');
+  await page.waitForFunction(() => document.getElementById('session-prompt').value === '');
+  await page.waitForTimeout(200);
+  assert.equal(bodies.length, 1, 'one Start, not one per tap or per commit');
+  assert.equal(bodies[0].prompt, 'There should be a cancel button. Also the summary should be readable.');
+  await context.close();
+});
+
+test('a dictation echo after Start is stripped to its unsent tail, flagged, and never saved as the full draft', async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(buildMockBridgeScript(baseConfig()));
+  await routeProjects(context);
+  await routeRecent(context);
+  const bodies = await startCapture(context);
+  const page = await newSessionPage(context);
+  await page.fill('#session-prompt', 'First part.');
+  await page.waitForFunction(() => !document.getElementById('session-start-btn').disabled);
+  await page.click('#session-start-btn');
+  await page.waitForFunction(() => document.getElementById('session-prompt').value === '');
+  // The echo arrives in steps: a partial refill first, then the full commit.
+  await dictate(page, 'First');
+  await dictate(page, 'First part. Second part.');
+  assert.equal(await page.inputValue('#session-prompt'), 'Second part.');
+  assert.match(await page.locator('#gl-error-text').textContent(), /wasn't sent/);
+  const draft = await page.evaluate(() => JSON.parse(localStorage.getItem('gl-session-draft-v1')).prompt);
+  assert.equal(draft, 'Second part.', 'the saved draft holds only the unsent tail');
+  assert.equal(bodies[0].prompt, 'First part.');
+  await context.close();
+});
+
+test('an identical dictation echo after Start leaves the composer empty with no notice', async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(buildMockBridgeScript(baseConfig()));
+  await routeProjects(context);
+  await routeRecent(context);
+  await startCapture(context);
+  const page = await newSessionPage(context);
+  await page.fill('#session-prompt', 'Same words.');
+  await page.waitForFunction(() => !document.getElementById('session-start-btn').disabled);
+  await page.click('#session-start-btn');
+  await page.waitForFunction(() => document.getElementById('session-prompt').value === '');
+  await dictate(page, 'Same words.');
+  assert.equal(await page.inputValue('#session-prompt'), '');
+  assert.equal(await page.locator('#gl-error').isHidden(), true);
   await context.close();
 });

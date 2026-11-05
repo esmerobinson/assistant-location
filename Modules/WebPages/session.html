@@ -935,9 +935,10 @@
   }
 
   promptEl.addEventListener('input', function () {
+    var echoFlagged = stripDictationEcho(); // before saveDraft: an echo must never be persisted as a draft
     saveDraft();
     updateStartEnabled();
-    clearError();
+    if (!echoFlagged) clearError(); // load-bearing: otherwise this same event wipes the echo notice
     scheduleSuggest();
   });
 
@@ -2766,6 +2767,7 @@
     // The queue entry is the durable copy from here on; a rejection restores
     // the prompt and attachments from it (see onStartRejected).
     if (clearComposer) {
+      lastClearedPrompt = promptText ? { text: promptText, at: Date.now() } : null; // see stripDictationEcho
       clearDraft();
       promptEl.value = '';
       attachments.forEach(function (a) { if (a.objectUrl) { try { URL.revokeObjectURL(a.objectUrl); } catch (e) { /* ignore */ } } });
@@ -3187,7 +3189,65 @@
     if (!document.hidden) { flushQueues(); pollVoice(); }
   });
 
-  startBtn.addEventListener('click', startSession);
+  // --- iOS keyboard dictation vs Start -----------------------------------
+  // Tapping a <button> on iOS does not blur a focused textarea, so keyboard
+  // dictation keeps running through the tap. While it runs, promptEl.value
+  // holds only the words WebKit has committed so far; the rest sits in
+  // dictation's own buffer. Incident (2026-11-05): Start sent the first 281
+  // chars, the composer was cleared, then dictation finalized and wrote its
+  // whole 735-char result back into the empty box (input event -> saveDraft),
+  // so hours later the "unsent" text was sitting there and a resend made a
+  // duplicate session. Two guards:
+  //  1. Settle: when the prompt has focus at the tap, blur it (which ends
+  //     dictation and commits its text) and read the value only after
+  //     DICTATION_SETTLE_MS. The commit arrives over WebKit's UI-process IPC,
+  //     so it is never synchronous with blur(). 300ms is a guess sized above
+  //     one IPC round-trip; nothing on the device measured it.
+  //  2. Echo: if text that begins with the prompt a Start just sent still
+  //     shows up in the cleared box within DICTATION_ECHO_MS, the sent part is
+  //     stripped and only the unsent tail stays, flagged, so it is never
+  //     mistaken for an unsent request again.
+  var DICTATION_SETTLE_MS = 300;
+  var DICTATION_ECHO_MS = 60000;
+  var settlingStart = false;
+  var lastClearedPrompt = null; // {text, at} of the last Start that emptied the composer
+
+  // Focus is sampled at pointerdown because browsers that DO move focus to a
+  // tapped button (desktop Chromium) have already blurred the prompt by the
+  // time 'click' fires; iOS never moves it, so either check alone misses one.
+  var promptFocusedAtTap = false;
+  startBtn.addEventListener('pointerdown', function () { promptFocusedAtTap = document.activeElement === promptEl; });
+
+  function onStartTap() {
+    if (settlingStart) return; // a second tap inside the settle window is the same Start
+    var hadFocus = promptFocusedAtTap || document.activeElement === promptEl;
+    promptFocusedAtTap = false;
+    if (!hadFocus) { startSession(); return; }
+    settlingStart = true;
+    promptEl.blur();
+    setTimeout(function () { settlingStart = false; startSession(); }, DICTATION_SETTLE_MS);
+  }
+
+  /** Runs before every input-driven saveDraft: drops a dictation echo of the prompt a Start just sent. Returns true when it left an unsent tail (and its notice) behind. */
+  function stripDictationEcho() {
+    var sent = lastClearedPrompt;
+    if (!sent) return;
+    if (Date.now() - sent.at > DICTATION_ECHO_MS) { lastClearedPrompt = null; return; }
+    var value = promptEl.value.trim();
+    // Checked before the prefix test below, which an identical value also passes.
+    if (value === sent.text) { lastClearedPrompt = null; promptEl.value = ''; return false; }
+    // Dictation may refill the box in steps: a value that is still a prefix of
+    // what was sent is the echo mid-way, so keep watching rather than judge it.
+    if (sent.text.indexOf(value) === 0) return;
+    if (value.indexOf(sent.text) !== 0) { lastClearedPrompt = null; return; } // genuinely new text
+    lastClearedPrompt = null;
+    var rest = value.slice(sent.text.length).trim();
+    promptEl.value = rest;
+    if (rest) showError("Dictation finished after Start. This part wasn't sent.");
+    return !!rest;
+  }
+
+  startBtn.addEventListener('click', onStartTap);
 
   // --- recent sessions -----------------------------------------------------
 

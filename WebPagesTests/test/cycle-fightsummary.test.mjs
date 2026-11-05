@@ -215,7 +215,8 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
 
   test('detail: the author can delete their analysis card, the other person cannot', async () => {
     const { context, page } = await detail(beatFill({}, (r) => add(r, 'fight_notes', anote('a3', 'f1', UID, 'MY-ANALYSIS'))));
-    const dels = await page.$$eval('.pcard', (c) => c.map((x) => [x.textContent.includes('Delete'), x.textContent.includes('MY-ANALYSIS')]));
+    // Delete is an icon button (aria-label only, no text), so look for the control itself.
+    const dels = await page.$$eval('.pcard', (c) => c.map((x) => [!!x.querySelector('[data-a^="notedel:"]'), x.textContent.includes('MY-ANALYSIS')]));
     assert.deepEqual(dels.sort(), [[false, false], [true, true]].sort());
     await context.close();
   });
