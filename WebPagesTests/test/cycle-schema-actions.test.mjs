@@ -134,11 +134,10 @@ describe('detail actions (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
   const patches = async (page, table) => (await outbox(page)).filter((o) => o.table === table && o.op === 'patch').map((o) => o.patch);
   const openFight = async (page, id) => { await page.click('.tabbar [data-a="tab:fights"]'); await page.click(`[data-a="openfight:${id}"]`); await page.waitForSelector('.fd'); };
 
-  test('fight edit: inside the window the logger edits shared fields (intensity stays local); outside it there is no Edit', async () => {
+  test('fight edit: the logger edits shared fields on a fight logged long ago (intensity stays local)', async () => {
     const { context, page } = await open(seed({ fights: [fm('f1'), fm('old', { created_at: iso(NOWMS - 30 * MIN), at: iso(NOWMS - 30 * MIN) })], priv: [{ id: 'f1', at: NOWMS - 5 * MIN, logged_at: NOWMS - 5 * MIN, intensity: 2 }, { id: 'old', at: NOWMS - 30 * MIN, logged_at: NOWMS - 30 * MIN, intensity: 2 }] }));
+    // 30 minutes old: past the 15-minute window that used to hide Edit (and with it the hit question).
     await openFight(page, 'old');
-    assert.equal(await page.$('[data-a="fightedit"]'), null, 'window closed: no Edit');
-    await page.click('.hd .back'); await page.click('[data-a="openfight:f1"]'); await page.waitForSelector('.fd');
     await page.click('[data-a="fightedit"]');
     await page.click('[data-a="yn:hit:yes"]'); await page.click('[data-a="hitn:1"]'); await page.click('[data-a="int:5"]');
     await page.click('[data-a="fighteditsave"]');
@@ -146,7 +145,7 @@ describe('detail actions (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     const p = await patches(page, 'fight_markers');
     assert.deepEqual(p, [{ hit_self: true, hit_count: 2 }]);
     assert.equal(JSON.stringify(await outbox(page)).includes('intensity'), false, 'intensity never queued');
-    const priv = await page.evaluate(() => window.CycleStore.S.priv.fights.find((f) => f.id === 'f1'));
+    const priv = await page.evaluate(() => window.CycleStore.S.priv.fights.find((f) => f.id === 'old'));
     assert.equal(priv.intensity, 5, 'intensity changed on the device only');
     assert.equal(await page.$('.bs'), null, 'sheet closed');
     await context.close();

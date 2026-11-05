@@ -578,13 +578,11 @@ function setRating(fightId, n) {
 }
 // The logger's on-device record of the fight (its text and intensity predate shared ratings); the partner's fight has none.
 function ownFight(mk) { return mk.logged_by === St.me() ? S.priv.fights.filter(function (f) { return f.id === mk.id; })[0] : null; }
-// Edit window start for my own fight: the server's created_at once the marker has synced, else the moment I logged it
-// on this phone. A fight with neither (logged before the window existed) is not editable. The server enforces the same
-// window from created_at, so a stale local clock can only get an edit refused (shown under Not sent), never accepted.
+// The logger can edit their own fight (time and hit answers) at any time while no delete is requested or done. There is
+// no time window: a 15-minute one hid Edit, the only place the hit question lives, so a hit noticed hours later could
+// not be recorded (2026-11-05). The server guard (cycle-tracker 20261105000001) enforces the same rules.
 function fightEditable(mk) {
-  if (mk.logged_by !== St.me() || mk.deleted_at || mk.delete_requested_at) return false;
-  var rec = ownFight(mk), start = mk.created_at ? C.ms(mk.created_at) : rec && rec.logged_at;
-  return !!start && C.inEditWindow(start, now(), EDIT_WINDOW_MIN);
+  return mk.logged_by === St.me() && !mk.deleted_at && !mk.delete_requested_at;
 }
 function hmOf(ms) { return new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz() }); }
 // A person's analysis shown word for word: author, paragraphs, then chips that open the earlier fights it points at.
@@ -1854,7 +1852,7 @@ var ACT = {
   }),
   fightedit: guard(function () {
     var mk = S.rows.fight_markers[ui.fightId];
-    if (!mk || !fightEditable(mk)) throw new Error('Edit window closed');
+    if (!mk || !fightEditable(mk)) throw new Error('Fight is not editable');
     var at = C.ms(mk.at);
     ui.sheet = { type: 'fightedit' };
     ui.d = { int: myRating(mk) || 3, hit: mk.hit_self === true ? 'yes' : mk.hit_self === false ? 'no' : null, hitN: mk.hit_count || 1, hitNot: mk.hit_related === false,
@@ -1864,7 +1862,7 @@ var ACT = {
   fighteditsave: guard(function () {
     var mk = S.rows.fight_markers[ui.fightId], d = ui.d;
     // Re-checked at save: the window may have closed while the sheet was open.
-    if (!mk || !fightEditable(mk)) throw new Error('Edit window closed');
+    if (!mk || !fightEditable(mk)) throw new Error('Fight is not editable');
     var at = whenMs('ew'), f = { hit_self: ynVal(d.hit), hit_related: d.hit === 'yes' && d.hitNot ? false : null, hit_count: d.hit === 'yes' ? d.hitN || 1 : null }, ch = {};
     Object.keys(f).forEach(function (k) { if ((mk[k] == null ? null : mk[k]) !== f[k]) ch[k] = f[k]; });
     if (at !== C.ms(mk.at)) ch.at = new Date(at).toISOString();
