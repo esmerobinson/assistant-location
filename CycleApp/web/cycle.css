@@ -37,6 +37,14 @@ input,textarea{-webkit-user-select:text;user-select:text}
 .sheetlayer .bs.nf{min-height:0}
 .sheetlayer .bs.nf .acts .save{margin:24px 0 10px!important}
 .sheetlayer .bs.nf.dq .acts .save{margin-top:6px!important}
+/* A long text used to grow its textarea (fitNote) and the sheet with it past the top of the screen: nothing scrolled and Save sat
+   under the keyboard (Edit note with a whole fight story, 2026-11-06). The sheet now stops below the status bar and scrolls as a
+   backstop, and a sheet's textarea stops at ~45% of the visible height and scrolls inside itself, so Save stays on screen even
+   with the keyboard up (--vvh is the visual viewport, set in cycle-ui.js). flex-shrink:0 is load-bearing: in a height-capped
+   flex column the children would otherwise squash instead of the sheet scrolling. */
+.sheetlayer .bs{max-height:calc(100% - var(--st));overflow-y:auto;overscroll-behavior:contain}
+.sheetlayer .bs > *{flex-shrink:0}
+.sheetlayer .bs .ta textarea{max-height:calc(var(--vvh, 100vh) * .45);overflow-y:auto}
 
 /* Real inputs that look like the mockup's static fields. */
 input.inp,.p2 input.inp{display:block;width:100%;background:none;border:0;border-bottom:2px solid #3a3a3a;border-radius:0;color:#fff;font:500 16px "Space Grotesk",sans-serif;height:44px;outline:none;padding:0}

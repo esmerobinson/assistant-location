@@ -237,6 +237,25 @@ describe('detail actions (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and G
     await context.close();
   });
 
+  // A whole fight story pasted into Edit note grew the sheet past the top of the screen: no scroll and no reachable Save (2026-11-06).
+  test('fight note edit: a long note keeps the sheet on screen, Save visible, the text scrolling inside its box', async () => {
+    const long = Array.from({ length: 60 }, (_, i) => 'Sentence ' + i + ' of a long story about the charger.').join(' ');
+    const notes = [{ id: 'n1', couple_id: 'c1', fight_marker_id: 'f1', author_id: ME, body: long, created_at: iso(NOWMS - 4 * MIN), edited_at: null, deleted_at: null }];
+    const { context, page } = await open(seed({ fights: [fm('f1')], notes }), { viewport: { width: 390, height: 664 } });
+    await openFight(page, 'f1');
+    await page.click('[data-a="notedit:n1"]');
+    const m = await page.evaluate(() => {
+      const bs = document.querySelector('.bs').getBoundingClientRect(), sv = document.querySelector('[data-a="noteditsave"]').getBoundingClientRect(), ta = document.querySelector('.bs textarea');
+      return { top: bs.top, saveBottom: sv.bottom, vh: innerHeight, taScrolls: ta.scrollHeight > ta.clientHeight + 20 };
+    });
+    assert.ok(m.top >= 0, 'sheet top on screen: ' + m.top);
+    assert.ok(m.saveBottom <= m.vh, 'Save above the bottom edge: ' + m.saveBottom + ' > ' + m.vh);
+    assert.ok(m.taScrolls, 'the textarea is capped and scrolls its overflow');
+    await page.click('[data-a="noteditsave"]');
+    assert.equal(await page.$('.bs'), null, 'Save is tappable and closes the sheet');
+    await context.close();
+  });
+
   test('to-do undo: done and tally are taken back together with their event', async () => {
     const todos = [td('a', { done_at: iso(NOWMS - 60 * MIN) }), td('h', { type: 'habit', target: 3, period: 'week', tally: 2 })];
     const evs = [{ id: 'ea', couple_id: 'c1', todo_id: 'a', user_id: ME, kind: 'done', at: iso(NOWMS - 60 * MIN), note: null },
