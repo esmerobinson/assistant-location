@@ -14,9 +14,10 @@ var CycleStore = (function () {
   var hasNative = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cycle);
   var calls = {}, callSeq = 0;
   // Native replies arrive on this global; ids pair them with their promise.
+  // Logged here rather than thrown: a throw from native-evaluated script reaches window 'error' only as "Script error.".
   window.__cycleReply = function (id, result, error) {
     var p = calls[id]; delete calls[id];
-    if (!p) throw new Error('cycle bridge reply for unknown call ' + id);
+    if (!p) { console.error('cycle bridge reply for unknown call ' + id); logErr('bridge', new Error('reply for unknown call ' + id)); return; }
     if (error) p.reject(new Error(error)); else p.resolve(result);
   };
   function bridge(cmd, args) {

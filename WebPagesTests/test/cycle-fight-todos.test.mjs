@@ -71,4 +71,21 @@ describe('fight to-dos group', () => {
     assert.equal(await page.locator('.td-fg').count(), 0);
     assert.match(await page.locator('body').innerText(), /intensity/i); // fight detail is open
   });
+
+  test('Home cards for a fight\'s to-dos name the fight; plain to-dos stay "To-do"', async () => {
+    await page.click('[data-a="tab:home"]');
+    await page.waitForSelector('[data-a="tview:t2"]');
+    assert.match(await page.locator('[data-a="tview:t2"] .s').textContent(), /^Fight · /);
+    assert.equal(await page.locator('[data-a="tview:t4"] .s').textContent(), 'To-do');
+  });
+
+  test('a throw inside a native entry point is logged with its real message, not "Script error."', async () => {
+    const log = await page.evaluate(() => {
+      window.CycleStore.retryPush = () => { throw new Error('boom from native'); };
+      window.cycleNative.foreground();
+      return window.CycleStore.S.errLog.at(-1);
+    });
+    assert.equal(log.kind, 'native');
+    assert.equal(log.msg, 'boom from native');
+  });
 });

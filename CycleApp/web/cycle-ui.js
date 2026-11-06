@@ -333,8 +333,10 @@ SCREEN.home = function () {
   var list = C.homeList({ me: St.me(), now: now(), today: t, todos: L('todos'), cards: cards, week: week });
   var html = list.map(function (e) {
     if (e.kind === 'card') return needCard(e.card);
-    var x = e.todo, d = x.due_date ? dueOf(x.due_date) : null;
-    return '<div class="nc' + (d && d.state ? ' dc' : '') + '" data-a="tview:' + x.id + '"><div class="mid"><p class="s ' + (d ? d.state : '') + '">' + (d ? d.text : 'To-do') + '</p><p class="x">' + esc(x.title) + '</p></div>' + ic('chevr', 'chv') + '</div>';
+    var x = e.todo, d = x.due_date ? dueOf(x.due_date) : null, mk = x.fight_marker_id && S.rows.fight_markers[x.fight_marker_id];
+    // A to do a fight produced names that fight, so two of them ("Apologize", "Reflect") say which fight they belong to.
+    var sub = mk ? 'Fight &middot; ' + fmtWhen(C.ms(mk.at)) + (d ? ' &middot; ' + d.text : '') : d ? d.text : 'To-do';
+    return '<div class="nc' + (d && d.state ? ' dc' : '') + '" data-a="tview:' + x.id + '"><div class="mid"><p class="s ' + (d ? d.state : '') + '">' + sub + '</p><p class="x">' + esc(x.title) + '</p></div>' + ic('chevr', 'chv') + '</div>';
   }).join('');
   var k = calm(), fr = fightRecs(), ph = C.phase(fr, now(), tz(), 14);
   var tiles = '<div class="tiles"><div class="tile2 big" data-a="tab:progress"><p class="s">Calm streak</p><span class="v">' + k.streak + ' <span class="u">' + (k.streak === 1 ? 'day' : 'days') + '</span></span></div>' +
@@ -2436,6 +2438,11 @@ VoiceHold.init({
     };
   }
 });
+// Native calls in through evaluateJavaScript, and WebKit reports a throw from that script to window 'error' only as
+// "Script error." with no detail, so each entry point catches its own throw and logs the real one.
+function nativeEntry(fn) {
+  return function () { try { return fn.apply(null, arguments); } catch (e) { console.error('cycle native call failed:', e); St.logErr('native', e); showErr(plain(e)); } };
+}
 window.cycleNative = {
   route: function (r) { if (ui.ready) guard(applyRoute)(r); else routeQ.push(r); },
   ready: function () { while (ui.ready && routeQ.length) guard(applyRoute)(routeQ.shift()); },
@@ -2446,6 +2453,7 @@ window.cycleNative = {
   speechError: function (msg) { var talk = ui.rec && ui.rec.field === 'talk'; ui.rec = null; if (talk && ui.talk) { ui.talk.listen = false; render(); } showErr(plain(new Error(msg))); },
   foreground: function () { St.retryPush(); St.abortInflight(); if (S.session) St.sync(); render(); checkNotif(); }
 };
+Object.keys(window.cycleNative).forEach(function (k) { window.cycleNative[k] = nativeEntry(window.cycleNative[k]); });
 
 // ---- boot --------------------------------------------------------------------------------------------------------------
 St.boot().then(function () { return St.hasNative ? St.native.lockGet() : false; }).then(function (lockOn) {  ui.lockOn = lockOn; ui.ready = true; render(); window.cycleNative.ready(); St.native.ready(); checkNotif();
