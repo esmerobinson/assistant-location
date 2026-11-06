@@ -145,7 +145,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await context.close();
   });
 
-  test('new nudge keeps a draft until saved', async () => {
+  test('new nudge keeps a draft until sent', async () => {
     const { context, page } = await open();
     const nav = (a) => page.evaluate((x) => { document.querySelector('[data-a="' + x + '"]').click(); }, a);
     await page.click('[data-a="tab:todo"]'); await page.click('[data-a="todoseg:rem"]');
@@ -154,7 +154,7 @@ describe('webkit', { skip: !haveWebkit }, () => {
     await page.click('[data-a="back"]');
     await nav('nudgenew');
     assert.equal(await fieldVal(page, 'nbody'), 'Remember this');
-    await page.click('[data-a="nudgesave"]');
+    await page.click('[data-a="nudgenewsend"]');
     assert.deepEqual(await drafts(page), {});
     await context.close();
   });

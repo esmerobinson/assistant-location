@@ -118,7 +118,7 @@ describe('nudges', () => {
     await context.close();
   });
 
-  // The keyboard shrinks the viewport to ~400px; the Save/Send pair must stay below the form, never over it.
+  // The keyboard shrinks the viewport to ~400px; the Send button must stay below the form, never over it.
   test('add form buttons never overlap the form when the keyboard is up', async () => {
     const { context, page } = await open(seed(ME, { nudges: [] }), ME);
     await library(page);
@@ -126,9 +126,24 @@ describe('nudges', () => {
     await page.setViewportSize({ width: 390, height: 400 });
     await page.waitForTimeout(100);
     const box = (sel) => page.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
-    const pair = await box('.nd .pair'), seg = await box('.nd .seg');
-    assert.ok(pair.top >= seg.bottom, `buttons (top ${pair.top}) sit below the For switch (bottom ${seg.bottom})`);
+    const btn = await box('.nd .save'), seg = await box('.nd .seg');
+    assert.ok(btn.top >= seg.bottom, `Send (top ${btn.top}) sits below the For switch (bottom ${seg.bottom})`);
     assert.equal(await page.$('.nd .tdc'), null, 'no Kind picker');
+    await context.close();
+  });
+
+  // A Save-only button beside Send once left a reminder unsent (saved to the library, never delivered).
+  test('a new reminder offers only Send, and Send writes the send row for the partner', async () => {
+    const { context, page } = await open(seed(ME, { nudges: [] }), ME);
+    await library(page);
+    await page.click('[data-a="nudgenew"]');
+    assert.equal(await page.$('[data-a="nudgesave"]'), null, 'no Save button on a new reminder');
+    await page.fill('textarea[data-d="nbody"]', 'Good day yesterday');
+    await shot(page, '04-new-reminder');
+    await page.click('[data-a="nudgenewsend"]');
+    await page.waitForSelector('[data-nid]');
+    const sends = Object.values((await shared(page, ME)).rows.nudge_sends);
+    assert.equal(sends.length, 1); assert.equal(sends[0].body, 'Good day yesterday'); assert.notEqual(sends[0].recipient_id, ME);
     await context.close();
   });
 

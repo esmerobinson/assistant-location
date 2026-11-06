@@ -1181,8 +1181,11 @@ SCREEN.nudgenew = function () {
     micTa('nbody', 'msg') +
     (edit ? '' : '<section><p class="lab">For</p>' + seg([['esme', pn()], ['me', 'Me']], ui.nfor, 'nudgefor') + '</section>') +
     (late && ui.tip && !edit ? '<div class="tip">' + TIP_TEXT + '</div>' : '') +
+    // A new reminder has only Send. A separate Save-to-library button sat beside it and got tapped by mistake
+    // (2026-11-06: Oliver's reminder to Esme was saved, never sent, and she never saw it). Editing keeps Save,
+    // since an edit only changes the library text and never sends.
     (edit ? '<div class="save" data-a="nudgesave">Save</div>' :
-      '<div class="pair"><span class="ghost" data-a="nudgesave">Save</span><span class="save" data-a="nudgenewsend">' + (late ? 'Send tomorrow<span class="qm" data-a="tip">?</span>' : 'Send') + '</span></div>'), { tab: false });
+      '<div class="save" data-a="nudgenewsend">' + (late ? 'Send tomorrow<span class="qm" data-a="tip">?</span>' : 'Send') + '</div>'), { tab: false });
 };
 
 // ---- Raise issue ----------------------------------------------------------------------------------------------------
@@ -2236,10 +2239,10 @@ var ACT = {
   }),
   nudgenew: function () { go('nudgenew', { nedit: null, nfor: ui.ntier }); },
   nudgefor: function (v) { ui.nfor = v; render(); },
-  // Save only: the nudge joins the library of the tier chosen in For, and the library shows that tier.
+  // Save from the Edit screen (a new reminder has only Send): updates the library row, sends nothing.
   nudgesave: guard(function () { saveNudge(); draftSent(); ui.ntier = ui.nfor; back(); }),
   nudgenewsend: guard(function () {
-    var el = document.querySelector('.pair .save');
+    var el = document.querySelector('.save');
     var row = saveNudge(); doSend(ui.nfor, row); draftSent(); ui.ntier = ui.nfor; ui.tip = false;
     M.play('send', el); back();
   }),
