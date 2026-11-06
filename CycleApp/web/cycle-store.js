@@ -143,12 +143,22 @@ var CycleStore = (function () {
   }
   // fetch that tags a network failure (a TypeError from fetch itself) as err.offline, so sync can tell "no connection" from a
   // TypeError thrown by a bug in our own code, which must stay loud.
-  async function netFetch(url, opts) {
-    try { return await fetch(url, opts); }
-    catch (e) { if (e instanceof TypeError) e.offline = true; throw e; }
+  // Every request carries a timeout and is abortable. iOS can suspend the page mid-request and then never settle that
+  // fetch; S.syncing then stays true forever and every later sync() returns at its first line, so a partner's new send
+  // never arrived until the app was force-quit. abortInflight() (called on foreground) rejects those requests at once;
+  // the timeout covers a hang with no foreground event. Sync is idempotent (cursor pulls, 409-safe inserts), so a
+  // cut-off request is simply retried by the next sync.
+  var inflight = new Set(), FETCH_TIMEOUT_MS = 20000;
+  function abortInflight() { inflight.forEach(function (c) { c.abort(); }); }
+  async function netFetch(url, opts, keep) {
+    var ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, FETCH_TIMEOUT_MS);
+    if (!keep) inflight.add(ctl); // keep = never cut by abortInflight: a refresh the server already processed must not be re-sent with the old (now reused) token
+    try { return await fetch(url, Object.assign({ signal: ctl.signal }, opts)); }
+    catch (e) { if (e instanceof TypeError || e.name === 'AbortError') e.offline = true; throw e; }
+    finally { clearTimeout(timer); inflight.delete(ctl); }
   }
   async function gotrue(path, body) {
-    var r = await netFetch(cfg.supabaseUrl + '/auth/v1' + path, { method: 'POST', headers: { apikey: cfg.supabaseAnonKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    var r = await netFetch(cfg.supabaseUrl + '/auth/v1' + path, { method: 'POST', headers: { apikey: cfg.supabaseAnonKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, true);
     var j = await r.json();
     if (!r.ok) {
       var err = new Error(j.msg || j.error_description || j.message || 'auth failed ' + r.status);
@@ -168,6 +178,10 @@ var CycleStore = (function () {
     if (!refreshing) refreshing = doRefresh().finally(function () { refreshing = null; });
     return refreshing;
   }
+  function forceRefresh() {
+    if (!refreshing) refreshing = doRefresh().finally(function () { refreshing = null; });
+    return refreshing;
+  }
   async function doRefresh() {
     var j;
     try {
@@ -184,7 +198,12 @@ var CycleStore = (function () {
   // because a captive portal or proxy answers 200 text/html and the caller would otherwise treat the write as delivered.
   async function apiRaw(method, path, body, extra) {
     await ensureFresh();
-    var r = await netFetch(cfg.supabaseUrl + '/rest/v1/' + path, { method: method, headers: authHeaders(extra), body: body === undefined ? undefined : JSON.stringify(body) });
+    var go = function () { return netFetch(cfg.supabaseUrl + '/rest/v1/' + path, { method: method, headers: authHeaders(extra), body: body === undefined ? undefined : JSON.stringify(body) }); };
+    var used = S.session && S.session.access_token, r = await go();
+    // A 401 means the server no longer accepts this token although our own expiry clock says it is fine (clock skew, a token
+    // revoked elsewhere). ensureFresh only looks at that clock, so without this the phone retried the dead token forever.
+    // Refresh once (unless another caller already swapped the token) and retry once; a second 401 surfaces as usual.
+    if (r.status === 401 && S.session) { if (S.session.access_token === used) await forceRefresh(); r = await go(); }
     var text = await r.text();
     if (!r.ok) {
       var err = new Error(method + ' ' + path.split('?')[0] + ' ' + r.status + ' ' + text);
@@ -504,16 +523,22 @@ var CycleStore = (function () {
   // Native hands over the APNs token (cycleNative.pushToken); the box stores it for this account so the
   // partner's new to dos reach this phone while the app is closed. Registered once per
   // token + account per launch, only after sync shows a couple (the box rejects non-members).
-  var pushRegistered = null;
+  var pushRegistered = null, pushRetryAt = 0, PUSH_RETRY_MS = 60000;
   function setPushToken(t) { S.pushToken = t; if (S.couple) registerPush(); }
   async function registerPush() {
     if (!cfg.boxUrl || !S.session || !S.pushToken || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
     var key = S.session.user.id + ':' + S.pushToken;
-    if (pushRegistered === key) return;
+    if (pushRegistered === key || Date.now() < pushRetryAt) return;
     try {
       await ensureFresh();
-      var r = await fetch(cfg.boxUrl + '/push/register', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + S.session.access_token }, body: JSON.stringify({ token: S.pushToken }) });
-      if (!r.ok) { console.error('cycle push register failed: HTTP ' + r.status); return; }
+      var post = function () { return fetch(cfg.boxUrl + '/push/register', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + S.session.access_token }, body: JSON.stringify({ token: S.pushToken }) }); };
+      var used = S.session.access_token, r = await post();
+      if (r.status === 401) { if (S.session.access_token === used) await forceRefresh(); r = await post(); }
+      if (!r.ok) {
+        // Called after every sync (5 s): without a back-off a rejected register hit the box 12 times a minute (2026-11-06, 401s).
+        pushRetryAt = Date.now() + PUSH_RETRY_MS;
+        console.error('cycle push register failed: HTTP ' + r.status); return;
+      }
       pushRegistered = key;
     } catch (e) { if (!(e instanceof TypeError)) console.error('cycle push register failed:', e); }
   }
@@ -667,6 +692,6 @@ var CycleStore = (function () {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
     kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, upsert: upsert, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
-    talk: talk, transcribe: transcribe, canTalk: !!cfg.boxUrl, api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
+    talk: talk, transcribe: transcribe, canTalk: !!cfg.boxUrl, api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, abortInflight: abortInflight, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
   };
 })();

@@ -995,6 +995,19 @@ function recipientTz(tier) { var p = tier === 'me' ? null : St.partner(); return
 // True when sending right now would be deferred to tomorrow morning (the 8 pm rule).
 function isLate(tier) { var n = now(); return C.deliverAt(n, myTz(), recipientTz(tier)) > n; }
 // Writes the send row for a nudge. The body is a snapshot so a later library edit never rewrites what was sent.
+// performance.now(), not Date: immune to a frozen/adjusted clock.
+var SEND_LOCK_MS = 1000, sendAt = -SEND_LOCK_MS;
+function sendLocked() { return performance.now() - sendAt < SEND_LOCK_MS; }
+// Stamped only when a send really goes out, so opening the "Already sent" sheet never blocks tapping its confirm.
+function lockSend() { sendAt = performance.now(); }
+// Library card Send. The animation reads the button's rect, so it must start BEFORE the store write: St.insert re-renders
+// synchronously, detaching the button, and a detached node's rect is 0,0 (the arrow was drawn in the top-left corner).
+function sendNudge() {
+  lockSend();
+  var el = document.querySelector('.card .btn.f') || document.querySelector('.card .btn.o');
+  M.play('send', el);
+  doSend(ui.ntier, nudgeRow(ui.ntier, ui.nid)); ui.tip = false; render();
+}
 function doSend(tier, nudge) {
   var n = now(), at = C.deliverAt(n, myTz(), recipientTz(tier));
   var row = { id: St.uuid(), nudge_id: nudge.id, sender_id: St.me(), recipient_id: tier === 'me' ? St.me() : St.partner().user_id, body: nudge.body,
@@ -1113,6 +1126,7 @@ SCREEN.nudge = function () {
   var sends = nudgeTier(tier).sends.filter(function (s) { return s.nudge_id === n.id; });
   var late = isLate(tier), shared = tier === 'esme', aw = n.done_at && awardOf(n.id);
   var thr = shared ? '<div class="th">' + thread(sends) + '</div>' + (replyTarget() ? replyBox() : '') : '';
+  var sh = ui.sheet && ui.sheet.type === 'resend' ? sheet('t3 nf dq', '<div class="bsh"><h3>Already sent</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="ask">Send again?</p><div class="acts"><div class="save" data-a="nudgeresend">Send again</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>') : '';
   if (aw) {
     // Done card: Send again is a normal send (8 pm rule applies) and the nudge stays in Done.
     var st = C.awardStatus(aw, today(), tz());
@@ -1120,7 +1134,7 @@ SCREEN.nudge = function () {
       '<div class="card dn"><p class="q2">' + esc(n.body) + '</p><p class="meta">Done ' + fmtShort(C.localDay(C.ms(n.done_at), tz())) + ' \u00b7 ' + (st.complete ? st.total + ' paid' : st.paid + ' of ' + st.total + ' paid') + '</p>' +
       (late && ui.tip ? '<div class="tip">' + TIP_TEXT + '</div>' : '') +
       '<div class="row3"><span class="btn o" data-a="nudgesend">Send again' + (late ? '<span class="qm" data-a="tip">?</span>' : '') + '</span>' +
-      (st.complete || st.stopped ? '' : '<span class="btn g bd" data-a="nudgestop">Stop the rest</span>') + '</div></div>' + thr);
+      (st.complete || st.stopped ? '' : '<span class="btn g bd" data-a="nudgestop">Stop the rest</span>') + '</div></div>' + thr, { sheet: sh });
   }
   return phone('p2 nd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Reminders</h2><p class="dl">' + (sends.length ? 'Sent ' + sends.length + (sends.length === 1 ? ' time' : ' times') : 'Not sent') + '</p></div></header>' +
     '<div class="card"><p class="q2">' + esc(n.body) + '</p>' + (n.pinned ? '<p class="meta">pinned</p>' : '') +
@@ -1128,7 +1142,7 @@ SCREEN.nudge = function () {
     '<span class="btn f" data-a="nudgesend">' + (late ? 'Send tomorrow<span class="qm" data-a="tip">?</span>' : 'Send') + '</span>' +
     '<div class="row3"><span class="btn o" data-a="nudgepin">' + (n.pinned ? 'Unpin' : 'Pin') + '</span><span class="btn o" data-a="nudgeedit">Edit</span></div>' +
     // Points only exist between the two of us: a Me nudge can be archived but never marked done.
-    (shared ? '<div class="row3"><span class="btn o" data-a="nudgedone">Done</span><span class="btn g bd" data-a="nudgearchive">Archive</span></div>' : '<span class="btn g" data-a="nudgearchive">Archive</span>') + '</div>' + thr);
+    (shared ? '<div class="row3"><span class="btn o" data-a="nudgedone">Done</span><span class="btn g bd" data-a="nudgearchive">Archive</span></div>' : '<span class="btn g" data-a="nudgearchive">Archive</span>') + '</div>' + thr, { sheet: sh });
 };
 
 // ---- Done, with points ------------------------------------------------------------------------------
@@ -2202,11 +2216,15 @@ var ACT = {
   ntier: function (t) { ui.ntier = t; render(); },
   nudge: function (id) { markRead(idSet(sendsOfNudge(id))); go('nudge', { nid: id, tip: false }); },
   tip: function () { ui.tip = !ui.tip; render(); },
+  // One tap = one send: a second tap inside SEND_LOCK_MS (nothing visibly moved yet on a slow phone) is dropped. A reminder
+  // that already has a live send asks before sending again.
   nudgesend: guard(function () {
-    var el = document.querySelector('.card .btn.f') || document.querySelector('.card .btn.o');
-    doSend(ui.ntier, nudgeRow(ui.ntier, ui.nid)); ui.tip = false;
-    M.play('send', el); render();
+    if (sendLocked()) return;
+    var n = nudgeRow(ui.ntier, ui.nid);
+    if (nudgeTier(ui.ntier).sends.some(function (s) { return s.nudge_id === n.id && !s.deleted_at; })) { ui.sheet = { type: 'resend' }; render(); return; }
+    sendNudge();
   }),
+  nudgeresend: guard(function () { if (sendLocked()) return; ui.sheet = null; sendNudge(); }),
   nudgepin: guard(function () { var n = nudgeRow(ui.ntier, ui.nid); nPatch(ui.ntier, n.id, { pinned: !n.pinned }); render(); }),
   nudgeedit: function () { go('nudgenew', { nedit: ui.nid, nfor: ui.ntier }); },
   nudgedone: function () { go('nudgedone', { dpts: 30, dother: false, dpay: '3mo' }); },
@@ -2242,9 +2260,12 @@ var ACT = {
   // Save from the Edit screen (a new reminder has only Send): updates the library row, sends nothing.
   nudgesave: guard(function () { saveNudge(); draftSent(); ui.ntier = ui.nfor; back(); }),
   nudgenewsend: guard(function () {
+    if (sendLocked()) return;
+    lockSend();
     var el = document.querySelector('.save');
+    M.play('send', el); // before the store write: insert() re-renders synchronously and would detach el (rect 0,0)
     var row = saveNudge(); doSend(ui.nfor, row); draftSent(); ui.ntier = ui.nfor; ui.tip = false;
-    M.play('send', el); back();
+    back();
   }),
   // Replies are not held: the row goes straight into the outbox.
   nreply: guard(function () {
@@ -2423,7 +2444,7 @@ window.cycleNative = {
   // stop). Only Talk acts on it; a dictated field waits for its mic tap.
   speechSilence: function () { if (ui.rec && ui.rec.field === 'talk') guard(talkEndTurn)(); },
   speechError: function (msg) { var talk = ui.rec && ui.rec.field === 'talk'; ui.rec = null; if (talk && ui.talk) { ui.talk.listen = false; render(); } showErr(plain(new Error(msg))); },
-  foreground: function () { St.retryPush(); if (S.session) St.sync(); render(); checkNotif(); }
+  foreground: function () { St.retryPush(); St.abortInflight(); if (S.session) St.sync(); render(); checkNotif(); }
 };
 
 // ---- boot --------------------------------------------------------------------------------------------------------------
