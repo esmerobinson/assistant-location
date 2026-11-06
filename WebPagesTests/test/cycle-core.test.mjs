@@ -227,6 +227,12 @@ test('askToTodo carries the ask description; non-ask items never get one', () =>
 });
 
 // ---- phase ------------------------------------------------------------------
+test('phaseLabel: days since the last fight, never "Day 3 of ~2"', () => {
+  const two = [{ at: at('2026-10-20'), intensity: 2 }, { at: at('2026-10-22'), intensity: 2 }];
+  assert.equal(C.phaseLabel(C.phase(two, at('2026-10-24'), TZ)), 'Fought 2d ago');
+  assert.equal(C.phaseLabel(C.phase(two, at('2026-10-22', 20), TZ)), 'Fought today');
+  assert.equal(C.phaseLabel(C.phase([two[0]], at('2026-10-21'), TZ)), 'Fought 1d ago');
+});
 test('phase: Fight / Cool / Warm / Tension from the fight log', () => {
   // fights Oct 1 and Oct 11 -> avg cycle 10 days, Warm until 6
   const fights = [{ at: at('2026-10-01', 20) }, { at: at('2026-10-11', 20) }];

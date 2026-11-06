@@ -495,6 +495,12 @@ var CycleCore = (function () {
     var name = since === 0 ? 'Fight' : since <= 2 ? 'Cool' : since < warmEnd ? 'Warm' : 'Tension';
     return { name: name, day: since + 1, avg: avg, len: len, warmEnd: warmEnd, last: uniq[uniq.length - 1] };
   }
+  // Home Phase tile sub-line: days since the last fight. Replaced "Day 3 of ~2" (day N of the average cycle), which read
+  // as nonsense once the day passed the average; the average itself is dropped because "· avg 2d" wraps the half-width tile.
+  function phaseLabel(ph) {
+    var since = ph.day - 1;
+    return since === 0 ? 'Fought today' : 'Fought ' + since + 'd ago';
+  }
 
   // ---- needs you ---------------------------------------------------------
   // s: {me, now, tz, items, redemptions, nudge_sends, nudge_replies, fight_markers, fight_notes, todos, seen, since}
@@ -591,7 +597,7 @@ var CycleCore = (function () {
     zonedMs: zonedMs, deliverAt: deliverAt, issueHeldUntil: issueHeldUntil, sectionNudges: sectionNudges,
     addMonths: addMonths, splitPayout: splitPayout, awardStatus: awardStatus,
     earnPts: earnPts, missPts: missPts, periodOf: periodOf, habitCount: habitCount, habitMisses: habitMisses, requireNote: requireNote, isEdited: isEdited,
-    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, needsYou: needsYou, homeList: homeList, calmStats: calmStats, inEditWindow: inEditWindow, monthGrid: monthGrid, chartValue: chartValue, dailyTotals: dailyTotals, rollingAvg: rollingAvg, niceAxis: niceAxis, fightActions: fightActions, fightGap: fightGap,
+    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, phaseLabel: phaseLabel, needsYou: needsYou, homeList: homeList, calmStats: calmStats, inEditWindow: inEditWindow, monthGrid: monthGrid, chartValue: chartValue, dailyTotals: dailyTotals, rollingAvg: rollingAvg, niceAxis: niceAxis, fightActions: fightActions, fightGap: fightGap,
     // Only a still-held item may offer Send / Edit / Drop; a stale notification can point at a delivered or dropped one.
     isStillHeld: function (i) { return !!i && i.status === 'held' && !i.deleted_at; }
   };
