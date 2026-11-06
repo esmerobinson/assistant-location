@@ -41,7 +41,10 @@ static const NSTimeInterval POLL_S = 0.1;
         return @"Mic busy";
     }
     NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"cycle-voice-%@.m4a", NSUUID.UUID.UUIDString]]];
-    NSDictionary *settings = @{ AVFormatIDKey: @(kAudioFormatMPEG4AAC), AVSampleRateKey: @16000, AVNumberOfChannelsKey: @1, AVEncoderAudioQualityKey: @(AVAudioQualityMedium) };
+    // 48kHz mono AAC at 96kbps. 16kHz at AVAudioQualityMedium (~32kbps) cost accuracy: in a 2026-11-06 bake-off on real phone
+    // voice memos, the 48k/96k variant had fewer misheard words for nearly every model (nova-3 11 -> 7, gemini-3.5-transcribe
+    // 6 -> 3). About 12KB per second uploaded, far under the box's 25MB cap.
+    NSDictionary *settings = @{ AVFormatIDKey: @(kAudioFormatMPEG4AAC), AVSampleRateKey: @48000, AVNumberOfChannelsKey: @1, AVEncoderBitRateKey: @96000, AVEncoderAudioQualityKey: @(AVAudioQualityHigh) };
     AVAudioRecorder *recorder = [[AVAudioRecorder alloc] initWithURL:url settings:settings error:&error];
     if (!recorder || ![recorder prepareToRecord] || ![recorder record]) {
         NSLog(@"[Cycle] recorder failed: %@ (%@ %ld)", error.localizedDescription, error.domain, (long)error.code);
