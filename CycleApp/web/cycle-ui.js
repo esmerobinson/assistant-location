@@ -2461,7 +2461,7 @@ window.cycleNative = {
   // stop). Only Talk acts on it; a dictated field waits for its mic tap.
   speechSilence: function () { if (ui.rec && ui.rec.field === 'talk') guard(talkEndTurn)(); },
   speechError: function (msg) { var talk = ui.rec && ui.rec.field === 'talk'; ui.rec = null; if (talk && ui.talk) { ui.talk.listen = false; render(); } showErr(plain(new Error(msg))); },
-  foreground: function () { St.retryPush(); St.abortInflight(); if (S.session) St.sync(); render(); checkNotif(); }
+  foreground: function () { St.retryPush(); St.abortInflight(); if (S.session) { St.sync(); St.pullPriv(); } render(); checkNotif(); }
 };
 Object.keys(window.cycleNative).forEach(function (k) { window.cycleNative[k] = nativeEntry(window.cycleNative[k]); });
 

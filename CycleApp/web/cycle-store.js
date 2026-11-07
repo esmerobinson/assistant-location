@@ -260,7 +260,7 @@ var CycleStore = (function () {
   }
   async function signIn(email, password) {
     var j = await gotrue('/token?grant_type=password', { email: email, password: password });
-    setSession(j); await creds.set(email, password); await loadUserData(j.user.id); await persistNow(); await sync(); emit();
+    setSession(j); await creds.set(email, password); await loadUserData(j.user.id); pullPriv(); await persistNow(); await sync(); emit();
   }
   async function signOut() {
     // Persist first: edits typed in the last 50ms sit in the debounce timer, and clearing state below would lose them.
@@ -484,6 +484,7 @@ var CycleStore = (function () {
   // ---- private tier --------------------------------------------------------------------
   var backupTimer = 0;
   function savePriv() {
+    S.priv.savedAt = Date.now();
     persist(); emit();
     clearTimeout(backupTimer);
     backupTimer = setTimeout(backup, 3000);
@@ -493,9 +494,10 @@ var CycleStore = (function () {
   // for nothing. Hence a cheap GET /backup first: 200 = this user is the owner (PUT allowed for
   // the session), 403 = never PUT again this session. Anything else is loud and retried next save.
   var backupAllowed = null;
-  // A priv holding nothing at all: every field null or an empty array/object (emptyPriv() qualifies).
+  // A priv holding nothing at all: every field null or an empty array/object (emptyPriv() qualifies); scalar bookkeeping
+  // (ownupSince, ratingsUploaded, savedAt) is not content.
   function privEmpty(p) {
-    return !p || Object.keys(p).every(function (k) { var v = p[k]; return v == null || (typeof v === 'object' && !Object.keys(v).length); });
+    return !p || Object.keys(p).every(function (k) { var v = p[k]; if (k === 'ownupSince' || k === 'ratingsUploaded' || k === 'savedAt') return true; return v == null || (typeof v === 'object' && !Object.keys(v).length); });
   }
   // Fresh-install guard: a reinstalled or wiped device starts with an empty priv, and without this its first save
   // would PUT that emptiness over the one good backup on the box (which keeps only the latest main file plus daily
@@ -504,6 +506,9 @@ var CycleStore = (function () {
   async function backup() {
     if (!cfg.boxUrl || !S.session || backupAllowed === false || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
     try {
+      // A first pull still in flight may replace S.priv: PUT only after it, or a fresh install would overwrite the box.
+      if (pullPromise) await pullPromise;
+      if (backupAllowed === false) return;
       await ensureFresh();
       var auth = { Authorization: 'Bearer ' + S.session.access_token };
       var remote = null;
@@ -519,6 +524,27 @@ var CycleStore = (function () {
       var r = await fetch(cfg.boxUrl + '/backup', { method: 'PUT', headers: Object.assign({ 'Content-Type': 'application/json' }, auth), body: JSON.stringify(S.priv) });
       if (!r.ok) console.error('cycle backup failed: HTTP ' + r.status);
     } catch (e) { if (!(e instanceof TypeError)) console.error('cycle backup failed:', e); }
+  }
+  // Pull the box copy of the private tier so every device shares it. Whole-doc last-writer-wins on savedAt.
+  var pullPromise = null;
+  function pullPriv() {
+    if (!cfg.boxUrl || !S.session || backupAllowed === false || (typeof navigator !== 'undefined' && navigator.onLine === false)) return Promise.resolve();
+    var p = pullPromise = (async function () {
+      try {
+        await ensureFresh();
+        var g = await fetch(cfg.boxUrl + '/backup', { method: 'GET', headers: { Authorization: 'Bearer ' + S.session.access_token } });
+        if (g.status === 403) { backupAllowed = false; return; }
+        if (g.status === 404) return;
+        if (!g.ok) { console.error('cycle pull failed: HTTP ' + g.status); return; }
+        var remote = JSON.parse(await g.text());
+        if (!((remote.savedAt || 0) > (S.priv.savedAt || 0) || privEmpty(S.priv))) return;
+        S.priv = remote; migrateAffirmations();
+        if (!S.priv.ownupSeen) { S.priv.ownupSeen = []; S.priv.ownupSince = Date.now(); }
+        persist(); emit(); reschedule();
+      } catch (e) { if (!(e instanceof TypeError)) console.error('cycle pull failed:', e); }
+    })();
+    p.then(function () { if (pullPromise === p) pullPromise = null; });
+    return p;
   }
   // ---- remote push ---------------------------------------------------------------------------
   // Native hands over the APNs token (cycleNative.pushToken); the box stores it for this account so the
@@ -680,7 +706,7 @@ var CycleStore = (function () {
   // ---- boot ------------------------------------------------------------------------------------
   async function boot() {
     var s = JSON.parse((await kv.get('session')) || 'null');
-    if (s) { S.session = s; await loadUserData(s.user.id); }
+    if (s) { S.session = s; await loadUserData(s.user.id); pullPriv(); }
     window.addEventListener('online', function () { retryPush(); sync(); });
     // iOS can kill a backgrounded page without any later event: flush the 50ms debounce the moment the page leaves the screen.
     function flush() { if (S.session) persistNow().catch(function () {}); }
@@ -693,6 +719,6 @@ var CycleStore = (function () {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
     kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, upsert: upsert, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
-    talk: talk, transcribe: transcribe, canTalk: !!cfg.boxUrl, api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, abortInflight: abortInflight, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, setPushToken: setPushToken,
+    talk: talk, transcribe: transcribe, canTalk: !!cfg.boxUrl, api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, abortInflight: abortInflight, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, pullPriv: pullPriv, setPushToken: setPushToken,
   };
 })();
