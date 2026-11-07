@@ -1122,12 +1122,22 @@ function replyTarget() {
 }
 
 // Library row opened: its actions (Send / Pin / Edit / Archive) above the reply thread and a reply box.
+// Every live send of the open reminder, newest first: when it went out, and whether it is still queued or was opened.
+function history(sends) {
+  if (!sends.length) return '';
+  return '<div><p class="lab">History</p><div class="lst dsch hist" style="gap:0">' + sends.slice().sort(function (a, b) { return C.ms(b.created_at) - C.ms(a.created_at); }).map(function (s) {
+    var t = C.ms(s.created_at), st = isQueued(s) ? 'queued' : s.opened_at ? 'opened' : '';
+    return '<div class="rem c"><p>' + fmtShort(C.localDay(t, tz())) + ' \u00b7 ' + fmtTime(t) + '</p>' + (st ? '<p class="mu">' + st + '</p>' : '') + '</div>';
+  }).join('') + '</div></div>';
+}
+// The "Already sent" confirm guards a same-day double send only; a send from an earlier day goes straight out.
+function sentToday(sends) { return sends.some(function (s) { return C.localDay(C.ms(s.created_at), tz()) === today(); }); }
 SCREEN.nudge = function () {
   var tier = ui.ntier, n = nudgeRow(tier, ui.nid);
   if (!n) { ui.todoSeg = 'rem'; return bounce('todo'); }
   var sends = nudgeTier(tier).sends.filter(function (s) { return s.nudge_id === n.id; });
   var late = isLate(tier), shared = tier === 'esme', aw = n.done_at && awardOf(n.id);
-  var thr = shared ? '<div class="th">' + thread(sends) + '</div>' + (replyTarget() ? replyBox() : '') : '';
+  var thr = history(sends) + (shared ? '<div class="th">' + thread(sends) + '</div>' + (replyTarget() ? replyBox() : '') : '');
   var sh = ui.sheet && ui.sheet.type === 'resend' ? sheet('t3 nf dq', '<div class="bsh"><h3>Already sent</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="ask">Send again?</p><div class="acts"><div class="save" data-a="nudgeresend">Send again</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>') : '';
   if (aw) {
     // Done card: Send again is a normal send (8 pm rule applies) and the nudge stays in Done.
@@ -2219,11 +2229,11 @@ var ACT = {
   nudge: function (id) { markRead(idSet(sendsOfNudge(id))); go('nudge', { nid: id, tip: false }); },
   tip: function () { ui.tip = !ui.tip; render(); },
   // One tap = one send: a second tap inside SEND_LOCK_MS (nothing visibly moved yet on a slow phone) is dropped. A reminder
-  // that already has a live send asks before sending again.
+  // that already went out today asks before sending again.
   nudgesend: guard(function () {
     if (sendLocked()) return;
     var n = nudgeRow(ui.ntier, ui.nid);
-    if (nudgeTier(ui.ntier).sends.some(function (s) { return s.nudge_id === n.id && !s.deleted_at; })) { ui.sheet = { type: 'resend' }; render(); return; }
+    if (sentToday(nudgeTier(ui.ntier).sends.filter(function (s) { return s.nudge_id === n.id; }))) { ui.sheet = { type: 'resend' }; render(); return; }
     sendNudge();
   }),
   nudgeresend: guard(function () { if (sendLocked()) return; ui.sheet = null; sendNudge(); }),

@@ -264,6 +264,7 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .nd .dsch .rem:last-child{border-radius:0 0 16px 16px}
 .nd .dsch .rem:only-child{border-radius:16px}
 .nd .dsch .pk{color:var(--pk)}.nd .dsch .mu{color:var(--mu)}
+.nd .hist .rem{cursor:default}
 .nd .dbtn .btn{width:100%}
 .nd .row3 .btn{white-space:nowrap;font-size:14px;padding:0 8px}
 .nd .card .meta{text-transform:none;letter-spacing:0;font-weight:400}

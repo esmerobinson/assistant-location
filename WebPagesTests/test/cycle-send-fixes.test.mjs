@@ -66,8 +66,9 @@ describe('reminder send fixes', () => {
   const sendPosts = (ctl) => ctl.posts.filter((p) => p.t === 'nudge_sends');
   const lib = () => ({ nudges: [nd('n1', 'Breathe')], nudge_sends: [] });
 
-  test('sending a reminder that already has a live send asks first', async () => {
-    const { context, page, ctl } = await open(ME, { nudges: [nd('n1', 'Breathe')], nudge_sends: [send('s1', 'n1')] });
+  const isoAgo = (h) => new Date(Date.now() - h * 3600e3).toISOString();
+  test('sending a reminder that already went out today asks first', async () => {
+    const { context, page, ctl } = await open(ME, { nudges: [nd('n1', 'Breathe')], nudge_sends: [send('s1', 'n1', { created_at: isoAgo(0), deliver_at: isoAgo(0) })] });
     await nudgeCard(page);
     await page.click('[data-a="nudgesend"]');
     await page.waitForSelector('.bs [data-a="nudgeresend"]');
@@ -80,6 +81,24 @@ describe('reminder send fixes', () => {
     await page.click('[data-a="nudgesend"]'); await page.click('[data-a="nudgeresend"]');
     await page.waitForTimeout(1200);
     assert.equal(sendPosts(ctl).length, 1, 'confirmed -> exactly one new send');
+    await context.close();
+  });
+
+  test('a reminder last sent on an earlier day sends without asking, and History lists each send', async () => {
+    const t1 = isoAgo(30), t0 = isoAgo(80);
+    const { context, page, ctl } = await open(ME, { nudges: [nd('n1', 'Breathe')], nudge_sends: [send('s1', 'n1', { created_at: t1, deliver_at: t1, opened_at: isoAgo(29) }), send('s0', 'n1', { created_at: t0, deliver_at: t0 })] });
+    await nudgeCard(page);
+    const o = { timeZone: 'America/New_York' }, fmt = (iso) => { const d = new Date(iso);
+      return d.toLocaleDateString('en-US', { ...o, day: 'numeric' }) + ' ' + d.toLocaleDateString('en-US', { ...o, month: 'short' }) + ' \u00b7 ' + d.toLocaleTimeString('en-US', { ...o, hour: 'numeric', minute: '2-digit' }).toLowerCase(); };
+    const rows = () => page.$$eval('.hist .rem', (els) => els.map((e) => [...e.querySelectorAll('p')].map((p) => p.textContent).join(' | ')));
+    assert.deepEqual(await rows(), [fmt(t1) + ' | opened', fmt(t0)]);
+    await page.click('[data-a="nudgesend"]');
+    await page.waitForTimeout(1200);
+    assert.equal(await page.$('.bs [data-a="nudgeresend"]'), null, 'no Already sent confirm for a send from an earlier day');
+    assert.equal(sendPosts(ctl).length, 1);
+    const after = await rows();
+    assert.equal(after.length, 3);
+    assert.equal(after[1], fmt(t1) + ' | opened', 'the new send heads the History');
     await context.close();
   });
 
