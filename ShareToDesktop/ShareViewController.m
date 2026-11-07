@@ -102,6 +102,11 @@ static long GLShareFootprintMB(void) {
 @property(nonatomic, strong) UILabel *conversationStatusLabel;
 @property(nonatomic, strong) UIButton *conversationRetryButton;
 @property(nonatomic, assign) BOOL conversationInFlight;
+// The app can only be asked to open once this view is in a window (the
+// responder chain has to reach UIApplication). Photo prep runs before that,
+// so its handoff IDs wait in pendingOpenIDs until -viewIsAppearing: fires.
+@property(nonatomic, assign) BOOL viewInWindow;
+@property(nonatomic, copy) NSArray<NSString *> *pendingOpenIDs;
 @end
 
 @implementation ShareViewController
@@ -144,9 +149,30 @@ static long GLShareFootprintMB(void) {
   self.imageProviders = [self collectImageProviders];
 #ifdef GL_VOICE_ACTION
   [self buildVoiceUI];
+  // "Voice chat" action extension (VoiceToDesktop target, same source file):
+  // no /drop upload and no buttons -- hand the photos to the app and open the
+  // voice session immediately. Photo prep starts here so it overlaps the
+  // sheet's presentation; the open itself waits for -viewIsAppearing:.
+  self.started = YES;
+  self.dropUploadAttemptFinished = YES;
+  if (self.imageProviders.count == 0) {
+    [self showConversationFailure:@"No photo was shared."];
+    return;
+  }
+  [self startConversationWithMode:@"voice"];
 #else
   [self buildUI];
 #endif
+}
+
+// Called once the view is in the window but before the presentation
+// animation runs -- the earliest point the responder chain reaches
+// UIApplication, ~0.2-0.5s before -viewDidAppear:.
+- (void)viewIsAppearing:(BOOL)animated {
+  [super viewIsAppearing:animated];
+  GLShareDebugLog(@"share-ext: viewIsAppearing");
+  self.viewInWindow = YES;
+  if (self.pendingOpenIDs) [self openSessionWithHandoffIDs:self.pendingOpenIDs];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -155,20 +181,7 @@ static long GLShareFootprintMB(void) {
                    GLShareFootprintMB()]);
   if (self.started) return;
   self.started = YES;
-#ifdef GL_VOICE_ACTION
-  // "Voice chat" action extension (VoiceToDesktop target, same source file):
-  // no /drop upload and no buttons -- hand the photos to the app and open the
-  // voice session immediately. Started here, not in viewDidLoad, so the view
-  // is in the window and the responder chain reaches UIApplication.
-  self.dropUploadAttemptFinished = YES;
-  if (self.imageProviders.count == 0) {
-    [self showConversationFailure:@"No photo was shared."];
-    return;
-  }
-  [self startConversationWithMode:@"voice"];
-#else
   [self startUploads];
-#endif
 }
 
 /// The share sheet can hand over several extension items, each with several
@@ -570,6 +583,11 @@ static long GLShareFootprintMB(void) {
   if (index == total) {
     self.conversationStatusLabel.textColor = UIColor.secondaryLabelColor;
     self.conversationStatusLabel.text = @"Opening…";
+    GLShareDebugLog(@"share-ext: photos prepared");
+    if (!self.viewInWindow) {
+      self.pendingOpenIDs = handoffIDs;
+      return;
+    }
     [self openSessionWithHandoffIDs:handoffIDs];
     return;
   }
@@ -677,6 +695,7 @@ static long GLShareFootprintMB(void) {
 #pragma mark - Opening the containing app
 
 - (void)openSessionWithHandoffIDs:(NSArray<NSString *> *)ids {
+  self.pendingOpenIDs = nil;
   NSURL *url = [GLDropUploader sessionURLForMode:self.conversationMode handoffIDs:ids];
 
   __weak __typeof(self) weakSelf = self;
