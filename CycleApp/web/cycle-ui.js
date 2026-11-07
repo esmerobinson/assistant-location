@@ -1275,7 +1275,7 @@ function openSend(id) {
 
 // ---- Cycle (private) screen -----------------------------------------------------------------------------
 // Ring geometry and per-phase angles are measured from the approved mockup (degrees clockwise from top).
-var SEG = { Fight: [4.3, 31.7], Cool: [40.3, 146.9], Warm: [155.5, 283.7], Tension: [292.3, 355.7] };
+var SEG = { Fight: [4.3, 31.7], Cool: [40.3, 146.9], Warm: [155.5, 283.7], Delicate: [292.3, 355.7] };
 function pt(r, a) { var t = a * Math.PI / 180; return [173 + r * Math.sin(t), 143 - r * Math.cos(t)]; }
 function ring(ph) {
   var out = '';

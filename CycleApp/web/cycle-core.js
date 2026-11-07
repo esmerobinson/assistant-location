@@ -481,7 +481,7 @@ var CycleCore = (function () {
 
   // ---- cycle phase (private fight log) -----------------------------------
   // fights: [{at (ms), intensity}]. Fight = day of fight, Cool = 1-2 days after,
-  // Warm = day 3 until 60% of the average cycle length, Tension after that.
+  // Warm = day 3 until 60% of the average cycle length, Delicate after that.
   function phase(fights, now, tz, defaultLen) {
     if (!fights.length) return null;
     var days = fights.map(function (f) { return localDay(f.at, tz); }).sort();
@@ -492,7 +492,7 @@ var CycleCore = (function () {
     var len = avg == null ? (defaultLen || 14) : avg;
     var since = dayDiff(uniq[uniq.length - 1], localDay(now, tz));
     var warmEnd = Math.max(3, len * 0.6);
-    var name = since === 0 ? 'Fight' : since <= 2 ? 'Cool' : since < warmEnd ? 'Warm' : 'Tension';
+    var name = since === 0 ? 'Fight' : since <= 2 ? 'Cool' : since < warmEnd ? 'Warm' : 'Delicate';
     return { name: name, day: since + 1, avg: avg, len: len, warmEnd: warmEnd, last: uniq[uniq.length - 1] };
   }
   // Home Phase tile sub-line: days since the last fight. Replaced "Day 3 of ~2" (day N of the average cycle), which read

@@ -233,7 +233,7 @@ test('phaseLabel: days since the last fight, never "Day 3 of ~2"', () => {
   assert.equal(C.phaseLabel(C.phase(two, at('2026-10-22', 20), TZ)), 'Fought today');
   assert.equal(C.phaseLabel(C.phase([two[0]], at('2026-10-21'), TZ)), 'Fought 1d ago');
 });
-test('phase: Fight / Cool / Warm / Tension from the fight log', () => {
+test('phase: Fight / Cool / Warm / Delicate from the fight log', () => {
   // fights Oct 1 and Oct 11 -> avg cycle 10 days, Warm until 6
   const fights = [{ at: at('2026-10-01', 20) }, { at: at('2026-10-11', 20) }];
   const P = (d) => C.phase(fights, at(d, 12), TZ);
@@ -242,7 +242,7 @@ test('phase: Fight / Cool / Warm / Tension from the fight log', () => {
   assert.equal(P('2026-10-13').name, 'Cool');
   assert.equal(P('2026-10-14').name, 'Warm');
   assert.equal(P('2026-10-16').name, 'Warm');
-  assert.equal(P('2026-10-17').name, 'Tension');
+  assert.equal(P('2026-10-17').name, 'Delicate');
   assert.equal(P('2026-10-13').day, 3);
   assert.equal(P('2026-10-13').avg, 10);
   assert.equal(C.phase([], 0, TZ), null);
