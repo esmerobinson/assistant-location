@@ -77,6 +77,13 @@ test('refresh rejected + no creds (web): the error surfaces and the dead session
   assert.equal(native.kv.session, null);
 });
 
+test('sync after a dead refresh on web leaves no stale sync error under the sign-in screen', async () => {
+  const { st } = load({ refresh: 'reject', creds: null });
+  await st.sync();
+  assert.equal(st.S.session, null);
+  assert.equal(st.S.syncError, null);
+});
+
 test('offline (fetch TypeError) does not fall back to the password', async () => {
   const { st, posts } = load({ creds: { email: 'a@b.test', password: 'pw' } });
   globalThis.fetch = async () => { posts.push('fetch'); throw new TypeError('Failed to fetch'); };

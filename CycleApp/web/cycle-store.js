@@ -399,7 +399,9 @@ var CycleStore = (function () {
       try { await pull(); uploadOwnRatings(); } catch (e) { pullErr = e; }
       var err = pushErr || pullErr;
       // Only fetch's own network failure is "offline"; a TypeError from our code is a bug and shows.
-      if (!err || err.offline) { S.syncError = null; S.syncErrorStatus = null; }
+      // !S.session: the failure signed the person out (dead refresh token on web); the sign-in screen is the signal, and
+      // a "Couldn't sync" bar under it would be stale.
+      if (!err || err.offline || !S.session) { S.syncError = null; S.syncErrorStatus = null; }
       else { S.syncError = err.message; S.syncErrorStatus = err.status || null; console.error('cycle sync failed:', err); logErr('sync', err); }
     } finally {
       S.syncing = false; persist(); emit(); reschedule();
