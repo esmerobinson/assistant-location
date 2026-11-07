@@ -1126,8 +1126,8 @@ function replyTarget() {
 function history(sends) {
   if (!sends.length) return '';
   return '<div><p class="lab">History</p><div class="lst dsch hist" style="gap:0">' + sends.slice().sort(function (a, b) { return C.ms(b.created_at) - C.ms(a.created_at); }).map(function (s) {
-    var t = C.ms(s.created_at), st = isQueued(s) ? 'queued' : s.opened_at ? 'opened' : '';
-    return '<div class="rem c"><p>' + fmtShort(C.localDay(t, tz())) + ' \u00b7 ' + fmtTime(t) + '</p>' + (st ? '<p class="mu">' + st + '</p>' : '') + '</div>';
+    var t = C.ms(s.created_at), st = isQueued(s) ? 'queued' : s.opened_at ? 'opened' : 'sent';
+    return '<div class="rem c"><p>' + fmtShort(C.localDay(t, tz())) + ' \u00b7 ' + fmtTime(t) + '</p><p class="mu">' + st + '</p></div>';
   }).join('') + '</div></div>';
 }
 // The "Already sent" confirm guards a same-day double send only; a send from an earlier day goes straight out.

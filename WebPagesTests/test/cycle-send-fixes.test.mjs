@@ -91,7 +91,7 @@ describe('reminder send fixes', () => {
     const o = { timeZone: 'America/New_York' }, fmt = (iso) => { const d = new Date(iso);
       return d.toLocaleDateString('en-US', { ...o, day: 'numeric' }) + ' ' + d.toLocaleDateString('en-US', { ...o, month: 'short' }) + ' \u00b7 ' + d.toLocaleTimeString('en-US', { ...o, hour: 'numeric', minute: '2-digit' }).toLowerCase(); };
     const rows = () => page.$$eval('.hist .rem', (els) => els.map((e) => [...e.querySelectorAll('p')].map((p) => p.textContent).join(' | ')));
-    assert.deepEqual(await rows(), [fmt(t1) + ' | opened', fmt(t0)]);
+    assert.deepEqual(await rows(), [fmt(t1) + ' | opened', fmt(t0) + ' | sent']);
     await page.click('[data-a="nudgesend"]');
     await page.waitForTimeout(1200);
     assert.equal(await page.$('.bs [data-a="nudgeresend"]'), null, 'no Already sent confirm for a send from an earlier day');

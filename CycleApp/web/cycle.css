@@ -263,6 +263,7 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .nd .dsch .rem:first-child{border-radius:16px 16px 0 0;border-top:0}
 .nd .dsch .rem:last-child{border-radius:0 0 16px 16px}
 .nd .dsch .rem:only-child{border-radius:16px}
+.nd .dsch .rem.c + .rem.c{margin-top:0}
 .nd .dsch .pk{color:var(--pk)}.nd .dsch .mu{color:var(--mu)}
 .nd .hist .rem{cursor:default}
 .nd .dbtn .btn{width:100%}
