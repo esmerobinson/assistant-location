@@ -69,11 +69,12 @@ test('refresh rejected + stored creds: one password grant, session replaced and 
   assert.equal(JSON.parse(native.kv.session).refresh_token, 'rtP1');
 });
 
-test('refresh rejected + no creds: the error surfaces and the session is untouched', async () => {
-  const { st, posts } = load({ refresh: 'reject', creds: null });
+test('refresh rejected + no creds (web): the error surfaces and the dead session is signed out', async () => {
+  const { st, posts, native } = load({ refresh: 'reject', creds: null });
   await assert.rejects(st.api('GET', 'items?select=*'), /Invalid Refresh Token/);
   assert.deepEqual(posts, ['refresh']);
-  assert.equal(st.S.session.refresh_token, 'rtOld');
+  assert.equal(st.S.session, null);
+  assert.equal(native.kv.session, null);
 });
 
 test('offline (fetch TypeError) does not fall back to the password', async () => {

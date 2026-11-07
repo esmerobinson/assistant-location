@@ -190,7 +190,10 @@ var CycleStore = (function () {
     } catch (e) {
       if (!e.authRejected) throw e;
       var c = await creds.get();
-      if (!c) throw e;
+      // No stored password (always the case on web, which has no Keychain): the session is dead for good. Sign out so the
+      // sign-in screen shows; staying signed in left the page on stale cached rows with "Couldn't sync" retrying every 5 s
+      // (2026-11-07). Cached rows and priv stay under their per-user keys, so signing back in restores them.
+      if (!c) { await signOut(); throw e; }
       j = await gotrue('/token?grant_type=password', { email: c.email, password: c.password });
     }
     setSession(j); await persistNow();
