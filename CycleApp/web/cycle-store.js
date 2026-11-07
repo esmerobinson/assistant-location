@@ -537,7 +537,8 @@ var CycleStore = (function () {
         if (g.status === 404) return;
         if (!g.ok) { console.error('cycle pull failed: HTTP ' + g.status); return; }
         var remote = JSON.parse(await g.text());
-        if (!((remote.savedAt || 0) > (S.priv.savedAt || 0) || privEmpty(S.priv))) return;
+        // A local copy never stamped (saved before sync existed, e.g. a browser holding only a draft) yields to the box.
+        if (S.priv.savedAt && !((remote.savedAt || 0) > S.priv.savedAt) && !privEmpty(S.priv)) return;
         S.priv = remote; migrateAffirmations();
         if (!S.priv.ownupSeen) { S.priv.ownupSeen = []; S.priv.ownupSince = Date.now(); }
         persist(); emit(); reschedule();

@@ -46,6 +46,13 @@ test('remote savedAt newer: local replaced', async () => {
   assert.equal(st.S.priv.savedAt, 300);
 });
 
+test('unstamped local priv (draft only) yields to an unstamped box copy, then PUTs the box content', async () => {
+  const { st, calls } = load(200, { ...EMPTY, fights: [{ at: 1 }] }, { ...EMPTY, drafts: { talk: 'x' }, ownupSince: 5 });
+  await st.pullPriv(); await st.backup();
+  assert.deepEqual(st.S.priv.fights, [{ at: 1 }]);
+  assert.ok(puts(calls).every((c) => /"at":1/.test(c)));
+});
+
 test('403: no PUT ever, local untouched', async () => {
   const { st, calls } = load(403, {}, { ...EMPTY, fights: [{ at: 2 }], savedAt: 200 });
   await st.pullPriv(); await st.backup(); await st.backup();
