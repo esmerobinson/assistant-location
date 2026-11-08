@@ -257,7 +257,14 @@
   #detail-composer .gl-reply-row { position: relative; }
   /* Clarify mic is laid out like the reply mic (left of the row), so its targets pop the same way, over the card above. */
   #session-clarify-hold-targets { left: 0; bottom: calc(100% + 10px); }
-  #session-clarify .gl-reply-row { position: relative; }
+  /* The card's padding leaves ~145px for the input beside two icons and Send at phone width, so typed text wrapped
+     and the placeholder clipped: the input takes its own full-width line and the buttons sit on the line below. */
+  #session-clarify .gl-reply-row { position: relative; flex-wrap: wrap; }
+  #session-clarify .gl-reply-row { align-items: center; }
+  #session-clarify-send { margin-left: auto; min-height: 44px; }
+  /* The shared row's 16px side margin is for full-width pages; inside the card it indented the photo past the input. */
+  #session-clarify-thumbs { margin: 0 0 10px 0; }
+  #session-clarify-thumbs:empty { margin: 0; }
   #session-clarify .gl-icon-btn { flex: 0 0 auto; }
   #session-clarify-record-btn.recording { background: var(--gl-danger); color: #fff; }
   .gl-hold-target {
@@ -346,11 +353,12 @@
   }
   #session-clarify { margin-top: 10px; }
   #session-clarify .gl-reply-row textarea {
-    flex: 1 1 auto; min-width: 0; box-sizing: border-box; min-height: 40px; max-height: 120px;
+    /* own full-width line above the buttons; see #session-clarify .gl-reply-row */
+    order: -1; flex: 1 1 100%; min-width: 0; box-sizing: border-box; min-height: 40px; max-height: 120px;
     font-size: 16px; font-family: inherit; padding: 8px 12px; border-radius: 12px; resize: none;
     border: 1px solid rgba(127, 127, 127, 0.3); background: var(--gl-bg); color: var(--gl-text);
   }
-  #session-clarify-status { font-size: 12px; color: var(--gl-text-dim); margin-top: 6px; white-space: pre-line; }
+  #session-clarify-status { font-size: 12px; color: var(--gl-text-dim); margin-top: 12px; white-space: pre-line; }
 
   .gl-recent-row-state,
   .gl-state-pill {
