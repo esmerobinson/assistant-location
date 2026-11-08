@@ -610,7 +610,10 @@ static void *GLWebCanGoBackContext = &GLWebCanGoBackContext;
     if (self.managedPageName) {
         __weak typeof(self) weakSelf = self;
         GLWebPageCacheCheckForUpdates(^(BOOL updated) {
-            if (updated) [weakSelf loadPage];
+            // Never mid-recording (a share-to-voice cold launch opens on the
+            // cached page and starts the mic before this check returns): the
+            // promoted set shows on the next load instead.
+            if (updated && !weakSelf.bridge.voiceCaptureActive) [weakSelf loadPage];
         });
     }
 }

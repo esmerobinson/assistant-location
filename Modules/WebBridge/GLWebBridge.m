@@ -72,6 +72,10 @@ NSString *const GLWebBridgeWillOpenModuleNotification = @"GLWebBridgeWillOpenMod
 
 @implementation GLWebBridge
 
+- (BOOL)voiceCaptureActive {
+    return self.voiceRecorder != nil;
+}
+
 - (instancetype)initWithHostViewController:(UIViewController *)hostViewController {
     self = [super init];
     if (self) {

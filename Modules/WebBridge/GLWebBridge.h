@@ -209,6 +209,11 @@ extern NSString *const GLWebBridgeWillOpenModuleNotification;
 /// strong back-reference here would be a retain cycle.
 - (instancetype)initWithHostViewController:(UIViewController *)hostViewController;
 
+/// YES from a voiceStart until its voiceStop/voiceCancel. Reloading the page
+/// in this window strands the recorder: the new page has no `recording`
+/// state, so nothing ever stops or sends the clip.
+@property(nonatomic, readonly) BOOL voiceCaptureActive;
+
 @end
 
 NS_ASSUME_NONNULL_END
