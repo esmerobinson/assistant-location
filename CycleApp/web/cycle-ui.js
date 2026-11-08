@@ -2443,8 +2443,8 @@ function canBack() { return !!(S.session && S.couple && !ui.sheet && (ui.stack.l
   app.addEventListener('touchend', end); app.addEventListener('touchcancel', end);
 })();
 
-// ---- Swipe right on an open to-do of mine to ignore it ---------------------------------------------------------------
-// The row slides right over a pink "Ignore" underlay. On commit it is hidden locally and a toast offers Undo; only when
+// ---- Swipe left on an open to-do of mine to ignore it ---------------------------------------------------------------
+// The row slides left over a pink "Ignore" underlay. On commit it is hidden locally and a toast offers Undo; only when
 // the toast has faded is declined_at written (the box pushes the partner's notification off that column, so an accidental
 // swipe that was undone must never reach Supabase). A second swipe, leaving the screen or hiding the page commits at once.
 var IGNORE_MS = 5000, IGNORE_FADE = 350;
@@ -2477,7 +2477,7 @@ function ignoreRow(id) {
   }, { passive: true });
   app.addEventListener('touchmove', function (e) {
     if (!sw) return;
-    var t = e.touches[0], dx = t.clientX - sw.x, dy = Math.abs(t.clientY - sw.y);
+    var t = e.touches[0], dx = sw.x - t.clientX, dy = Math.abs(t.clientY - sw.y);
     if (!sw.on) {
       if (dy > 10 && dy > Math.abs(dx)) { sw = null; return; } // vertical wins: a scroll
       if (dx < -10) { sw = null; return; }
@@ -2488,14 +2488,14 @@ function ignoreRow(id) {
     e.preventDefault();
     dx = Math.max(0, dx);
     sw.v = (dx - sw.dx) / Math.max(1, e.timeStamp - sw.t); sw.t = e.timeStamp; sw.dx = dx;
-    sw.row.style.transform = 'translateX(' + dx + 'px)';
+    sw.row.style.transform = 'translateX(' + -dx + 'px)';
   }, { passive: false });
   function end(e) {
     var s = sw; sw = null;
     if (!s || !s.on) return;
     var w = s.row.offsetWidth, go = e.type === 'touchend' && (s.dx > w * 0.35 || (s.v > 0.6 && s.dx > 40)), id = s.row.getAttribute('data-todo');
     s.row.style.transition = 'transform .18s ease-out';
-    s.row.style.transform = 'translateX(' + (go ? w : 0) + 'px)';
+    s.row.style.transform = 'translateX(' + (go ? -w : 0) + 'px)';
     setTimeout(function () {
       if (go) { ignoreRow(id); return; }
       s.row.style.transition = s.row.style.transform = ''; s.row.classList.remove('swp');

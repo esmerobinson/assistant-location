@@ -1,4 +1,4 @@
-// Swipe right on an open to-do of mine to ignore it: row hides + undo toast, nothing written until the toast fades,
+// Swipe left on an open to-do of mine to ignore it: row hides + undo toast, nothing written until the toast fades,
 // Undo writes nothing, a vertical drag or a partner's row never swipes. Real app in headless WebKit against seeded
 // localStorage, backend aborted so writes are read from the store's own persistence. Needs GL_WEBKIT_PW / GL_WEBKIT_EXEC.
 // IGNORE_SHOTS=<dir> also writes 390px screenshots.
@@ -33,7 +33,7 @@ function seed(todos) {
   };
 }
 
-describe('swipe right to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_WEBKIT_EXEC' }, () => {
+describe('swipe left to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_WEBKIT_PW and GL_WEBKIT_EXEC' }, () => {
   let browser;
   before(async () => { browser = await pw.webkit.launch({ headless: true, executablePath: process.env.GL_WEBKIT_EXEC }); });
   after(async () => { await browser.close(); });
@@ -75,13 +75,13 @@ describe('swipe right to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_
       for (let i = 1; i <= 8; i++) { if (!fire('touchmove', x0 + dx * i / 8, y0 + dy * i / 8)) prevented = true; await new Promise((r) => setTimeout(r, 16)); }
       if (!hold) { fire('touchend', x0 + dx, y0 + dy); await new Promise((r) => setTimeout(r, 300)); }
       return prevented;
-    }, ['[data-todo="' + id + '"] .tx', box.x + 20, box.y + box.height / 2, dx, dy, hold]);
+    }, ['[data-todo="' + id + '"] .tx', box.x + box.width - 20, box.y + box.height / 2, dx, dy, hold]);
   }
   const hidden = (page, id) => page.$('[data-todo="' + id + '"]').then((e) => !e);
 
   test('swipe hides the row and shows the toast with nothing written; the toast fading writes declined_at exactly once', async () => {
     const { page, context } = await open([td('a', { title: 'Alpha' }), td('b', { title: 'Beta' })]);
-    assert.equal(await drag(page, 'a', 200), true, 'touchmoves are claimed by the swipe');
+    assert.equal(await drag(page, 'a', -200), true, 'touchmoves are claimed by the swipe');
     assert.ok(await hidden(page, 'a'));
     assert.ok(await page.$('[data-todo="b"]'));
     assert.equal(await page.$eval('.ign-toast span', (e) => e.textContent), 'Ignored');
@@ -110,7 +110,7 @@ describe('swipe right to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_
 
   test('Undo brings the row back and writes nothing, even after the toast time passes', async () => {
     const { page, context } = await open([td('a', { title: 'Alpha' })]);
-    await drag(page, 'a', 200);
+    await drag(page, 'a', -200);
     assert.ok(await hidden(page, 'a'));
     await page.click('.ign-toast b');
     await page.waitForSelector('[data-todo="a"]');
@@ -124,9 +124,9 @@ describe('swipe right to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_
 
   test('a second swipe commits the first at once and shows a new toast', async () => {
     const { page, context } = await open([td('a'), td('b')]);
-    await drag(page, 'a', 200);
+    await drag(page, 'a', -200);
     assert.equal(await patches(page, 'a'), 0);
-    await drag(page, 'b', 200);
+    await drag(page, 'b', -200);
     assert.equal(await patches(page, 'a'), 1);
     assert.equal(await patches(page, 'b'), 0);
     assert.equal(await page.$$eval('.ign-toast', (e) => e.length), 1);
@@ -135,7 +135,9 @@ describe('swipe right to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_
 
   test('leaving the screen while pending commits immediately', async () => {
     const { page, context } = await open([td('a'), td('b')]);
-    await drag(page, 'a', 200);
+    await drag(page, 'a', -200);
+    // The ignore starts only after the 180 ms slide-out; under load that can outlast drag()'s 300 ms wait.
+    await page.waitForSelector('.ign-toast');
     assert.equal(await patches(page, 'a'), 0);
     await page.click('[data-a="tview:b"]');
     await page.waitForSelector('.tdd2');
@@ -146,16 +148,20 @@ describe('swipe right to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_
 
   test('a short drag snaps back, a vertical drag does not swipe, a tap still opens the row, partner and closed rows do not swipe', async () => {
     const { page, context } = await open([td('a'), td('p', { owner_id: HER, created_by: ME }), td('z', { done_at: '2026-10-21T10:00:00Z' })]);
-    await drag(page, 'a', 60);
+    await drag(page, 'a', -60);
     assert.equal(await page.$('.ign-toast'), null);
     assert.ok(await page.$('[data-todo="a"]'));
     assert.equal(await page.$eval('[data-todo="a"]', (e) => e.style.transform), '');
+    // Rightward drag: the wrong direction, never claimed and never ignores.
+    assert.equal(await drag(page, 'a', 200), false);
+    assert.equal(await page.$('.ign-toast'), null);
+    assert.ok(await page.$('[data-todo="a"]'));
     // Vertical drag with a little sideways drift: not claimed by the swipe.
-    assert.equal(await drag(page, 'a', 40, 120), false);
+    assert.equal(await drag(page, 'a', -40, 120), false);
     assert.equal(await page.$('.ign-toast'), null);
     assert.equal(await page.$eval('[data-todo="a"]', (e) => e.style.transform), '');
     // Partner's row: no swipe.
-    assert.equal(await drag(page, 'p', 250), false);
+    assert.equal(await drag(page, 'p', -250), false);
     assert.equal(await page.$('.ign-toast'), null);
     assert.ok(await page.$('[data-todo="p"]'));
     // Closed row (Done list) carries no swipe hook.
@@ -170,7 +176,7 @@ describe('swipe right to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_
 
   test('mid-swipe shot', { skip: !SHOTS }, async () => {
     const { page, context } = await open([td('a', { title: 'Take out the trash', due_date: '2026-10-22' }), td('b', { title: 'Call the landlord' }), td('p', { title: 'Book the dentist', owner_id: HER, created_by: ME })]);
-    await drag(page, 'a', 170, 0, true);
+    await drag(page, 'a', -170, 0, true);
     await page.waitForTimeout(100);
     await shot(page, 'midswipe', { x: 0, y: 120, width: 390, height: 360 });
     await context.close();
