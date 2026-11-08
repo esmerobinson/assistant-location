@@ -649,7 +649,12 @@
     <div id="session-confirmation-body"></div>
     <div id="session-ask-skill" class="gl-hidden"></div>
     <div id="session-clarify" class="gl-hidden">
+      <input id="session-clarify-attach-input" type="file" accept="image/*" multiple class="gl-hidden">
+      <div id="session-clarify-thumbs" class="gl-thumb-row"></div>
       <div class="gl-reply-row">
+        <button id="session-clarify-attach-btn" class="gl-icon-btn" type="button" aria-label="Add screenshot">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        </button>
         <button id="session-clarify-record-btn" class="gl-icon-btn" type="button" aria-label="Dictate" aria-pressed="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
@@ -764,6 +769,10 @@
   var clarifySendBtn = document.getElementById('session-clarify-send');
   var clarifyRecordBtn = document.getElementById('session-clarify-record-btn');
   var clarifyStatusEl = document.getElementById('session-clarify-status');
+  var clarifyThumbsEl = document.getElementById('session-clarify-thumbs');
+  var clarifyAttachBtn = document.getElementById('session-clarify-attach-btn');
+  var clarifyAttachInput = document.getElementById('session-clarify-attach-input');
+  var clarifyShots = []; // photos picked for the clarification being composed: {localId, fileName, objectUrl}
   var askSkillEl = document.getElementById('session-ask-skill');
   // Idempotency key of the Start the card describes; a clarification is
   // addressed by it, so it works before the box has even spawned the session.
@@ -1642,6 +1651,7 @@
     var key = voiceClarifyKey;
     var live = clarifyStartKey === key; // the box holds this Start's text only while the card still shows it
     var rec = { localId: randomIdempotencyKey(), startKey: key, voiceId: null, prefix: live ? clarifyTextEl.value.trim() : '', status: 'transcribing', error: null, at: Date.now() };
+    if (live) rec.shots = clarifyShots.map(function (a) { return { localId: a.localId }; }); // photos in the box ride along
     // Durable FIRST: nothing is cleared until the record that can restore it is on disk.
     var all = clarifyLaunches.read();
     all[rec.localId] = rec;
@@ -1649,7 +1659,7 @@
       showError("Couldn't save the clarification on this device, so nothing was sent or cleared.", 'clarify');
       return;
     }
-    if (live) clarifyTextEl.value = '';
+    if (live) { clarifyTextEl.value = ''; takeClarifyShots(); }
     stopVoiceCapture(null, rec.localId, {
       localId: rec.localId,
       store: clarifyLaunches,
@@ -1668,7 +1678,7 @@
     }
     var text = [rec.prefix, transcript].filter(Boolean).join(' ');
     // The record's id is the queue key, so a delivery repeated after a crash here is still one clarification to the box.
-    if (!enqueue(PENDING_CLARIFY_KEY, { key: rec.localId, startKey: rec.startKey, text: text })) {
+    if (!enqueue(PENDING_CLARIFY_KEY, { key: rec.localId, startKey: rec.startKey, text: text, pending: (rec.shots || []).map(function (a) { return { localId: a.localId, id: null }; }) })) {
       failClarifyLaunch(localId, "Couldn't save the clarification on this device, so it was not sent.", voiceId);
       return;
     }
@@ -1688,6 +1698,7 @@
     if (voiceId || rec.voiceId) ackVoice(voiceId || rec.voiceId).catch(function () {});
     if (rec.startKey === clarifyStartKey) {
       clarifyTextEl.value = [rec.prefix, clarifyTextEl.value.trim()].filter(Boolean).join(' ');
+      restoreClarifyShots(rec.shots);
       showClarifyStatus('');
       showError(msg + (rec.prefix ? ' Your clarification is back in the box.' : ''), 'clarify');
     } else {
@@ -3142,16 +3153,68 @@
 
   function sendClarification() {
     var text = clarifyTextEl.value.trim();
-    if (!text || !clarifyStartKey) return;
-    if (!enqueue(PENDING_CLARIFY_KEY, { key: randomIdempotencyKey(), startKey: clarifyStartKey, text: text })) {
-      showError("Couldn't save the clarification on this device, so it was not sent.", 'clarify');
-      return;
-    }
-    clarifyTextEl.value = '';
-    showClarifyStatus('Sending clarification…');
-    rerenderRecent();
-    flushClarifications();
+    var shots = clarifyShots.slice();
+    if ((!text && !shots.length) || !clarifyStartKey) return;
+    // The blobs must be on disk before the queued clarification can refer to them.
+    Promise.all(shots.map(function (a) { return storedWrites[a.localId]; })).then(function () {
+      if (!enqueue(PENDING_CLARIFY_KEY, { key: randomIdempotencyKey(), startKey: clarifyStartKey, text: text, pending: shots.map(function (a) { return { localId: a.localId, id: null }; }) })) {
+        showError("Couldn't save the clarification on this device, so it was not sent.", 'clarify');
+        return;
+      }
+      clarifyTextEl.value = '';
+      takeClarifyShots();
+      showClarifyStatus('Sending clarification…');
+      rerenderRecent();
+      flushClarifications();
+    }, function () {
+      showError("Couldn't keep the screenshot on this device, so the clarification was not sent.", 'clarify');
+    });
   }
+
+  function renderClarifyThumbs() {
+    paintShotThumbs(clarifyThumbsEl, clarifyShots, removeClarifyShot);
+    clarifyAttachBtn.disabled = clarifyShots.length >= MAX_ATTACHMENTS;
+  }
+
+  /** Empties the box's photos (their blobs now belong to a queued clarification) and returns them. */
+  function takeClarifyShots() {
+    var shots = clarifyShots;
+    clarifyShots = [];
+    shots.forEach(function (a) { if (a.objectUrl) { try { URL.revokeObjectURL(a.objectUrl); } catch (e) { /* ignore */ } } });
+    renderClarifyThumbs();
+    return shots;
+  }
+
+  function removeClarifyShot(localId) {
+    var idx = clarifyShots.findIndex(function (a) { return a.localId === localId; });
+    if (idx === -1) return;
+    var entry = clarifyShots.splice(idx, 1)[0];
+    if (entry.objectUrl) { try { URL.revokeObjectURL(entry.objectUrl); } catch (e) { /* ignore */ } }
+    idbLoud(idbDelete(localId));
+    renderClarifyThumbs();
+  }
+
+  /** Puts photos whose blobs are still in IndexedDB back in the box. */
+  function restoreClarifyShots(pending) {
+    (pending || []).forEach(function (p) { clarifyShots.push({ localId: p.localId, fileName: 'screenshot', objectUrl: null }); });
+    renderClarifyThumbs();
+  }
+
+  clarifyAttachBtn.addEventListener('click', function () { clarifyAttachInput.click(); });
+  clarifyAttachInput.addEventListener('change', function () {
+    var files = Array.prototype.slice.call(clarifyAttachInput.files || []);
+    clarifyAttachInput.value = ''; // so picking the SAME file again still fires 'change'
+    var toAdd = files.slice(0, Math.max(MAX_ATTACHMENTS - clarifyShots.length, 0));
+    toAdd.forEach(function (file) {
+      var entry = { localId: 'local-' + randomIdempotencyKey(), fileName: file.name, objectUrl: null };
+      try { entry.objectUrl = URL.createObjectURL(file); } catch (e) { /* preview is best-effort only */ }
+      clarifyShots.push(entry);
+      storedWrites[entry.localId] = idbPut(entry.localId, file);
+      idbLoud(storedWrites[entry.localId]);
+    });
+    renderClarifyThumbs();
+    if (files.length > toAdd.length) showError('Up to ' + MAX_ATTACHMENTS + ' screenshots — ' + (files.length - toAdd.length) + ' skipped.', 'clarify');
+  });
 
   var flushingClarifications = false;
   function flushClarifications() {
@@ -3160,18 +3223,26 @@
     var item = readQueue(PENDING_CLARIFY_KEY).filter(function (c) { return startsQueued.indexOf(c.startKey) === -1; })[0];
     if (!item) return;
     flushingClarifications = true;
-    postJson('/sessions/clarify', { startKey: item.startKey, text: item.text, idempotencyKey: item.key }, SPAWN_TIMEOUT_MS).then(function (result) {
+    uploadQueuedAttachments(item, PENDING_CLARIFY_KEY).then(function (up) {
+      if (!up.ok) return up;
+      var ids = (item.pending || []).map(function (p) { return p.id; });
+      return postJson('/sessions/clarify', { startKey: item.startKey, text: item.text, idempotencyKey: item.key, attachments: ids.length ? ids : undefined }, SPAWN_TIMEOUT_MS);
+    }).then(function (result) {
       dequeue(PENDING_CLARIFY_KEY, item.key);
       flushingClarifications = false;
       var mine = item.startKey === clarifyStartKey;
       if (result.ok) {
         clearError('clarify');
+        (item.pending || []).forEach(function (p) { idbLoud(idbDelete(p.localId)); });
         if (mine) showClarifyStatus('Clarification sent' + (result.json && result.json.delivered === 'live' ? ' into the running session.' : '.'));
       } else {
         var msg = (result.json && result.json.error) || ('HTTP ' + result.status);
         if (mine) {
           clarifyTextEl.value = [item.text, clarifyTextEl.value.trim()].filter(Boolean).join('\n\n');
+          restoreClarifyShots(item.pending); // blobs stay for the next send
           showClarifyStatus('');
+        } else {
+          (item.pending || []).forEach(function (p) { idbLoud(idbDelete(p.localId)); });
         }
         showError("Couldn't send the clarification: " + msg, 'clarify');
       }
@@ -3944,9 +4015,9 @@
 
   var SHOT_ONLY_TEXT = 'See the attached screenshot(s).'; // what the box records for a reply with no text
 
-  function renderReplyThumbs() {
-    detailThumbsEl.innerHTML = '';
-    var list = detail ? detail.attachments : [];
+  /** Paints removable thumbnails for `list` into `rowEl`; the x calls onRemove(localId). */
+  function paintShotThumbs(rowEl, list, onRemove) {
+    rowEl.innerHTML = '';
     list.forEach(function (entry) {
       var wrap = document.createElement('div');
       wrap.className = 'gl-thumb done';
@@ -3972,10 +4043,14 @@
       glyph.className = 'gl-thumb-remove-glyph';
       glyph.textContent = '\u00d7';
       removeBtn.appendChild(glyph);
-      removeBtn.addEventListener('click', function () { removeReplyAttachment(entry.localId); });
+      removeBtn.addEventListener('click', function () { onRemove(entry.localId); });
       wrap.appendChild(removeBtn);
-      detailThumbsEl.appendChild(wrap);
+      rowEl.appendChild(wrap);
     });
+  }
+
+  function renderReplyThumbs() {
+    paintShotThumbs(detailThumbsEl, detail ? detail.attachments : [], removeReplyAttachment);
     if (detail) updateComposer();
   }
 

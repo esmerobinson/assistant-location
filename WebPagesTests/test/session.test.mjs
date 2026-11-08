@@ -3394,6 +3394,32 @@ test('clarify: an offline clarification stays in localStorage and is replayed (s
   await context.close();
 });
 
+test('clarify: a picked photo is uploaded and its id rides in /sessions/clarify attachments; a photo-only send (no text) works', async () => {
+  const { context, page } = await startPageWithStartRoute((route) => OK_START(route));
+  const uploads = [];
+  await routeUpload(context, uploads);
+  const bodies = await routeClarify(context, (route) => OK_JSON(route, 200, { delivered: 'live' }));
+  await pressStart(page, 'photo clarify');
+  await page.waitForFunction(() => /made it/.test(document.getElementById('session-confirmation-body').textContent));
+  await page.setInputFiles('#session-clarify-attach-input', [fakeImage('clar1.png')]);
+  assert.equal(await page.locator('#session-clarify-thumbs .gl-thumb').count(), 1);
+  await page.fill('#session-clarify-text', 'see this');
+  await page.click('#session-clarify-send');
+  await waitFor(() => bodies.length === 1, 'the clarification with a photo');
+  assert.equal(bodies[0].text, 'see this');
+  assert.deepEqual(bodies[0].attachments, [idForBuffer(fakeImage('clar1.png').buffer)]);
+  assert.equal(uploads.length, 1);
+  assert.equal(await page.locator('#session-clarify-thumbs .gl-thumb').count(), 0, 'box cleared after send');
+  await drained(page, CLARIFY_QUEUE);
+  // photo only
+  await page.setInputFiles('#session-clarify-attach-input', [fakeImage('clar2.png')]);
+  await page.click('#session-clarify-send');
+  await waitFor(() => bodies.length === 2, 'the photo-only clarification');
+  assert.equal(bodies[1].text, '');
+  assert.deepEqual(bodies[1].attachments, [idForBuffer(fakeImage('clar2.png').buffer)]);
+  await context.close();
+});
+
 test('clarify: a 4xx puts the text back in the box, shows the error, and is not retried', async () => {
   const { context, page } = await startPageWithStartRoute((route) => OK_START(route));
   const bodies = await routeClarify(context, (route) => OK_JSON(route, 400, { error: 'session already finished' }));
@@ -4290,6 +4316,19 @@ test('clarify mic: tap-tap SENDS typed + transcript to that Start; box clears at
   assert.equal(await page.inputValue('#session-prompt'), '');
   await page.waitForFunction(() => /Clarification sent into the running session/.test(document.getElementById('session-clarify-status').textContent));
   await page.waitForFunction((k) => localStorage.getItem(k) === null, CLARIFY_LAUNCHES);
+  await context.close();
+});
+
+test('clarify mic: tap-tap also carries the photos in the clarify box (uploaded id in attachments)', async () => {
+  const { context, page, bodies } = await startedClarifyPage();
+  await routeUpload(context, []);
+  await page.setInputFiles('#session-clarify-attach-input', [fakeImage('voicepic.png')]);
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  assert.equal(await page.locator('#session-clarify-thumbs .gl-thumb').count(), 0, 'photos leave the box with the voice send');
+  await waitFor(() => bodies.length === 1, 'the voice clarification');
+  assert.equal(bodies[0].text, 'a fake voice transcript');
+  assert.deepEqual(bodies[0].attachments, [idForBuffer(fakeImage('voicepic.png').buffer)]);
   await context.close();
 });
 
