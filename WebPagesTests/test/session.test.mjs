@@ -4737,3 +4737,31 @@ test('busy mic: clarify mic spins while its clip is transcribed', async () => {
   await assertBusyUntilReply(page, '#session-clarify-record-btn');
   await context.close();
 });
+
+// The share-sheet "Voice chat" path is only slow on the phone, often offline,
+// where a live /debug-log line can't reach the box -- so the timing line must
+// wait in localStorage and go out once the box answers.
+test('a native startVoiceMode logs its timing to /debug-log, queued while the box is unreachable', async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(buildMockBridgeScript(baseConfig()));
+  await routeProjects(context);
+  await routeRecent(context);
+  const sent = [];
+  let reachable = false;
+  await context.route(`${API_BASE}/debug-log*`, (route) => {
+    if (!reachable) return route.abort();
+    sent.push(new URL(route.request().url()).searchParams.get('msg'));
+    return route.fulfill({ status: 204 });
+  });
+  const page = await newSessionPage(context);
+  await page.evaluate(() => window.startVoiceMode());
+  await page.waitForSelector('#session-record-btn.recording');
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('gl-session-voice-timing-v1') || '[]').length === 1);
+  assert.equal(sent.length, 0);
+  reachable = true;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForFunction(() => (localStorage.getItem('gl-session-voice-timing-v1') || '[]') === '[]');
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /^session-voice: \S+ page age at startVoiceMode \d+ms, page \d+ms, native voiceStart \d+ms, online=\w+, attachments=\d+$/);
+  await context.close();
+});

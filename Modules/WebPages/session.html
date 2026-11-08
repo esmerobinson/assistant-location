@@ -1507,7 +1507,16 @@
     // Not red until native has actually started the recorder (its reply).
     starting = true;
     setVoiceStatus('Starting mic…', voiceTarget);
+    var voiceStartPostedAt = performance.now();
+    var fromNative = voiceModeCalledAt;
+    voiceModeCalledAt = null;
     GLBridge.call('voiceStart', {}, { timeoutMs: VOICE_START_TIMEOUT_MS }).then(function () {
+      if (fromNative !== null) {
+        logVoiceTiming('page age at startVoiceMode ' + Math.round(fromNative) + 'ms, page ' +
+          Math.round(voiceStartPostedAt - fromNative) + 'ms, native voiceStart ' +
+          Math.round(performance.now() - voiceStartPostedAt) + 'ms, online=' + navigator.onLine +
+          ', attachments=' + attachments.length);
+      }
       starting = false;
       setRecordingUI(true, 'Speak now');
     }, function (err) {
@@ -2173,8 +2182,41 @@
   // /text pick a mode after the page has already loaded, cold or warm
   // launch alike.
   window.startVoiceMode = function () {
+    voiceModeCalledAt = performance.now();
     startVoiceCapture();
   };
+
+  // Native-launched voice (share sheet, lock-screen Control) timing: how long
+  // the page had been alive when native asked for voice, and how long native
+  // took to get the mic live. Queued in localStorage so an offline launch still
+  // reports once the box is reachable (lines show in assistant-location's log).
+  var voiceModeCalledAt = null;
+  var VOICE_TIMING_KEY = 'gl-session-voice-timing-v1';
+  function readVoiceTiming() {
+    try { return JSON.parse(localStorage.getItem(VOICE_TIMING_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function logVoiceTiming(line) {
+    var q = readVoiceTiming();
+    q.push(new Date().toISOString() + ' ' + line);
+    try { localStorage.setItem(VOICE_TIMING_KEY, JSON.stringify(q.slice(-20))); } catch (e) { /* storage full: this line is lost */ }
+    flushVoiceTiming();
+  }
+  var voiceTimingFlushing = false;
+  function flushVoiceTiming() {
+    var q = readVoiceTiming();
+    if (!q.length || voiceTimingFlushing || !apiBase()) return;
+    voiceTimingFlushing = true;
+    fetch(apiBase() + '/debug-log?msg=' + encodeURIComponent('session-voice: ' + q[0])).then(function (res) {
+      voiceTimingFlushing = false;
+      if (!res.ok) return;
+      var rest = readVoiceTiming();
+      if (rest[0] === q[0]) rest.shift();
+      try { localStorage.setItem(VOICE_TIMING_KEY, JSON.stringify(rest)); } catch (e) { /* retried next flush */ }
+      flushVoiceTiming();
+    }, function () { voiceTimingFlushing = false; });
+  }
+  flushVoiceTiming();
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) flushVoiceTiming(); });
   window.focusTextMode = function () {
     promptEl.focus();
   };
