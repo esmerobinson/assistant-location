@@ -563,6 +563,12 @@ function hitFields(d, esme) {
     (d.hit === 'yes' ? '<div class="frow"><span class="lab0">How many times?</span><div class="stp"><span data-a="hitn:-1"><svg class="ic sm"><path d="M6 12h12"/></svg></span><b>' + (d.hitN === 0.5 ? '.5' : d.hitN || 1) + '</b><span data-a="hitn:1">' + ic('plus', 'sm') + '</span></div></div>' : '') +
     (d.hit === 'yes' ? '<div class="ck' + (d.hitNot ? ' on' : '') + '" data-a="hitnot"><i></i><span>Click here if it was not related to ' + (esme ? pn() : 'you') + '</span></div>' : '');
 }
+// "Also over text": the box summarizer reads the couple's WhatsApp around the fight; the optional note says which chats and what matters.
+// Shared by Log a fight and the edit sheet (ui.d.textOn, ui.d.tnote).
+function textFields(d) {
+  return '<section><div class="ck' + (d.textOn ? ' on' : '') + '" data-a="texton"><i></i><span>Also over text</span></div>' +
+    (d.textOn ? '<p class="lab">About the texts <span class="opt">Optional</span></p>' + micTa('tnote', 'nt') : '') + '</section>';
+}
 SCREEN.fight = function () {
   var d = ui.d, i = d.int || 3, chips = d.chips || {}, esme = St.myMember().hits_self;
   return phone('p2 s2', '<header class="hd"><div><h2>Log a fight</h2></div><span class="txtbtn" data-a="back">Cancel</span></header>' +
@@ -570,6 +576,7 @@ SCREEN.fight = function () {
     // Esme is the one who may hit herself, so her questions are in the first person; the flag lives on her member row.
     '<section>' + hitFields(d, esme) + '</section>' +
     '<section><p class="lab">What happened' + talkLink('note') + '</p>' + micTa('note', 'nt') + whenRow('when') + '</section>' +
+    textFields(d) +
     '<section><p class="lab">Ask ' + pn() + ' to</p><div class="tdc">' + [['apologize', 'Apologize'], ['reflect', 'Reflect'], ['custom', 'Custom']].map(function (c) { return '<span class="chip' + (chips[c[0]] ? ' on' : '') + '" data-a="chip:' + c[0] + '">' + c[1] + '</span>'; }).join('') + '</div>' +
     (chips.custom ? '<p class="lab">Title</p>' + inp('customTitle') : '') + '</section>' +
     '<div class="save" data-a="fightsave">Save</div>', { band: false });
@@ -591,7 +598,7 @@ function fmtStamp(iso) { return new Date(iso).toLocaleString(); }
 // A fight's shared facts as chips: what the logger answered about a hit, and whether it was repaired.
 function fightChips(mk) {
   var hit = C.hitText(mk, mk.logged_by === St.me() ? 'me' : nameOf(mk.logged_by));
-  return (hit ? '<span class="rc">' + esc(hit) + '</span>' : '') + (mk.repaired_at ? '<span class="rc d">Repaired</span>' : '') +
+  return (hit ? '<span class="rc">' + esc(hit) + '</span>' : '') + (mk.text_on ? '<span class="rc">Over text</span>' : '') + (mk.repaired_at ? '<span class="rc d">Repaired</span>' : '') +
     (mk.delete_requested_at ? '<span class="rc">Delete requested</span>' : mk.delete_declined_at ? '<span class="rc">Delete declined</span>' : '');
 }
 // The viewer's own intensity for a fight: their fight_ratings row, else (a fight rated before ratings were shared and not yet
@@ -666,6 +673,9 @@ SCREEN.fightdetail = function () {
   } else if (hasBeats) {
     story = '<section><p class="lab">Summary <span class="lnk" data-a="sumshow">Show</span></p></section>';
   }
+  // The box's clarifying question goes to the logger only; once its answer is in text_note the question is spent.
+  var asked = mk.text_on && mk.text_question && me && fightEditable(mk) && (mk.text_note || '').indexOf('Q: ' + mk.text_question + '\nA: ') < 0;
+  var qHtml = asked ? '<section><p class="lab">Question</p><p class="ask">' + esc(mk.text_question) + '</p>' + micTa('qans', 'nt') + '<div class="save" data-a="qsave">Save</div></section>' : '';
   var gapHtml = gap ? '<section class="fgap"><p class="lab">Missing</p><p>' + esc(gap) + '</p></section>' : '';
   var collapsed = hasBeats && !hidden, open = ui.notesOpen === mk.id;
   var notesHtml = !list ? '' : collapsed
@@ -680,7 +690,7 @@ SCREEN.fightdetail = function () {
   var sh = '';
   if (ui.sheet && ui.sheet.type === 'fightedit' && fightEditable(mk)) {
     sh = sheet('t3', '<div class="bsh"><h3>Edit</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Intensity</p><div class="arrows">' + intensityArrows(ui.d.int || 3) + '</div><div class="ends"><span>Low</span><span>High</span></div>' +
-      hitFields(ui.d, St.myMember().hits_self) + whenRow('ew') + '<div class="acts"><div class="save" data-a="fighteditsave">Save</div></div>');
+      hitFields(ui.d, St.myMember().hits_self) + whenRow('ew') + textFields(ui.d) + '<div class="acts"><div class="save" data-a="fighteditsave">Save</div></div>');
   } else if (ui.sheet && ui.sheet.type === 'notedit' && S.rows.fight_notes[ui.sheet.id] && !S.rows.fight_notes[ui.sheet.id].deleted_at) {
     sh = sheet('t3', '<div class="bsh"><h3>Edit note</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div>' + micTa('nedit', 'nt') + '<div class="acts"><div class="save" data-a="noteditsave">Save</div></div>');
   } else if (ui.sheet && ui.sheet.type === 'notedel' && S.rows.fight_notes[ui.sheet.id] && !S.rows.fight_notes[ui.sheet.id].deleted_at) {
@@ -694,7 +704,7 @@ SCREEN.fightdetail = function () {
   return phone('p2 fd', '<header class="hd"><div>' + hdBack(backLabel()) + '<h2>Fight</h2><p class="dl">' + noteStamp(C.ms(mk.at)) + '</p></div>' + edit + '</header>' +
     intensityPicker(myRating(mk), 'fightint') +
     (chips ? '<section class="meta2"><div class="rcs">' + chips + '</div></section>' : '') +
-    story + gapHtml + notesHtml +
+    story + gapHtml + qHtml + notesHtml +
     '<section><p class="lab">' + (!me && !mine ? 'Add your version' : 'Add more') + (nkind === 'note' ? talkLink('more') : '') + '</p>' + seg([['note', 'Note'], ['analysis', 'Analysis']], nkind, 'fnkind', 'ty') + micTa('more', 'nt') + linkRow + whenRow('mw', noteDef(mk, nkind)) + '</section>' +
     // Save shows only once the note box has text: pinned to the screen bottom, it covered the summary while Oliver read it
     // (2026-11-03), and with no text it only went back. The input handler toggles `hidden` as he types (a re-render would drop the keyboard).
@@ -1748,7 +1758,8 @@ function logFight() {
     // hit_related is false only when the "not related" box is checked after a Yes (the DB rejects it otherwise), else null.
     hit_self: ynVal(d.hit), hit_related: d.hit === 'yes' && d.hitNot ? false : null,
     // How many times, >= 1 after a Yes; null otherwise (the DB rejects any other combination).
-    hit_count: d.hit === 'yes' ? d.hitN || 1 : null };
+    hit_count: d.hit === 'yes' ? d.hitN || 1 : null,
+    text_on: !!d.textOn, text_note: d.textOn && (d.tnote || '').trim() ? d.tnote.trim() : null };
   // The first note is shared immediately and deliberately skips the hold; only the asks wait.
   var noteRow = note ? { id: St.uuid(), couple_id: S.couple.id, fight_marker_id: id, author_id: St.me(), body: note, created_at: new Date(at).toISOString() } : null;
   var asks = [['apologize', 'Apologize'], ['reflect', 'Reflect'], ['custom', (d.customTitle || '').trim()]].filter(function (c) { return chips[c[0]] && c[1]; })
@@ -1930,7 +1941,7 @@ var ACT = {
     if (!mk || !fightEditable(mk)) throw new Error('Fight is not editable');
     var at = C.ms(mk.at);
     ui.sheet = { type: 'fightedit' };
-    ui.d = { int: myRating(mk) || 3, hit: mk.hit_self === true ? 'yes' : mk.hit_self === false ? 'no' : null, hitN: mk.hit_count || 1, hitNot: mk.hit_related === false,
+    ui.d = { int: myRating(mk) || 3, hit: mk.hit_self === true ? 'yes' : mk.hit_self === false ? 'no' : null, hitN: mk.hit_count || 1, hitNot: mk.hit_related === false, textOn: !!mk.text_on, tnote: mk.text_note || '',
       ewD: C.localDay(at, tz()), ewT: hmOf(at) };
     render();
   }),
@@ -1941,6 +1952,9 @@ var ACT = {
     var at = whenMs('ew'), f = { hit_self: ynVal(d.hit), hit_related: d.hit === 'yes' && d.hitNot ? false : null, hit_count: d.hit === 'yes' ? d.hitN || 1 : null }, ch = {};
     Object.keys(f).forEach(function (k) { if ((mk[k] == null ? null : mk[k]) !== f[k]) ch[k] = f[k]; });
     if (at !== C.ms(mk.at)) ch.at = new Date(at).toISOString();
+    // Unticking keeps the written context, so ticking again brings it back.
+    if (!!d.textOn !== !!mk.text_on) ch.text_on = !!d.textOn;
+    if (d.textOn && ((d.tnote || '').trim() || null) !== (mk.text_note || null)) ch.text_note = (d.tnote || '').trim() || null;
     // The marker patch carries only the marker's own fields; intensity goes through my fight_ratings row.
     if (Object.keys(ch).length) St.patch('fight_markers', mk.id, ch);
     var rec = ownFight(mk);
@@ -2128,6 +2142,15 @@ var ACT = {
   // Steps .5, 1, 2, 3...; .5 is a light hit.
   hitn: function (a) { var n = ui.d.hitN || 1; ui.d.hitN = n === 0.5 ? (+a > 0 ? 1 : 0.5) : n === 1 && +a < 0 ? 0.5 : n + +a; render(); },
   hitnot: function () { ui.d.hitNot = !ui.d.hitNot; render(); },
+  texton: function () { ui.d.textOn = !ui.d.textOn; render(); },
+  // The logger's answer to the box's question is appended to the context; the box re-runs the summary when it sees the change.
+  qsave: guard(function () {
+    var mk = S.rows.fight_markers[ui.fightId], a = (ui.d.qans || '').trim();
+    if (!mk || !mk.text_question || !fightEditable(mk)) throw new Error('No question to answer');
+    if (!a) return;
+    St.patch('fight_markers', mk.id, { text_note: (mk.text_note ? mk.text_note + '\n\n' : '') + 'Q: ' + mk.text_question + '\nA: ' + a });
+    draftSent(); ui.d.qans = ''; render();
+  }),
   chip: function (c) { ui.d.chips = ui.d.chips || {}; ui.d.chips[c] = !ui.d.chips[c]; render(); },
   fightsave: guard(function () { logFight(); }),
   notesave: guard(saveNote),
