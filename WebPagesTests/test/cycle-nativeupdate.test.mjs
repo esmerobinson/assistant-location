@@ -81,8 +81,9 @@ describe('webkit', { skip: !haveWebkit }, () => {
 
   test('Install asks the box for the install page url and opens it through the bridge', async () => {
     const { context, page } = await open({ info: { shell: 3, native: 100 }, manifest: { version: 1, native: 200 } });
-    await page.click('[data-a="upd"]');
-    await page.waitForFunction(() => window.__calls.some((x) => x.cmd === 'app.openURL'));
+    // Taps the label, not the pill: the whole bar is the target (a 32px pill alone is under the 44px minimum).
+    await page.click('.updbar > span:first-child');
+    await page.waitForFunction(() => window.__calls.some((x) => x.cmd === 'app.openURL'), null, { timeout: 3000 });
     assert.deepEqual(await page.evaluate(() => window.__calls.filter((x) => x.cmd === 'app.openURL').map((x) => x.args)), [{ url: 'https://box.test/cycle/get/tok/' }]);
     assert.ok(await bar(page), 'the bar stays until the app is updated');
     await context.close();

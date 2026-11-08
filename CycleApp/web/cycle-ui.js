@@ -196,7 +196,7 @@ function phone(cls, inner, o) {
   var err = shown || (dl ? dl + (dl === 1 ? ' change' : ' changes') + ' not sent' : null), dlBar = !shown && dl;
   var off = !navigator.onLine || (S.outbox && S.outbox.length) ? '<span class="off' + (o.band === false ? ' nb' : '') + '">Offline</span>' : '';
   return '<div class="phone ' + cls + (o.tab === false ? ' nt' : '') + '"><div class="scr">' + band + off + '<div class="status"></div><main>' + inner + '</main></div>' + (o.pin || '') +
-    (o.tab === false ? '' : tabbar(tabFor(ui.route))) + (o.sheet || '') + (ui.upd ? '<div class="updbar"><span>New version</span><span class="ubtn" data-a="upd">Install</span></div>' : '') + (err ? '<div class="errbar' + (o.sheet ? ' top' : '') + '" role="alert"' + (dlBar ? ' data-a="deadletters"' : '') + '>' + esc(err) + '</div>' : '') + '</div>';
+    (o.tab === false ? '' : tabbar(tabFor(ui.route))) + (o.sheet || '') + (ui.upd ? '<div class="updbar" data-a="upd"><span>New version</span><span class="ubtn">Install</span></div>' : '') + (err ? '<div class="errbar' + (o.sheet ? ' top' : '') + '" role="alert"' + (dlBar ? ' data-a="deadletters"' : '') + '>' + esc(err) + '</div>' : '') + '</div>';
 }
 function tabbar(active) {
   // Badge: open to-dos the partner created for me (what an Ask turns into).
