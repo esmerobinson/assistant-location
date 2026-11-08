@@ -66,6 +66,12 @@ embedded in Quotes.app, with its own ad-hoc profile registered by the `quotes_ad
 widget share the quotes data through the keychain group
 `com.oliverullman.assistantlocation.quotes` (name kept so older data survives). The Superapp and
 JournalControl contain no Quotes code or entitlement.
+Subway times live in the JournalControl widget extension (`JournalControl/SubwayWidget.swift`: home-screen widget plus
+the Live Activity UI) and `JournalControl/SubwayShared.swift`, compiled into both the extension and the Superapp
+(a `LiveActivityStartingIntent` runs in the app process). The server side is `location-server/lib/subway.mjs`
+(`GET /subway/nearby`, `POST /subway/activity`, a 20s APNs push loop that runs only while an activity is registered).
+`ota.yml` bakes the host and token into `SubwayShared.swift` with sed. `NSSupportsLiveActivities*` is in `App/Info.plist`,
+`NSWidgetWantsLocation` in `JournalControl/Info.plist` (checked by `SharedTests/SubwayInfoPlistTests.m`).
 Marketplace is also standalone (`com.oliverullman.marketplace`, `MarketplaceApp/`,
 `scripts/add_marketplace_app.rb`, `ota-marketplace.yml`, lane `marketplace_adhoc`): one
 full-screen WKWebView hosting the bundled `Modules/WebPages/questions.html` (plus `page.css`,

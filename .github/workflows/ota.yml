@@ -120,6 +120,12 @@ jobs:
           grep -q NO_HOST_BAKED_IN JournalControl/JournalDebug.swift \
             && { echo "debug host placeholder survived the bake"; exit 1; } || true
 
+          # Subway widget/Live Activity client (JournalControl/SubwayShared.swift): same host, same shared token.
+          sed -i '' "s/^private let subwayHost = .*/private let subwayHost = \"$DROP_HOST\"/" JournalControl/SubwayShared.swift
+          sed -i '' "s/^private let subwayToken = .*/private let subwayToken = \"$DROP_TOKEN\"/" JournalControl/SubwayShared.swift
+          grep -q BAKED_IN JournalControl/SubwayShared.swift \
+            && { echo "subway placeholder survived the bake"; exit 1; } || true
+
           # Guard: a build that silently kept a placeholder would ship an app
           # that 401s forever (token) or can't resolve a host (host), which is
           # exactly the bug this replaced.

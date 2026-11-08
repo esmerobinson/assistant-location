@@ -32,6 +32,11 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<!-- Subway widget reads a one-shot location; borrows the app's authorization. -->
+	<key>NSWidgetWantsLocation</key>
+	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Finds the nearest subway station.</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>

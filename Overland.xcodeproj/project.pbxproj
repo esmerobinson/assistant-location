@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6708B6CC16544035F6E9D126 /* SubwayShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C5DF014B6944C007657B01 /* SubwayShared.swift */; };
+		CB7CA5FC7A36CCB5805088E5 /* SubwayWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55219593C3B0D1C421C1B219 /* SubwayWidget.swift */; };
+		E500E76CD1FB7767D22305BD /* SubwayShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C5DF014B6944C007657B01 /* SubwayShared.swift */; };
 		01656A7139741925E53416F8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9AAA4C27E2C30D0CC9906742 /* Assets.xcassets */; };
 		01745689886E5896C84307D5 /* VoiceToDesktop.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D3402F5F3C817C2253C97EE0 /* VoiceToDesktop.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		07809E65B90BEA5D4421C019 /* GLFormat.m in Sources */ = {isa = PBXBuildFile; fileRef = 557A0353C5AA4C08AD032BC4 /* GLFormat.m */; };
@@ -238,6 +241,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		55219593C3B0D1C421C1B219 /* SubwayWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubwayWidget.swift; path = JournalControl/SubwayWidget.swift; sourceTree = "<group>"; };
+		F0C5DF014B6944C007657B01 /* SubwayShared.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubwayShared.swift; path = JournalControl/SubwayShared.swift; sourceTree = "<group>"; };
 		00AC709BF0BE0004768193D4 /* QuotesAppDelegate.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = QuotesAppDelegate.m; path = QuotesApp/QuotesAppDelegate.m; sourceTree = "<group>"; };
 		01702F6755566F66715FE7C3 /* ListenVoiceListener.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ListenVoiceListener.h; path = ListenApp/ListenVoiceListener.h; sourceTree = "<group>"; };
 		0203D4801700D82D09FF6817 /* ListenViewController.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ListenViewController.h; path = ListenApp/ListenViewController.h; sourceTree = "<group>"; };
@@ -962,6 +967,8 @@
 				229AAEA2CB7EDD309E3673F4 /* JournalIntent.swift */,
 				5563403DED47F478977BA796 /* SessionIntent.swift */,
 				229AAEA3CB7EDD309E3673F5 /* JournalDebug.swift */,
+				F0C5DF014B6944C007657B01 /* SubwayShared.swift */,
+				55219593C3B0D1C421C1B219 /* SubwayWidget.swift */,
 			);
 			name = JournalControl;
 			sourceTree = SOURCE_ROOT;
@@ -1528,6 +1535,7 @@
 				0FFD31571BAB7A34009B3A03 /* main.m in Sources */,
 				E49249CA108D62D4E6FD43C9 /* JournalIntent.swift in Sources */,
 				D87810F990130FDA4B3BBFB5 /* SessionIntent.swift in Sources */,
+				E500E76CD1FB7767D22305BD /* SubwayShared.swift in Sources */,
 				E49249CB108D62D4E6FD43CA /* JournalDebug.swift in Sources */,
 				D618818CA034328D7CCE98C6 /* GLTheme.m in Sources */,
 				DE5ACE3F134704D9B649A424 /* GLWebModuleViewController.m in Sources */,
@@ -1645,6 +1653,8 @@
 				B28B88CC1491DC1FAAA222AA /* JournalIntent.swift in Sources */,
 				DE3A0C61B1CB8BB841395E63 /* SessionIntent.swift in Sources */,
 				B28B88CD1491DC1FAAA222AB /* JournalDebug.swift in Sources */,
+				6708B6CC16544035F6E9D126 /* SubwayShared.swift in Sources */,
+				CB7CA5FC7A36CCB5805088E5 /* SubwayWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

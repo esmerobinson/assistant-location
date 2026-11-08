@@ -103,5 +103,7 @@ struct JournalControlBundle: WidgetBundle {
         JournalVoiceLockScreenWidget()
         AddTodoLockScreenWidget()
         NewSessionLockScreenWidget()
+        SubwayWidget()
+        SubwayLiveActivity()
     }
 }
