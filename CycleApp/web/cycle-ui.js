@@ -675,7 +675,7 @@ SCREEN.fightdetail = function () {
   }
   // The box's clarifying question goes to the logger only; once its answer is in text_note the question is spent.
   var asked = mk.text_on && mk.text_question && me && fightEditable(mk) && (mk.text_note || '').indexOf('Q: ' + mk.text_question + '\nA: ') < 0;
-  var qHtml = asked ? '<section><p class="lab">Question</p><p class="ask">' + esc(mk.text_question) + '</p>' + micTa('qans', 'nt') + '<div class="save" data-a="qsave">Save</div></section>' : '';
+  var qHtml = asked ? '<section><p class="lab">Question</p><p style="margin-bottom:12px">' + esc(mk.text_question) + '</p>' + micTa('qans', 'nt') + '<div class="save" data-a="qsave">Save</div></section>' : '';
   var gapHtml = gap ? '<section class="fgap"><p class="lab">Missing</p><p>' + esc(gap) + '</p></section>' : '';
   var collapsed = hasBeats && !hidden, open = ui.notesOpen === mk.id;
   var notesHtml = !list ? '' : collapsed
