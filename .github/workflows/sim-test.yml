@@ -285,6 +285,10 @@ jobs:
           # app inactive -- run 34774549657's more-dusk shots showed it still
           # up and the palette-keys read never ran.
           xcrun simctl privacy "$SIM_UDID" grant microphone "$BUNDLE_ID"
+          # Photos too: the Journal page asks for library access on load, and the
+          # unanswered alert covered every later deep-link launch (Outfits and
+          # Clips reports came back empty, runs 42432145435..42506098353).
+          xcrun simctl privacy "$SIM_UDID" grant photos "$BUNDLE_ID"
           # Esme's daily-reminder scheduling (EsmeModule.m) requests
           # UNUserNotificationCenter authorization on first launch, which pops
           # a system alert. Nothing in this run taps it, so without a
