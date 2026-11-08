@@ -317,11 +317,14 @@ var CycleStore = (function () {
     if (cur) S.cursors[t] = max;
   }
   async function pull() {
-    var c = await api('GET', 'couples?select=*');
-    S.couple = c[0] || null;
-    S.members = await api('GET', 'members?select=*');
+    // Parallel, not one by one: 19 tables at ~100-200 ms each made a first load from the Mac take 5-10 s (2026-11-07).
+    // Safe because each pullTable writes only its own S.rows[t]/S.cursors[t], and sync() is single-flight, so the outbox
+    // they read does not change underneath them.
+    var cm = await Promise.all([api('GET', 'couples?select=*'), api('GET', 'members?select=*')]);
+    S.couple = cm[0][0] || null;
+    S.members = cm[1];
     if (!S.couple) return;
-    for (var i = 0; i < SHARED.length; i++) await pullTable(SHARED[i]);
+    await Promise.all(SHARED.map(pullTable));
   }
   // A write the server will never accept (bad data, RLS refusal) as opposed to one worth retrying (auth, timeout, throttle, 5xx, offline).
   // Exception: PostgREST answers 404/400 PGRST204/PGRST205 ("column/table not in the schema cache") and Postgres 42703/42P01 (column

@@ -98,3 +98,20 @@ test('signIn stores creds, signOut clears them', async () => {
   await st.signOut();
   assert.equal(native.creds, null);
 });
+
+test('pull fetches the shared tables in parallel, not one by one', async () => {
+  const { st } = load();
+  st.S.session.expires_at = Date.now() / 1000 + 3600; // no refresh in the way
+  let inflight = 0, peak = 0;
+  globalThis.fetch = async (url) => {
+    inflight++; peak = Math.max(peak, inflight);
+    await new Promise(r => setTimeout(r, 30));
+    inflight--;
+    const body = url.includes('/rest/v1/couples') ? '[{"id":"c1"}]' : '[]';
+    return { ok: true, status: 200, headers: { get: () => 'application/json' }, text: async () => body, json: async () => JSON.parse(body) };
+  };
+  await st.sync();
+  assert.equal(st.S.syncError, null);
+  assert.equal(st.S.couple.id, 'c1');
+  assert.ok(peak >= 10, 'peak concurrent requests ' + peak);
+});
