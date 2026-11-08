@@ -396,8 +396,27 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await page.waitForFunction(() => JSON.parse(localStorage.getItem('cycle:shared.u-me')).outbox.some((o) => o.table === 'fight_notes'));
     const n = (await shared(page)).outbox.find((o) => o.table === 'fight_notes').row;
     assert.equal(Date.parse(n.created_at), Date.parse('2026-10-20T13:05:00Z'));
-    assert.equal(await page.$eval('input[data-d="mwT"]', (e) => e.value.length), 5, 'picker resets to now');
+    assert.equal(await page.$eval('input[data-d="mwT"]', (e) => e.value.length), 5, 'picker resets to its default');
     assert.notEqual(await page.$eval('input[data-d="mwD"]', (e) => e.value), '2026-10-20');
+    await context.close();
+  });
+
+  test('Add your version on an old fight defaults When to the fight day, after her note; an Analysis defaults to now', async () => {
+    const at = Math.floor((Date.now() - 3 * 24 * HOUR) / 60000) * 60000;
+    const { context, page } = await open({ fight: false, tweak: (sh) => { partnerFight(sh); sh.rows.fight_markers.fp.at = sh.rows.fight_notes.n1.created_at = new Date(at).toISOString(); } });
+    await page.click('[data-a="tab:progress"]'); await page.click('[data-a="go:points"]');
+    await page.click('.ln[data-a="openfight:fp"]');
+    await page.waitForSelector('.fn');
+    const day = (ms) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    assert.equal(await page.$eval('input[data-d="mwD"]', (e) => e.value), day(at));
+    await page.fill('textarea[data-d="more"]', 'My side');
+    await page.click('[data-a="notesave"]');
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('cycle:shared.u-me')).outbox.some((o) => o.table === 'fight_notes'));
+    const n = (await shared(page)).outbox.find((o) => o.table === 'fight_notes').row;
+    assert.equal(Date.parse(n.created_at), at + 60000);
+    assert.match((await notesText(page))[1], /^Me .*My side$/);
+    await page.click('[data-a="fnkind:analysis"]');
+    assert.equal(await page.$eval('input[data-d="mwD"]', (e) => e.value), day(Date.now()));
     await context.close();
   });
 

@@ -84,12 +84,23 @@ function nameOf(uid) { var m = S.members.filter(function (x) { return x.user_id 
 function nowIso() { return new Date().toISOString(); }
 // When something happened: a date and a time in the couple's zone, both defaulting to now. A pick in the future clamps to now.
 function nowHm() { return new Date(now()).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz() }); }
-function whenRow(k) {
-  return '<div class="frow wh"><span class="lab0">When</span>' + dpick('date', k + 'D', val(k + 'D', today())) + dpick('time', k + 'T', val(k + 'T', nowHm())) + '</div>';
+// `def` (ms) replaces now as the unpicked default: a note added to an old fight defaults to the fight's own time, since
+// "now" filed late versions days after the fight they describe (Oliver, 2026-11-08). whenRow and whenMs must get the same `def`.
+function hmAt(ms) { return new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz() }); }
+function whenRow(k, def) {
+  return '<div class="frow wh"><span class="lab0">When</span>' + dpick('date', k + 'D', val(k + 'D', def == null ? today() : C.localDay(def, tz()))) + dpick('time', k + 'T', val(k + 'T', def == null ? nowHm() : hmAt(def))) + '</div>';
 }
-function whenMs(k) {
-  var hm = val(k + 'T', nowHm()).split(':');
-  return Math.min(now(), C.zonedMs(val(k + 'D', today()), +hm[0], +hm[1], tz()));
+function whenMs(k, def) {
+  var hm = val(k + 'T', def == null ? nowHm() : hmAt(def)).split(':');
+  return Math.min(now(), C.zonedMs(val(k + 'D', def == null ? today() : C.localDay(def, tz())), +hm[0], +hm[1], tz()));
+}
+// The Add more / Add your version box: a Note defaults to one minute after the fight's latest live note (the fight's own
+// time when it has none), so it files on the fight's day yet still lists below what is already there (notes sort by
+// created_at; the fight time itself put a new version above hers). The extra minute is load-bearing: whenMs drops seconds.
+// An Analysis is reflection written afterwards, so it keeps now. Capped at now by whenMs.
+function noteDef(mk, kind) {
+  if (kind === 'analysis') return null;
+  return fightNotes(mk.id).reduce(function (m, n) { return n.deleted_at ? m : Math.max(m, C.ms(n.created_at) + 60000); }, C.ms(mk.at));
 }
 // "Fri 9:00am" within the coming week, else "Fri 30 Oct 9:00am".
 function fmtWhen(at) {
@@ -684,7 +695,7 @@ SCREEN.fightdetail = function () {
     intensityPicker(myRating(mk), 'fightint') +
     (chips ? '<section class="meta2"><div class="rcs">' + chips + '</div></section>' : '') +
     story + gapHtml + notesHtml +
-    '<section><p class="lab">' + (!me && !mine ? 'Add your version' : 'Add more') + (nkind === 'note' ? talkLink('more') : '') + '</p>' + seg([['note', 'Note'], ['analysis', 'Analysis']], nkind, 'fnkind', 'ty') + micTa('more', 'nt') + linkRow + whenRow('mw') + '</section>' +
+    '<section><p class="lab">' + (!me && !mine ? 'Add your version' : 'Add more') + (nkind === 'note' ? talkLink('more') : '') + '</p>' + seg([['note', 'Note'], ['analysis', 'Analysis']], nkind, 'fnkind', 'ty') + micTa('more', 'nt') + linkRow + whenRow('mw', noteDef(mk, nkind)) + '</section>' +
     // Save shows only once the note box has text: pinned to the screen bottom, it covered the summary while Oliver read it
     // (2026-11-03), and with no text it only went back. The input handler toggles `hidden` as he types (a re-render would drop the keyboard).
     '<div class="save" data-a="notesave"' + (val('more').trim() ? '' : ' hidden') + '>Save</div>' + pending + del, { sheet: sh });
@@ -1758,7 +1769,7 @@ function saveNote() {
   // Intensity saves on tap, so Save with no note has nothing left to do.
   if (!body) return ACT.back();
   if (!S.rows.fight_markers[ui.fightId]) throw new Error('Fight is gone');
-  var row = { id: St.uuid(), couple_id: S.couple.id, fight_marker_id: ui.fightId, author_id: St.me(), body: body, created_at: new Date(whenMs('mw')).toISOString() };
+  var row = { id: St.uuid(), couple_id: S.couple.id, fight_marker_id: ui.fightId, author_id: St.me(), body: body, created_at: new Date(whenMs('mw', noteDef(S.rows.fight_markers[ui.fightId], ui.d.fnkind === 'analysis' ? 'analysis' : 'note'))).toISOString() };
   // An analysis is the author's own reading, shown word for word; only an analysis can point at earlier fights.
   if (ui.d.fnkind === 'analysis') {
     row.kind = 'analysis';
