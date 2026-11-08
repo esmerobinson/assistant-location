@@ -680,6 +680,35 @@ jobs:
           echo "PASS: note reached the server"
           grep -q "GET /clips/files/test-clip.m4a auth=Bearer" /tmp/received.log || { echo "FAIL: mock never served the clip file"; exit 1; }
 
+          # Scrub: the hook drives the real scrub handlers (drag 50% -> 60%, release) and
+          # samples the thumb. Slider must start disabled, be enabled once ready, hold the
+          # dragged spot (no snap back) and end where it was released.
+          xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true
+          sleep 1
+          SCRUB_LOG_BEFORE=$(wc -l < /tmp/app.log)
+          SIMCTL_CHILD_UITEST_CLIPS_BASE_URL="http://127.0.0.1:${MOCK_PORT}/" \
+          SIMCTL_CHILD_UITEST_CLIPS_SCRUB=1 \
+          SIMCTL_CHILD_UITEST_OPEN_URL="overland://clips/test-clip" \
+            xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID"
+          wait_for_app_process || true
+          for _ in $(seq 1 40); do
+            tail -n +$((SCRUB_LOG_BEFORE + 1)) /tmp/app.log | grep -q "UITEST_CLIPS_SCRUB" && break
+            sleep 1
+          done
+          SCRUB_OPENED=$(tail -n +$((SCRUB_LOG_BEFORE + 1)) /tmp/app.log | grep "UITEST_CLIPS_OPENED" | tail -1 || true)
+          SCRUB_REPORT=$(tail -n +$((SCRUB_LOG_BEFORE + 1)) /tmp/app.log | grep "UITEST_CLIPS_SCRUB" | tail -1 || true)
+          echo "opened: $SCRUB_OPENED"; echo "scrub: $SCRUB_REPORT"
+          [ -n "$SCRUB_REPORT" ] || { echo "FAIL: no UITEST_CLIPS_SCRUB line (player never became ready?)"; tail -n +$((SCRUB_LOG_BEFORE + 1)) /tmp/app.log | grep -i clips; exit 1; }
+          sfield() { echo "$SCRUB_REPORT" | sed -n "s/.* $1=\([-0-9.]*\).*/\1/p"; }
+          ST=$(sfield target); SMIN=$(sfield minSlider); SFIN=$(sfield final)
+          case "$SCRUB_REPORT" in
+            *"enabledAtOpen=0"*"enabledReady=1"*) ;;
+            *) echo "FAIL: expected slider disabled at open and enabled when ready: $SCRUB_REPORT"; exit 1 ;;
+          esac
+          awk -v t="$ST" -v mn="$SMIN" -v f="$SFIN" 'BEGIN { exit !(t > 0 && mn >= t - 0.5 && f - t <= 1.0 && t - f <= 1.0) }' \
+            || { echo "FAIL: scrub thumb snapped back or ended away from target (want minSlider>=target-0.5, |final-target|<=1.0): $SCRUB_REPORT"; exit 1; }
+          echo "PASS: scrub held the dragged position (target=$ST min=$SMIN final=$SFIN), slider disabled at open and enabled when ready"
+
           # Next-section button: deep link to b (6-11s), the hook presses next after 2s,
           # playback must move to the following section (transition, 11s). No loop here.
           xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true

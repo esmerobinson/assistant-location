@@ -113,6 +113,10 @@ static const NSInteger kTableSectionTakes = 0;
 @property (nonatomic, strong) UILabel *speedLabel;
 @property (nonatomic, strong) UITableView *table;
 @property (nonatomic) BOOL scrubbing;
+@property (nonatomic) BOOL scrubSeekBusy;                  // a live (tolerant) scrub seek is in flight
+@property (nonatomic) CFTimeInterval openedAt;             // viewDidLoad time, for the ready-latency log
+@property (nonatomic) double readyMs;
+@property (nonatomic) BOOL sliderEnabledAtOpen;
 @property (nonatomic) BOOL positionRestored;
 @property (nonatomic) NSTimeInterval lastSavedPosition;
 
@@ -179,6 +183,7 @@ static const NSInteger kTableSectionTakes = 0;
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.openedAt = CACurrentMediaTime();
     self.view.backgroundColor = [GLTheme backgroundColor];
 
     UIButton *done = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -193,6 +198,7 @@ static const NSInteger kTableSectionTakes = 0;
 
     self.slider = [[UISlider alloc] init];
     self.slider.tintColor = [GLTheme accentColor];
+    self.slider.enabled = NO; // until the item is ready: before that the duration is 0 and a drag would seek to 0
     [self.slider addTarget:self action:@selector(scrubBegan) forControlEvents:UIControlEventTouchDown];
     [self.slider addTarget:self action:@selector(scrubChanged) forControlEvents:UIControlEventValueChanged];
     [self.slider addTarget:self action:@selector(scrubEnded) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel];
@@ -323,6 +329,7 @@ static const NSInteger kTableSectionTakes = 0;
     [self setRecordButtonTitle:@"Record" recording:NO];
 
     [self setUpPlayer];
+    self.sliderEnabledAtOpen = self.slider.enabled;
     self.tocHeight.constant = MIN(self.sections.count, kTocMaxVisibleRows) * kTocRowHeight;
     [self refreshTicks];
     [self refreshControls];
@@ -367,8 +374,17 @@ static const NSInteger kTableSectionTakes = 0;
     return item;
 }
 
+/// setActive: can block for hundreds of ms (route changes, Bluetooth). Off the main
+/// thread at open, or the ready poller and the UI stall behind it.
+- (void)activatePlaybackSessionOffMain {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue = dispatch_queue_create("clips.audio-session", DISPATCH_QUEUE_SERIAL); });
+    dispatch_async(queue, ^{ [self activatePlaybackSession]; });
+}
+
 - (void)setUpPlayer {
-    [self activatePlaybackSession];
+    [self activatePlaybackSessionOffMain];
     self.player = [AVPlayer playerWithPlayerItem:[self observedItemForURL:self.fileURL]];
     __weak typeof(self) weakSelf = self;
     self.timeObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMakeWithSeconds(0.25, 600)
@@ -390,6 +406,8 @@ static const NSInteger kTableSectionTakes = 0;
     // Not before the item is ready: -seekTo: clamps to the duration, which is 0 until
     // then, so a section link at 77s used to start the song at 0:00.
     [self whenItemReady:self.player.currentItem run:^{
+        self.readyMs = (CACurrentMediaTime() - self.openedAt) * 1000;
+        self.slider.enabled = YES;
         [self applyInitialPosition:linked];
         [self runTestHooks];
     }];
@@ -415,7 +433,7 @@ static const NSInteger kTableSectionTakes = 0;
     self.positionRestored = YES;
     // Sampled shortly after, so a seek that was clamped away shows up in the log.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        NSLog(@"UITEST_CLIPS_OPENED saved=%.2f time=%.2f wantsPlay=%d section=%@", saved, self.elapsed, self.wantsPlay, self.selectedSectionID ?: @"-");
+        NSLog(@"UITEST_CLIPS_OPENED saved=%.2f time=%.2f wantsPlay=%d section=%@ readyMs=%.0f", saved, self.elapsed, self.wantsPlay, self.selectedSectionID ?: @"-", self.readyMs);
     });
 }
 
@@ -648,7 +666,26 @@ static const NSInteger kTableSectionTakes = 0;
 }
 
 - (void)scrubBegan { self.scrubbing = YES; }
-- (void)scrubChanged { self.elapsedLabel.text = GLFormatDuration(self.slider.value); }
+- (void)scrubChanged {
+    self.elapsedLabel.text = GLFormatDuration(self.slider.value);
+    [self chaseScrubSeek];
+}
+
+/// Live seek while dragging: one tolerant seek at a time, and when it finishes the
+/// next one goes to wherever the thumb is by then.
+- (void)chaseScrubSeek {
+    if (self.scrubSeekBusy) return;
+    self.scrubSeekBusy = YES;
+    self.seeksInFlight++;
+    NSTimeInterval target = self.slider.value;
+    CMTime tolerance = CMTimeMakeWithSeconds(0.5, 600);
+    [self.player seekToTime:CMTimeMakeWithSeconds(target, 600) toleranceBefore:tolerance toleranceAfter:tolerance
+          completionHandler:^(BOOL finished) {
+        self.seeksInFlight--;
+        self.scrubSeekBusy = NO;
+        if (self.scrubbing && fabs(self.slider.value - target) > 0.01) [self chaseScrubSeek];
+    }];
+}
 - (void)scrubEnded {
     self.scrubbing = NO;
     [self seekTo:self.slider.value];
@@ -705,7 +742,7 @@ static const NSInteger kTableSectionTakes = 0;
 - (void)refreshTime {
     if (self.ticks.duration != self.duration) [self refreshTicks];
     self.slider.maximumValue = MAX(self.duration, 1);
-    if (!self.scrubbing) {
+    if (!self.scrubbing && self.seeksInFlight == 0) { // else the thumb holds the dragged spot until the seek lands
         self.slider.value = self.elapsed;
         self.elapsedLabel.text = GLFormatDuration(self.elapsed);
     }
@@ -1184,6 +1221,7 @@ static const NSInteger kTableSectionTakes = 0;
             target > self.speed ? [self speedUp] : [self slowDown];
         }
     }
+    if ([env[@"UITEST_CLIPS_SCRUB"] boolValue]) [self runScrubTest];
     if ([env[@"UITEST_CLIPS_LOOP"] boolValue] && !self.looping) [self toggleLoop];
     if ([env[@"UITEST_CLIPS_SECTION_NUDGE"] boolValue]) [self nudgeSelected:YES by:kNudgeSeconds];
     if (env[@"UITEST_CLIPS_NOTE"]) {
@@ -1215,6 +1253,38 @@ static const NSInteger kTableSectionTakes = 0;
     if (env[@"UITEST_REPORT_CLIPS"] && ![env[@"UITEST_CLIPS_NEXT"] boolValue]) { // with NEXT, it reports after the press
         [self reportClipsAfter:6 attemptsLeft:60];
     }
+}
+
+/// Drives the real scrub handlers: drag to 50%, on to 60%, release, then sample the
+/// thumb and label to see whether it holds (no snap back to the old time).
+- (void)runScrubTest {
+    [self pause];
+    BOOL enabledReady = self.slider.enabled;
+    double target = self.duration * 0.6;
+    [self scrubBegan];
+    self.slider.value = self.duration * 0.5;
+    [self scrubChanged];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        self.slider.value = target;
+        [self scrubChanged];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self scrubEnded];
+            NSMutableArray<NSNumber *> *sliders = [NSMutableArray array];
+            NSMutableArray<NSString *> *labels = [NSMutableArray array];
+            for (NSNumber *delay in @[@0.05, @0.15, @0.3, @1.0]) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [sliders addObject:@(self.slider.value)];
+                    [labels addObject:self.elapsedLabel.text];
+                    if (sliders.count < 4) return;
+                    double minSlider = target;
+                    for (NSNumber *v in sliders) minSlider = MIN(minSlider, v.doubleValue);
+                    NSLog(@"UITEST_CLIPS_SCRUB target=%.2f minSlider=%.2f final=%.2f enabledAtOpen=%d enabledReady=%d readyMs=%.0f sliders=%@ labels=%@ elapsed=%.2f inFlight=%ld",
+                          target, minSlider, sliders.lastObject.doubleValue, self.sliderEnabledAtOpen, enabledReady, self.readyMs,
+                          [sliders componentsJoinedByString:@","], [labels componentsJoinedByString:@","], self.elapsed, (long)self.seeksInFlight);
+                });
+            }
+        });
+    });
 }
 
 /// Why a player is not moving, for the test log: a failed check should name the cause.
