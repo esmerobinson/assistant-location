@@ -584,3 +584,7 @@ svg.zoomchart{display:block;width:100%;height:auto;touch-action:pan-y;user-selec
 /* Complain sheet (shake): the screenshot it will send, small enough to leave room for the note and the keyboard. */
 .bs.gp .gshot{display:block;height:150px;width:auto;margin:4px auto 14px;border:2px solid #2a2a2a;border-radius:12px}
 .bs.gp .acts{margin-top:16px}
+/* The field is the sheet's only control besides Send: boxed like the app's inputs so it reads as a field, not a caption. On the
+   wrapper, not the textarea, so the native mic button sits inside the box. */
+.bs.gp .ta{border:2px solid #3a3a3a;border-radius:16px;padding:12px 16px}
+.bs.gp .ta:focus-within{border-color:var(--pk)}
