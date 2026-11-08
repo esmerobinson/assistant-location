@@ -569,3 +569,10 @@ svg.zoomchart{display:block;width:100%;height:auto;touch-action:pan-y;user-selec
 .p2 .frow.wh{padding-bottom:20px}
 .p2 section:has(> .frow.wh) + section > .ck:first-child{margin-top:-12px}
 .bs .frow.wh + section > .ck:first-child{margin-top:-2px}
+
+/* Swipe right to ignore a to-do: the pink underlay travels with the row, parked one row-width to its left. */
+.p2 .td-row.swp{position:relative;touch-action:pan-y}
+.td-row .sw-ul{position:absolute;right:100%;top:0;bottom:0;width:100%;background:#ff2e88;color:#0a0a0a;display:flex;align-items:center;justify-content:flex-end;padding-right:20px;box-sizing:border-box;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.ign-toast{position:fixed;left:12px;right:12px;max-width:366px;margin:0 auto;bottom:calc(max(env(safe-area-inset-bottom),34px) + 76px);z-index:70;display:flex;align-items:center;justify-content:space-between;background:#0a0a0a;border:2px solid #ff2e88;border-radius:16px;padding:12px 16px;font:700 14px "Space Grotesk",sans-serif;color:#fff;transition:opacity .3s ease}
+.ign-toast.out{opacity:0}
+.ign-toast b{color:#ff2e88;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:8px 0 8px 16px;cursor:pointer}
