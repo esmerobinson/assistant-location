@@ -4690,3 +4690,50 @@ test('an identical dictation echo after Start leaves the composer empty with no 
   assert.equal(await page.locator('#gl-error').isHidden(), true);
   await context.close();
 });
+
+// --- busy mic: the tapped mic shows a spinning ring while its stopped clip is transcribed ---
+
+/** Asserts `sel` is busy (ring shown, icon hidden, animating, aria-busy), then that it clears once voiceStop answers. */
+async function assertBusyUntilReply(page, sel) {
+  await page.waitForSelector(`${sel}.busy`);
+  const s = await page.$eval(sel, (el) => ({
+    anim: getComputedStyle(el, '::after').animationName,
+    svg: getComputedStyle(el.querySelector('svg')).display,
+    aria: el.getAttribute('aria-busy'),
+    pe: getComputedStyle(el).pointerEvents,
+  }));
+  assert.deepEqual(s, { anim: 'glmicspin', svg: 'none', aria: 'true', pe: 'none' });
+  await page.evaluate(() => window.__glMock.replyNow('voiceStop', { text: 'a fake voice transcript' }));
+  await page.waitForFunction((q) => !document.querySelector(q).classList.contains('busy') && !document.querySelector(q).hasAttribute('aria-busy'), sel);
+}
+
+test('busy mic: launcher mic spins from stop until voiceStop answers', async () => {
+  const bodies = [];
+  const { context, page } = await slidePage(bodies);
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  assert.equal(await page.locator('#session-record-btn.busy').count(), 0, 'not busy while recording');
+  await page.click('#session-record-btn');
+  await assertBusyUntilReply(page, '#session-record-btn');
+  assert.equal(await page.locator('#session-record-status').textContent(), '', 'status text clears with the spinner');
+  await context.close();
+});
+
+test('busy mic: reply mic spins while its clip is transcribed, keeping the status text', async () => {
+  const { context, page } = await openDetailPage();
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await page.click('#detail-record-btn');
+  await page.waitForSelector('#detail-record-btn.recording');
+  await page.click('#detail-record-btn');
+  assert.equal(await page.locator('#detail-record-status').textContent(), 'Transcribing, then sending…');
+  await assertBusyUntilReply(page, '#detail-record-btn');
+  await context.close();
+});
+
+test('busy mic: clarify mic spins while its clip is transcribed', async () => {
+  const { context, page } = await startedClarifyPage();
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await recordClarify(page);
+  await page.click('#session-clarify-record-btn');
+  await assertBusyUntilReply(page, '#session-clarify-record-btn');
+  await context.close();
+});

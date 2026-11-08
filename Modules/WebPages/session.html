@@ -240,6 +240,12 @@
   }
   .gl-icon-btn svg { width: 18px; height: 18px; display: block; }
   .gl-icon-btn:disabled { opacity: 0.5; }
+  /* While a stopped clip is transcribed the tapped mic shows a spinning accent ring in place of its icon. */
+  .gl-icon-btn.busy { pointer-events: none; }
+  .gl-icon-btn.busy svg { display: none; }
+  .gl-icon-btn.busy::after { content: ''; width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; border: 2px solid rgba(127, 127, 127, 0.3); border-top-color: var(--gl-accent); animation: glmicspin 0.8s linear infinite; }
+  @keyframes glmicspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .gl-icon-btn.busy::after { animation-duration: 2.4s; } }
   #session-record-btn.recording { background: var(--gl-danger); color: #fff; }
   /* All three mics (launcher, reply row, clarify row) share the hold gesture, so they share
      the touch rules that keep iOS from selecting/calling-out on a long press. */
@@ -1435,6 +1441,13 @@
     }
   }
 
+  /** The mic for a voice target shows the busy ring (or not): set when its clip is stopped, cleared when voiceStop settles. */
+  function setMicBusy(target, busy) {
+    var btn = target === 'clarify' ? clarifyRecordBtn : target === 'reply' ? detailRecordBtn : recordBtn;
+    btn.classList.toggle('busy', busy);
+    if (busy) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');
+  }
+
   function setRecordingUI(isRecording, statusText) {
     recording = isRecording;
     var toReply = voiceTarget === 'reply';
@@ -1858,6 +1871,7 @@
     var targetDetail = target === 'reply' ? voiceDetail : null;
     var targetClarifyKey = target === 'clarify' ? voiceClarifyKey : null;
     setRecordingUI(false, autoSend ? '' : sink ? 'Transcribing, then sending…' : 'Transcribing…');
+    setMicBusy(target, true);
     if (autoSend) {
       // The launch id becomes the Start's key, so a clarification typed now waits for that Start.
       setConfirmation('Starting', 'Transcribing, then starting the session…', false, launchId);
@@ -1871,6 +1885,7 @@
     }
     GLBridge.call('voiceStop', { launchId: launchId }, { timeoutMs: VOICE_STOP_TIMEOUT_MS }).then(function (res) {
       setVoiceStatus('', target);
+      setMicBusy(target, false);
       var text = res && res.text;
       var code = res && res.code;
       // mic_denied is NOT expected here -- voiceStop only ever runs after a
@@ -1924,6 +1939,7 @@
       }
     }).catch(function (err) {
       setVoiceStatus('', target);
+      setMicBusy(target, false);
       if (!autoSend && !sink) { showError('Transcription failed: ' + err.message); return; }
       // A timeout leaves native still working on the recording; pollVoice picks it up by launchId. Any other error means native has nothing to retry.
       if (err.message === 'timeout') {
