@@ -119,6 +119,18 @@
   #q-send { display: block; border: none; width: calc(100% - 24px); margin: 0 12px 28px; height: 50px; border-radius: 14px; background: #0866FF; color: #fff; font-size: 16px; font-weight: 700; }
   #q-send:disabled { opacity: 0.5; }
 
+  .q-why { margin: 8px 20px 0; font-size: 13.5px; line-height: 1.4; color: #C5CEDF; overflow-wrap: anywhere; }
+  .q-ai { margin: 14px 12px 0; }
+  .q-ai-h { margin: 0 0 8px; font-size: 12.5px; color: #8D9AB0; }
+  .q-chips:empty { display: none; }
+  .q-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .q-chips button { min-height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid #1B4FA8; background: #0F2A57; color: #F2F2F4; font: inherit; font-size: 15px; font-weight: 600; max-width: 100%; text-align: left; }
+  .q-ai-row { display: flex; gap: 8px; }
+  #q-ai-in { flex: 1; min-width: 0; height: 44px; padding: 0 14px; border-radius: 14px; border: 1px solid #2E3F5E; background: #101B30; color: #F2F2F4; font: inherit; font-size: 16px; outline: none; }
+  #q-ai-in::placeholder { color: #7D8AA2; }
+  #q-ai-go { height: 44px; padding: 0 16px; border-radius: 14px; border: none; background: #0F2A57; color: #F2F2F4; font: inherit; font-size: 15px; font-weight: 700; }
+  #q-ai-go:disabled { opacity: 0.5; }
+
   .q-empty-card { padding: 48px 24px; text-align: center; }
   .q-empty-card .q-empty-icon { font-size: 40px; line-height: 1; margin-bottom: 12px; }
   .q-empty-card .q-empty-h { font-size: 17px; font-weight: 700; color: var(--gl-text); }
@@ -159,9 +171,15 @@
 
 <div id="q-answer" class="gl-hidden">
   <div class="q-who"><h1 id="q-a-title"></h1><p id="q-a-listing"></p></div>
+  <div id="q-a-why" class="q-why gl-hidden"></div>
   <div class="q-th">
     <div id="q-a-earlier"></div>
     <div id="q-a-body"></div>
+  </div>
+  <div id="q-ai" class="q-ai">
+    <div class="q-ai-h">Tell the AI</div>
+    <div id="q-chips" class="q-chips"></div>
+    <div class="q-ai-row"><input id="q-ai-in" type="text" placeholder="Instruction" aria-label="Instruction for the AI" enterkeyhint="send"><button id="q-ai-go" type="button" disabled>Tell AI</button></div>
   </div>
   <div class="q-cmp">
     <div class="q-to">Reply to <b id="q-a-to"></b></div>
@@ -643,6 +661,20 @@
     $('q-a-listing').textContent = who.listing;
     $('q-a-to').textContent = who.buyer;
     heroEl.classList.add('gl-hidden');
+    var whyEl = $('q-a-why');
+    whyEl.textContent = q.reason || '';
+    whyEl.classList.toggle('gl-hidden', !q.reason);
+    var canInstruct = !!(q.context && q.context.listing && q.context.buyer && !q.context.takenOver);
+    $('q-ai').classList.toggle('gl-hidden', !canInstruct);
+    $('q-ai-in').value = '';
+    $('q-ai-go').disabled = true;
+    var chipsEl = $('q-chips');
+    chipsEl.innerHTML = '';
+    (q.actions || []).forEach(function (a) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = a;
+      b.addEventListener('click', function () { instruct(q, a); });
+      chipsEl.appendChild(b);
+    });
     var earlier = $('q-a-earlier');
     earlier.innerHTML = '';
     var bodyEl = $('q-a-body');
@@ -805,8 +837,8 @@
   // it. Optimistic, not outbox-queued (like hand-back): they change what the bot
   // does, so a failure puts the question back and says so.
   // contract: POST {path} {listing,buyer} -> {result:'ok'}
-  function questionAction(q, path, doneMsg, errPrefix) {
-    var body = { listing: q.context.listing, buyer: q.context.buyer };
+  function questionAction(q, path, doneMsg, errPrefix, extra) {
+    var body = Object.assign({ listing: q.context.listing, buyer: q.context.buyer }, extra);
     var i = questions.indexOf(q);
     questions = questions.filter(function (x) { return x.id !== q.id; });
     clearDraft(q.id);
@@ -823,6 +855,18 @@
       showError(errPrefix + err.message);
     });
   }
+
+  // An instruction to the bot (chip or typed): it composes and sends the buyer reply itself.
+  // contract: POST /questions/instruct {listing,buyer,instruction} -> {result:'ok'}
+  function instruct(q, text) {
+    text = text.trim();
+    if (!text) return;
+    showList();
+    questionAction(q, '/questions/instruct', 'Told the AI: ' + text, "Couldn't tell the AI: ", { instruction: text });
+  }
+  $('q-ai-in').addEventListener('input', function () { $('q-ai-go').disabled = this.value.trim() === ''; });
+  $('q-ai-go').addEventListener('click', function () { instruct(current, $('q-ai-in').value); });
+  $('q-ai-in').addEventListener('keydown', function (e) { if (e.key === 'Enter') instruct(current, this.value); });
 
   // Half-typed reply, kept per question so a page reload (a newer page version
   // being swapped in) does not wipe it. Storage can be unavailable: then no draft.
