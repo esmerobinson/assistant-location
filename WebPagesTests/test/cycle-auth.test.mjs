@@ -13,7 +13,7 @@ const user = { id: 'u1', email: 'a@b.test' };
 const tokens = (n) => ({ access_token: 'at' + n, refresh_token: 'rt' + n, expires_in: 3600, user });
 
 // opts.refresh: 'ok' | 'reject'; opts.creds: stored {email,password} or null
-function load({ refresh = 'ok', creds = null } = {}) {
+function load({ refresh = 'ok', creds = null, pwd = 'ok' } = {}) {
   const posts = [], kvw = [], cancelled = [], native = { creds, kv: {} };
   globalThis.window = globalThis;
   globalThis.CYCLE_CONFIG = { supabaseUrl: 'https://x.test', supabaseAnonKey: 'k' };
@@ -37,7 +37,10 @@ function load({ refresh = 'ok', creds = null } = {}) {
       if (refresh === 'reject') return { ok: false, status: 400, json: async () => ({ error_description: 'Invalid Refresh Token' }) };
       return { ok: true, status: 200, json: async () => tokens('R' + ++n) };
     }
-    if (url.includes('/auth/v1/token?grant_type=password')) { posts.push('password'); return { ok: true, status: 200, json: async () => tokens('P' + ++n) }; }
+    if (url.includes('/auth/v1/token?grant_type=password')) {
+      posts.push('password');
+      if (pwd === 'reject') return { ok: false, status: 400, json: async () => ({ msg: 'Invalid login credentials' }) };
+      return { ok: true, status: 200, json: async () => tokens('P' + ++n) }; }
     // api() now reads text() and requires a JSON content-type on a real answer, so the fake carries both.
     if (url.includes('/rest/v1/')) return { ok: true, status: 200, headers: { get: () => 'application/json' }, text: async () => '[]', json: async () => [] };
     throw new Error('unexpected fetch ' + url);
@@ -75,6 +78,17 @@ test('refresh rejected + no creds (web): the error surfaces and the dead session
   assert.deepEqual(posts, ['refresh']);
   assert.equal(st.S.session, null);
   assert.equal(native.kv.session, null);
+});
+
+// Esme's phone, 2026-11-08: password changed elsewhere, so the Keychain copy was stale. The app stayed signed in and
+// flashed "Wrong email or password" on every sync with no sign-in screen to type the new one.
+test('refresh rejected + stale stored password: signed out, creds cleared, so the sign-in screen shows', async () => {
+  const { st, posts, native } = load({ refresh: 'reject', creds: { email: 'a@b.test', password: 'old' }, pwd: 'reject' });
+  await assert.rejects(st.api('GET', 'items?select=*'), /Invalid login credentials/);
+  assert.deepEqual(posts, ['refresh', 'password']);
+  assert.equal(st.S.session, null);
+  assert.equal(native.kv.session, null);
+  assert.equal(native.creds, null);
 });
 
 test('sync after a dead refresh on web leaves no stale sync error under the sign-in screen', async () => {

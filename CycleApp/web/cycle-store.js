@@ -216,7 +216,11 @@ var CycleStore = (function () {
       // sign-in screen shows; staying signed in left the page on stale cached rows with "Couldn't sync" retrying every 5 s
       // (2026-11-07). Cached rows and priv stay under their per-user keys, so signing back in restores them.
       if (!c) { await signOut(); throw e; }
-      j = await gotrue('/token?grant_type=password', { email: c.email, password: c.password });
+      // A stored password GoTrue rejects (changed elsewhere, e.g. from another device) is just as dead: sign out so the
+      // sign-in screen shows. Throwing without it left the phone "signed in", flashing "Wrong email or password" on every
+      // sync with no way to type the new one (Esme's phone, 2026-11-08). An offline error still propagates untouched.
+      try { j = await gotrue('/token?grant_type=password', { email: c.email, password: c.password }); }
+      catch (e2) { if (e2.authRejected) await signOut(); throw e2; }
     }
     setSession(j); await persistNow();
   }
