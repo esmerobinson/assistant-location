@@ -361,7 +361,7 @@ jobs:
           # assumed — a new module or a reorder changes it. A new module
           # appends its entry here, to the appearance-sweep list below, and
           # to both artifact path lists at the bottom.
-          TAB_ENTRIES=("0 newsession" "1 events" "2 todos" "3 football" "4 settings" "5 finances" "6 journal" "7 esme" "8 growth" "9 outfits" "10 upload" "11 tracker" "12 continue" "13 sleep" "14 debate" "15 clips" "more more")
+          TAB_ENTRIES=("0 newsession" "1 events" "2 todos" "3 football" "4 settings" "5 finances" "6 journal" "7 esme" "8 growth" "9 outfits" "10 upload" "11 tracker" "12 continue" "13 sleep" "14 debate" "15 clips" "16 cooking" "more more")
           # "more" is not an index: it selects moreNavigationController
           # itself (see SceneDelegate UITEST_TAB), so the system More
           # LIST gets screenshotted, not the module behind it.
@@ -1268,7 +1268,7 @@ jobs:
           # conformers, so a module that fails to register leaves the bar
           # quietly short a tab with nothing else going red. Assert the exact
           # roster, not just the count — a wrong ORDER is also a regression.
-          grep -q "Module registry: installed 16 tabs: New Session, Events, Todos, Football, Settings, Finances, Journal, Esme, Growth, Outfits, Upload, Tracker, Continue?, Sleep, Debate, Clips" /tmp/app.log || {
+          grep -q "Module registry: installed 17 tabs: New Session, Events, Todos, Football, Settings, Finances, Journal, Esme, Growth, Outfits, Upload, Tracker, Continue?, Sleep, Debate, Clips, Cooking" /tmp/app.log || {
             echo "MISS: module registry did not install the expected tabs";
             grep -i "Module registry" /tmp/app.log || echo "(no registry log line at all)";
             FAIL=1;
