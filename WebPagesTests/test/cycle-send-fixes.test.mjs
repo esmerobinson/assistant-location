@@ -42,7 +42,7 @@ describe('reminder send fixes', () => {
     }, sd);
     const ctl = { server, hang: false, hung: 0, posts: [], validToken: o.validToken || null, refreshes: 0, registers: 0 };
     const shared = sd['shared.' + who];
-    await context.route('https://box.test/**', (route) => { ctl.registers++; route.fulfill({ status: 401, body: '{}' }); });
+    await context.route('https://box.test/**', (route) => { if (new URL(route.request().url()).pathname === '/push/register') ctl.registers++; route.fulfill({ status: 401, body: '{}' }); });
     await context.route('https://x.test/**', (route) => {
       const req = route.request(), t = new URL(req.url()).pathname.replace('/rest/v1/', '');
       if (t === '/auth/v1/token') { ctl.refreshes++; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ access_token: ctl.validToken, refresh_token: 'r2', expires_in: 3600, user: { id: who, email: who + '@x.test' } }) }); }

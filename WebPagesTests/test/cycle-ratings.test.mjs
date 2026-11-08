@@ -20,7 +20,7 @@ describe('fight_ratings store', () => {
 
   // A pull drops local rows the server does not return, so the fake server serves the seeded markers back.
   // `existing`: rating rows the fake server already holds (the upload must skip those fights).
-  async function open({ priv = [], existing = [] } = {}) {
+  async function open({ priv = [], existing = [], storage = null } = {}) {
     const sh = {
       couple: { id: 'c1', tz: 'America/New_York', created_at: '2026-01-01T00:00:00Z', hold_ask_min: 60, hold_focus_min: 0, hold_truth_min: 0, hold_kudos_min: 0 },
       members: [{ user_id: UID, name: 'Alex', checkin_time: '21:00', hits_self: false }, { user_id: PID, name: 'Sam', checkin_time: '21:00', hits_self: true }],
@@ -29,10 +29,12 @@ describe('fight_ratings store', () => {
     };
     const seed = { session: { access_token: 't', refresh_token: 'r', expires_at: 4102444800, user: { id: UID, email: 'me@x.test' } }, ['shared.' + UID]: sh, ['priv.' + UID]: { fights: priv, affirmations: [], prefs: {} } };
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
-    await context.addInitScript((sd) => {
+    await context.addInitScript(([sd, raw]) => {
       window.CYCLE_CONFIG = { supabaseUrl: 'https://x.test', supabaseAnonKey: 'k', boxUrl: '' };
-      if (!localStorage.getItem('cycle:session')) for (const k in sd) localStorage.setItem('cycle:' + k, JSON.stringify(sd[k]));
-    }, seed);
+      if (localStorage.getItem('cycle:session')) return;
+      if (raw) for (const k in raw) localStorage.setItem(k, raw[k]);
+      else for (const k in sd) localStorage.setItem('cycle:' + k, JSON.stringify(sd[k]));
+    }, [seed, storage]);
     await context.route('**/cycle.css', (r) => r.fulfill({ contentType: 'text/css', body: CSS }));
     const sent = [];
     await context.route('https://x.test/**', (route) => {
@@ -82,9 +84,14 @@ describe('fight_ratings store', () => {
     const got = posts(sent).map((r) => [r.body.fight_marker_id, r.body.intensity]);
     assert.deepEqual(got, [['m1', 4]], 'm2 already has my rating, m3 is not my fight');
     assert.equal(await page.evaluate(() => CycleStore.S.priv.ratingsUploaded), true);
-    // a second load does not upload again
-    await page.reload({ waitUntil: 'domcontentloaded' }); await page.waitForTimeout(2500);
-    assert.equal(posts(sent).length, 1, 'no repeat upload');
+    // a second load does not upload again. It starts from what this page saved, in a fresh context: under parallel load a
+    // headless page.reload() sometimes read pre-upload localStorage (flag unset) and uploaded again, a harness artifact.
+    await page.waitForFunction(() => CycleStore.S.outbox.length === 0);
+    const saved = await page.evaluate(async () => { await CycleStore.persistNow(); return Object.fromEntries(Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)])); });
     await context.close();
+    const again = await open({ existing, storage: saved });
+    await again.page.waitForTimeout(2500);
+    assert.equal(posts(again.sent).length, 0, 'no repeat upload');
+    await again.context.close();
   });
 });
