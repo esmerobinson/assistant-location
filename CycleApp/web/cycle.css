@@ -565,3 +565,4 @@ svg.zoomchart{display:block;width:100%;height:auto;touch-action:pan-y;user-selec
 .p2 [data-a="qsave"][hidden]{display:none}
 .p2 .frow.wh{padding-bottom:20px}
 .p2 section:has(> .frow.wh) + section > .ck:first-child{margin-top:-12px}
+.bs .frow.wh + section > .ck:first-child{margin-top:-2px}
