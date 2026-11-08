@@ -484,6 +484,19 @@ describe('job tabs (webkit)', { skip: !haveWebkit }, () => {
     await page.waitForSelector('[data-a="fightsave"]');
     await context.close();
   });
+  test('D2c Home Calm streak and Phase tiles open the Fights tab', async () => {
+    const { context, page } = await open({ offline: true });
+    await ready(page);
+    for (const label of ['Calm streak', 'Phase']) {
+      await page.locator('.tiles .tile2', { hasText: label }).click();
+      await page.waitForSelector('.fl .hd');
+      assert.match(await page.textContent('.tabbar .tab.on'), /Fights/);
+      await page.click('[data-a="tab:home"]');
+      await page.waitForSelector('.tiles');
+    }
+    await context.close();
+  });
+
   test('D3 a fight logged with a note shows the same date and time in the detail header and on the note', async () => {
     const { context, page } = await open({ offline: true });
     await ready(page);
