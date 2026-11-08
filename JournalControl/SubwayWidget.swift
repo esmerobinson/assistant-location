@@ -129,6 +129,14 @@ struct SubwayWidgetView: View {
     let entry: SubwayEntry
     @Environment(\.widgetFamily) private var family
 
+    var body: some View { SubwayWidgetContent(entry: entry, family: family) }
+}
+
+/// The widget's layout, with the family passed in so tests can render both sizes (the environment value is read-only).
+struct SubwayWidgetContent: View {
+    let entry: SubwayEntry
+    let family: WidgetFamily
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let state = entry.state {

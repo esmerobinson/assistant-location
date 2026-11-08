@@ -3,7 +3,7 @@ name: subway-verify
 # Verifies the Subway widget and Live Activity on a simulator, against real saved server output (SubwayTests/fixtures):
 #   1. SubwayTests (host-less): server JSON + APNs payload decode into SubwayState, widget renders (ImageRenderer).
 #   2. SubwayLiveActivityUITest: starts the Live Activity in the app, screenshots the lock screen and Dynamic Island,
-#      delivers the server's APNs payload (simctl push, falling back to the in-app decode hook) and screenshots again.
+#      delivers the server's APNs payload (through the in-app decode hook; simctl push cannot carry Live Activity updates) and screenshots again.
 # Manual only, opt-in (see MODULES.md "CI budget"). Screenshots are in the `subway-shots` artifact.
 on:
   workflow_dispatch:
@@ -74,6 +74,8 @@ jobs:
           set -o pipefail
           rm -rf /tmp/subway-in /tmp/subway-out-ui; mkdir -p /tmp/subway-in
           cp SubwayTests/fixtures/*.json /tmp/subway-in/
+          xcrun simctl privacy "$SIM_UDID" grant all com.oliverullman.assistantlocation || true
+          xcrun simctl privacy "$SIM_UDID" grant location-always com.oliverullman.assistantlocation || true
           mkdir -p /tmp/subway-out
           rm -f /tmp/subway-out/stage-* /tmp/subway-out/ack-* /tmp/subway-out/push.done /tmp/subway-out/activity.log
           scripts/subway_sim_driver.sh "$SIM_UDID" &

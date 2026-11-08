@@ -64,8 +64,7 @@ final class SubwayDecodeTests: XCTestCase {
 final class SubwayWidgetRenderTests: XCTestCase {
     private func render(_ family: WidgetFamily, size: CGSize, name: String) throws {
         let state = try JSONDecoder().decode(SubwayState.self, from: fixture("nearby_start.json"))
-        let view = SubwayWidgetView(entry: SubwayEntry(date: .now, state: state, error: nil))
-            .environment(\.widgetFamily, family)
+        let view = SubwayWidgetContent(entry: SubwayEntry(date: .now, state: state, error: nil), family: family)
             .frame(width: size.width, height: size.height)
             .background(Color(UIColor.secondarySystemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 22))

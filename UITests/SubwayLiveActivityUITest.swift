@@ -53,7 +53,6 @@ final class SubwayLiveActivityUITest: XCTestCase {
         app.launchEnvironment["UITEST_SUBWAY_OUT"] = outDir
         app.launchEnvironment["UITEST_SUBWAY_PAYLOAD"] = "\(inDir)/payload.json"
         app.launch()
-        app.tap()
 
         let log = "\(outDir)/activity.log"
         let startEnd = Date().addingTimeInterval(40)

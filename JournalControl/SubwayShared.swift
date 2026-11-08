@@ -123,14 +123,14 @@ final class OneShotLocation: NSObject, CLLocationManagerDelegate {
 /// Shared by the widget button's intent and the UI-test hook below.
 @available(iOS 17.0, *)
 enum SubwayActivity {
-    static func start(state: SubwayState) async throws -> Activity<SubwayAttributes> {
+    static func start(state: SubwayState, pushType: PushType? = .token) async throws -> Activity<SubwayAttributes> {
         for old in Activity<SubwayAttributes>.activities {
             await old.end(nil, dismissalPolicy: .immediate)
         }
         return try Activity.request(
             attributes: SubwayAttributes(),
             content: .init(state: state, staleDate: nil),
-            pushType: .token
+            pushType: pushType
         )
     }
 }
@@ -204,7 +204,8 @@ struct StartSubwayActivityIntent: LiveActivityStartingIntent {
     private static func run(statePath: String, out: String, payloadPath: String) async throws {
         let state = try JSONDecoder().decode(SubwayState.self, from: Data(contentsOf: URL(fileURLWithPath: statePath)))
         log(out, "enabled=\(ActivityAuthorizationInfo().areActivitiesEnabled)")
-        let activity = try await SubwayActivity.start(state: state)
+        // No push type: `.token` needs the aps-environment entitlement, which the unsigned simulator build lacks.
+        let activity = try await SubwayActivity.start(state: state, pushType: nil)
         log(out, "started \(summary(state))")
         Task {
             for await content in activity.contentUpdates { log(out, "update \(summary(content.state))") }
