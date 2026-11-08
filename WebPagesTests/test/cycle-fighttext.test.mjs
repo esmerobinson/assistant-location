@@ -114,7 +114,11 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     await openFight(page, 'f1');
     const sec = await page.$eval('[data-a="qsave"]', (e) => e.parentElement.textContent.replace(/\s+/g, ' ').trim());
     assert.match(sec, /^QuestionWhich Tuesday do you mean\?/);
+    assert.equal(await page.$eval('[data-a="qsave"]', (e) => e.offsetParent === null), true, 'Save hidden while the answer is empty');
     await page.fill('textarea[data-d="qans"]', 'the 4th');
+    assert.equal(await page.$eval('[data-a="qsave"]', (e) => e.offsetParent !== null), true, 'Save shows once typed');
+    const gap = await page.$eval('[data-a="qsave"]', (e) => e.getBoundingClientRect().top - e.previousElementSibling.getBoundingClientRect().bottom);
+    assert.ok(gap >= 12, 'Save sits below the answer box with a field gap, got ' + gap);
     await page.click('[data-a="qsave"]');
     await page.waitForFunction(() => /A: the 4th/.test(JSON.parse(localStorage.getItem('cycle:shared.u-me')).rows.fight_markers.f1.text_note));
     const sh = await shared(page);

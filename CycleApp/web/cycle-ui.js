@@ -249,6 +249,8 @@ function micTa(k, cls, ph) {
 function noteSaveSync() {
   var ns = document.querySelector('[data-a="notesave"]');
   if (ns) ns.hidden = !val('more').trim();
+  var qs = document.querySelector('[data-a="qsave"]');
+  if (qs) qs.hidden = !val('qans').trim();
 }
 // Drops the recording unsent: the field is going away, the person started typing, or a Save is already underway.
 function stopRec() {
@@ -269,7 +271,7 @@ async function finishRec() {
   var el = document.querySelector('[data-d="' + f + '"]');
   if (!text || !el) return;
   ui.d[f] = C.appendSpeech(ui.d[f] || '', text); el.value = ui.d[f];
-  saveDraft(draftKey()); if (f === 'more') noteSaveSync(); render();
+  saveDraft(draftKey()); if (f === 'more' || f === 'qans') noteSaveSync(); render();
 }
 function sheet(cls, inner, closeA) {
   return '<div class="sheetlayer"><div class="dim" data-a="' + (closeA || 'sheet:close') + '"></div><div class="bs ' + (cls || '') + '"><div class="grab"></div>' + inner + '</div></div>';
@@ -675,7 +677,7 @@ SCREEN.fightdetail = function () {
   }
   // The box's clarifying question goes to the logger only; once its answer is in text_note the question is spent.
   var asked = mk.text_on && mk.text_question && me && fightEditable(mk) && (mk.text_note || '').indexOf('Q: ' + mk.text_question + '\nA: ') < 0;
-  var qHtml = asked ? '<section><p class="lab">Question</p><p style="margin-bottom:12px">' + esc(mk.text_question) + '</p>' + micTa('qans', 'nt') + '<div class="save" data-a="qsave">Save</div></section>' : '';
+  var qHtml = asked ? '<section><p class="lab">Question</p><p style="margin-bottom:12px">' + esc(mk.text_question) + '</p>' + micTa('qans', 'nt') + '<div class="save" data-a="qsave"' + (val('qans').trim() ? '' : ' hidden') + '>Save</div></section>' : '';
   var gapHtml = gap ? '<section class="fgap"><p class="lab">Missing</p><p>' + esc(gap) + '</p></section>' : '';
   var collapsed = hasBeats && !hidden, open = ui.notesOpen === mk.id;
   var notesHtml = !list ? '' : collapsed
@@ -1511,7 +1513,7 @@ app.addEventListener('input', function (e) {
   if (ui.rec && ui.rec.field === k) guard(stopRec)(); // typing takes over from the mic
   if (e.target.closest('.ta.nt')) fitNote(e.target);
   if (k === 'dotherv') doneRefresh();
-  if (k === 'more') noteSaveSync();
+  if (k === 'more' || k === 'qans') noteSaveSync();
   var nb = k === 'chname' && document.getElementById('chnew');
   if (nb) nb.classList.toggle('dis', !e.target.value.trim());
   var pt = e.target.getAttribute('data-pt');
@@ -2476,7 +2478,7 @@ VoiceHold.init({
       insert: guard(finishRec),
       cancel: guard(function () {
         var base = ui.rec.orig, el = document.querySelector('[data-d="' + f + '"]');
-        ui.d[f] = base; if (el) el.value = base; saveDraft(draftKey()); if (f === 'more') noteSaveSync();
+        ui.d[f] = base; if (el) el.value = base; saveDraft(draftKey()); if (f === 'more' || f === 'qans') noteSaveSync();
         return stopRec().then(render);
       })
     };
