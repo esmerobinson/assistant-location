@@ -285,10 +285,6 @@ jobs:
           # app inactive -- run 34774549657's more-dusk shots showed it still
           # up and the palette-keys read never ran.
           xcrun simctl privacy "$SIM_UDID" grant microphone "$BUNDLE_ID"
-          # Photos too: the Journal page asks for library access on load, and the
-          # unanswered alert covered every later deep-link launch (Outfits and
-          # Clips reports came back empty, runs 42432145435..42506098353).
-          xcrun simctl privacy "$SIM_UDID" grant photos "$BUNDLE_ID"
           # Esme's daily-reminder scheduling (EsmeModule.m) requests
           # UNUserNotificationCenter authorization on first launch, which pops
           # a system alert. Nothing in this run taps it, so without a
@@ -305,6 +301,10 @@ jobs:
           # checks to skip the real authorization request (and therefore the
           # modal) entirely during this run.
           xcrun simctl spawn "$SIM_UDID" defaults write "$BUNDLE_ID" UITestSkipNotificationPrompt -bool true
+          # Same for Photos: the launcher's recent-photos strip requests library access on every load, and
+          # `simctl privacy grant photos` leaves the read-write status undetermined (run 42507929752), so the
+          # alert covered the Outfits and Clips launches. GLWebBridge.m skips the request under this key.
+          xcrun simctl spawn "$SIM_UDID" defaults write "$BUNDLE_ID" UITestSkipPhotoPrompt -bool true
 
           echo "=== defaults readback (confirm they applied) ==="
           xcrun simctl spawn "$SIM_UDID" defaults read "$BUNDLE_ID" || echo "(no defaults domain!)"

@@ -330,6 +330,10 @@ NSString *const GLWebBridgeWillOpenModuleNotification = @"GLWebBridgeWillOpenMod
 // Calls `done` on the main queue with YES once Photos read access is granted
 // (full or limited), NO when denied/restricted.
 - (void)withPhotoLibraryAccess:(void (^)(BOOL granted))done {
+    // sim-test sets this: the launcher asks for the library on every load, and the unanswered system alert covers
+    // every later deep-link launch. `simctl privacy grant photos` does not satisfy a read-write request on the CI
+    // simulator (run 42507929752 still showed the full-access alert), so skip the request like UITestSkipNotificationPrompt.
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"UITestSkipPhotoPrompt"]) { done(NO); return; }
     PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelReadWrite];
     if (status == PHAuthorizationStatusNotDetermined) {
         [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelReadWrite
