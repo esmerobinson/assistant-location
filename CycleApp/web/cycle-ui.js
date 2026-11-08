@@ -242,7 +242,8 @@ function micField(k, ph) {
 }
 function micBtn(k) {
   var on = ui.rec && ui.rec.field === k, busy = ui.busy === k;
-  return '<span class="mic' + (on ? ' rec' : '') + (busy ? ' busy' : '') + '" data-a="mic:' + k + '" role="button" aria-label="' + (on ? 'Stop' : 'Voice') + '">' + ic('mic') + '</span>';
+  if (busy) return '<span class="mic busy" data-a="mic:' + k + '" role="progressbar" aria-label="Transcribing"><span class="spin"></span></span>';
+  return '<span class="mic' + (on ? ' rec' : '') + '" data-a="mic:' + k + '" role="button" aria-label="' + (on ? 'Stop' : 'Voice') + '">' + ic('mic') + '</span>';
 }
 // A multi-line field (textarea in its .ta box) with a mic: for every place a lot of text could be dictated. `cls` is the box's own classes.
 function micTa(k, cls, ph) {
@@ -1570,7 +1571,7 @@ function talkScreen() {
       '<span class="save" data-a="tkretry">Retry</span><span class="ghost" data-a="tkwords">Use my words</span>') + x + '</div>';
   } else {
     var ph = talkLast(t, 'user'); // the last sent turn until the next one starts
-    var mic = St.hasNative ? '<span class="tkb tkmic' + (t.listen ? ' rec' : '') + (t.muted ? ' off' : '') + '" data-a="tkmic" role="button" aria-label="Mute">' + ic('mic') + '</span>' : '<span class="tksp"></span>';
+    var mic = St.hasNative ? '<span class="tkb tkmic' + (t.listen ? ' rec' : '') + (t.muted ? ' off' : '') + (t.pending ? ' busy' : '') + '" data-a="tkmic" role="button" aria-label="' + (t.pending ? 'Thinking' : 'Mute') + '">' + (t.pending ? '<span class="spin"></span>' : ic('mic')) + '</span>' : '<span class="tksp"></span>';
     bar = '<div class="tkpill' + (t.text.trim() ? ' has' : '') + '"><span class="tkph">' + esc(ph) + '</span>' +
       '<input class="tkin" data-t="tk" aria-label="Message" autocomplete="off" autocapitalize="sentences" value="' + esc(t.text) + '">' +
       '<span class="tksend" data-a="tksend" role="button" aria-label="Send"><svg class="ic"><path d="M12 19V6M6 12l6-6 6 6"/></svg></span></div>' +

@@ -393,7 +393,9 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .mic .ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .mic.rec{background:#ff2e88;color:#0a0a0a;animation:micpulse 1.2s ease-in-out infinite}
 @keyframes micpulse{50%{box-shadow:0 0 0 8px rgba(255,46,136,.28)}}
-.mic.busy{animation:tkthink 1s ease-in-out infinite;pointer-events:none}
+.mic.busy{pointer-events:none}
+.mic .spin,.tkmic .spin{width:22px;height:22px;border-radius:50%;border:2.5px solid rgba(255,46,136,.25);border-top-color:#ff2e88;animation:micspin .7s linear infinite}
+@keyframes micspin{to{transform:rotate(360deg)}}
 /* A press on the mic can become the hold menu (voice-hold.js): it must not scroll, select text or raise the iOS callout. */
 .mic{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 /* The hold menu's targets live on <body>, outside .phone where --pk is set, so its colours are spelled out here. */

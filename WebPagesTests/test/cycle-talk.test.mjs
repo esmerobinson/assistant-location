@@ -155,7 +155,9 @@ for (const [name, type] of Object.entries(engines)) describe(name, () => {
     assert.equal(await state(page), 'listening');
     await hear(page, 'he said he would call', true);
     await stateIs(page, 'thinking');
+    assert.ok(await page.$('.tkmic .spin'), 'the mic shows a spinner while thinking');
     await replyIs(page, 'Tell me more.');
+    assert.equal(await page.$('.tkmic .spin'), null, 'the spinner is gone once the reply arrives');
     assert.equal(posts[0].messages[0].text, 'he said he would call');
     await page.waitForFunction(() => window.__spoken.length === 1);
     assert.equal(await page.evaluate(() => window.__spoken[0].text), 'Tell me more.');

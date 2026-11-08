@@ -139,7 +139,8 @@ test('a tap stops, the mic is busy while the clip uploads, then the transcript i
   delay = 400;
   await startAndHear(page);
   await page.click('[data-a="mic:note"]');
-  await page.waitForSelector('.mic.busy[data-a="mic:note"]');
+  await page.waitForSelector('.mic.busy[data-a="mic:note"] .spin');
+  assert.equal(await page.$eval('.mic.busy .spin', (e) => getComputedStyle(e).animationName), 'micspin');
   assert.equal(await page.$('.mic.rec'), null);
   await page.waitForFunction(() => document.querySelector('[data-d="note"]').value === 'We argued at dinner');
   assert.equal(await page.$('.mic.busy'), null);
