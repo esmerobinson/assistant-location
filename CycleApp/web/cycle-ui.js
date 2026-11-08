@@ -348,13 +348,15 @@ SCREEN.home = function () {
   // Week close appears from Sunday until acknowledged.
   var led = ledger(), week = null;
   if (C.dow(t) === 6 && prefs().weekSeen !== led.current.start) week = { type: 'week', net: led.current.net };
-  var list = C.homeList({ me: St.me(), now: now(), today: t, todos: L('todos'), cards: cards, week: week });
+  // A to-do swiped away and still inside its Undo window is hidden here too (it is only written once the toast fades).
+  var list = C.homeList({ me: St.me(), now: now(), today: t, todos: L('todos'), cards: cards, week: week }).filter(function (e) { return !(e.kind === 'todo' && pendIgnore && pendIgnore.id === e.todo.id); });
   var html = list.map(function (e) {
     if (e.kind === 'card') return needCard(e.card);
     var x = e.todo, d = x.due_date ? dueOf(x.due_date) : null, mk = x.fight_marker_id && S.rows.fight_markers[x.fight_marker_id];
     // A to do a fight produced names that fight, so two of them ("Apologize", "Reflect") say which fight they belong to.
     var sub = mk ? 'Fight &middot; ' + fmtWhen(C.ms(mk.at)) + (d ? ' &middot; ' + d.text : '') : d ? d.text : 'To-do';
-    return '<div class="nc' + (d && d.state ? ' dc' : '') + '" data-a="tview:' + x.id + '"><div class="mid"><p class="s ' + (d ? d.state : '') + '">' + sub + '</p><p class="x">' + esc(x.title) + '</p></div>' + ic('chevr', 'chv') + '</div>';
+    // data-sw/data-todo: swipe left to ignore, the same gesture as on the To-dos tab (homeList only holds my own open to-dos).
+    return '<div class="nc' + (d && d.state ? ' dc' : '') + '" data-sw="1" data-todo="' + x.id + '" data-a="tview:' + x.id + '"><div class="mid"><p class="s ' + (d ? d.state : '') + '">' + sub + '</p><p class="x">' + esc(x.title) + '</p></div>' + ic('chevr', 'chv') + '</div>';
   }).join('');
   var k = calm(), fr = fightRecs(), ph = C.phase(fr, now(), tz(), 14);
   var tiles = '<div class="tiles"><div class="tile2 big" data-a="tab:fights"><p class="s">Calm streak</p><span class="v">' + k.streak + ' <span class="u">' + (k.streak === 1 ? 'day' : 'days') + '</span></span></div>' +
@@ -1440,7 +1442,7 @@ function setTodoKind(s, v) { if (s.kind !== v) { s.kind = v; if (!s.pt) { s.pe =
 
 function render() {
   if (!ui.ready) return;
-  if (pendIgnore && ui.route !== 'todo') commitIgnore(true); // navigated away: never lose it
+  if (pendIgnore && ui.route !== 'todo' && ui.route !== 'home') commitIgnore(true); // left the screens that swipe: never lose it
   syncDraft();
   var sc = document.querySelector('.scr'), top = sc ? sc.scrollTop : 0, name = currentScreen(), key = name + (ui.sheet ? 's' : '');
   // A tapped control must not close the keyboard: hand focus to the field's twin after the swap (else .scr grows and clamps scrollTop).
@@ -2443,7 +2445,7 @@ function canBack() { return !!(S.session && S.couple && !ui.sheet && (ui.stack.l
   app.addEventListener('touchend', end); app.addEventListener('touchcancel', end);
 })();
 
-// ---- Swipe left on an open to-do of mine to ignore it ---------------------------------------------------------------
+// ---- Swipe left on an open to-do of mine (To-dos tab or Home) to ignore it ---------------------------------------------------------------
 // The row slides left over a pink "Ignore" underlay. On commit it is hidden locally and a toast offers Undo; only when
 // the toast has faded is declined_at written (the box pushes the partner's notification off that column, so an accidental
 // swipe that was undone must never reach Supabase). A second swipe, leaving the screen or hiding the page commits at once.
@@ -2472,7 +2474,7 @@ function ignoreRow(id) {
 (function () {
   var EDGE = 24, sw = null;
   app.addEventListener('touchstart', function (e) {
-    var t = e.touches[0], row = e.target.closest && e.target.closest('.td-row[data-sw]');
+    var t = e.touches[0], row = e.target.closest && e.target.closest('.td-row[data-sw], .nc[data-sw]');
     sw = row && e.touches.length === 1 && t.clientX > EDGE && !ui.sheet ? { row: row, x: t.clientX, y: t.clientY, dx: 0, v: 0, t: e.timeStamp, on: false } : null;
   }, { passive: true });
   app.addEventListener('touchmove', function (e) {

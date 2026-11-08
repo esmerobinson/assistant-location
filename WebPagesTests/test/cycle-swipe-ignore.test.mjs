@@ -38,7 +38,7 @@ describe('swipe left to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_W
   before(async () => { browser = await pw.webkit.launch({ headless: true, executablePath: process.env.GL_WEBKIT_EXEC }); });
   after(async () => { await browser.close(); });
 
-  async function open(todos) {
+  async function open(todos, home = false) {
     const s = seed(todos);
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
     await context.addInitScript((sd) => {
@@ -50,6 +50,7 @@ describe('swipe left to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_W
     const page = await context.newPage();
     page.on('pageerror', (e) => { throw e; });
     await page.goto(URL_, { waitUntil: 'domcontentloaded' });
+    if (home) { await page.waitForSelector('.pts .nd'); return { context, page }; }
     await page.click('[data-a="tab:todo"]');
     await page.waitForSelector('[data-a="addpick"]');
     return { context, page };
@@ -61,7 +62,8 @@ describe('swipe left to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_W
   // One touch gesture on the row in 8 touchmoves; returns whether any touchmove was preventDefault()ed (claimed as a swipe).
   // hold=true leaves the finger down (no touchend).
   async function drag(page, id, dx, dy = 0, hold = false) {
-    const box = await page.locator('[data-todo="' + id + '"] .tx').boundingBox();
+    const sel = '[data-todo="' + id + '"] :is(.tx, .mid)';
+    const box = await page.locator(sel).boundingBox();
     return page.evaluate(async ([sel, x0, y0, dx, dy, hold]) => {
       const target = document.querySelector(sel);
       const fire = (type, x, y) => {
@@ -75,7 +77,7 @@ describe('swipe left to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_W
       for (let i = 1; i <= 8; i++) { if (!fire('touchmove', x0 + dx * i / 8, y0 + dy * i / 8)) prevented = true; await new Promise((r) => setTimeout(r, 16)); }
       if (!hold) { fire('touchend', x0 + dx, y0 + dy); await new Promise((r) => setTimeout(r, 300)); }
       return prevented;
-    }, ['[data-todo="' + id + '"] .tx', box.x + box.width - 20, box.y + box.height / 2, dx, dy, hold]);
+    }, [sel, box.x + box.width - 20, box.y + box.height / 2, dx, dy, hold]);
   }
   const hidden = (page, id) => page.$('[data-todo="' + id + '"]').then((e) => !e);
 
@@ -141,6 +143,8 @@ describe('swipe left to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_W
     assert.equal(await patches(page, 'a'), 0);
     await page.click('[data-a="tview:b"]');
     await page.waitForSelector('.tdd2');
+    // The store saves to localStorage asynchronously, so poll briefly rather than read once.
+    for (let i = 0; i < 20 && (await patches(page, 'a')) === 0; i++) await page.waitForTimeout(100);
     assert.equal(await patches(page, 'a'), 1);
     assert.equal(await page.$('.ign-toast'), null);
     await context.close();
@@ -171,6 +175,27 @@ describe('swipe left to ignore a to-do (webkit)', { skip: !HAS_WK && 'needs GL_W
     await page.click('[data-todo="a"] .tx');
     await page.waitForSelector('.tdd2');
     assert.equal(await patches(page, 'a'), 0);
+    await context.close();
+  });
+
+  test('Home: swiping a to-do card left hides it with the toast, and the fade writes declined_at once', async () => {
+    const { page, context } = await open([td('a', { title: 'Alpha' }), td('b', { title: 'Beta' })], true);
+    assert.equal(await drag(page, 'a', -200), true, 'touchmoves are claimed by the swipe');
+    await page.waitForSelector('.ign-toast');
+    assert.ok(await hidden(page, 'a'));
+    assert.ok(await page.$('.nc[data-todo="b"]'));
+    assert.equal(await patches(page, 'a'), 0);
+    await page.waitForSelector('.ign-toast', { state: 'detached', timeout: 7000 });
+    assert.equal(await patches(page, 'a'), 1);
+    assert.ok((await stored(page)).rows.todos.a.declined_at);
+    await context.close();
+  });
+
+  test('Home mid-swipe shot', { skip: !SHOTS }, async () => {
+    const { page, context } = await open([td('a', { title: 'Take out the trash', due_date: '2026-10-22' }), td('b', { title: 'Call the landlord' })], true);
+    await drag(page, 'a', -170, 0, true);
+    await page.waitForTimeout(100);
+    await shot(page, 'home-midswipe');
     await context.close();
   });
 
