@@ -715,7 +715,7 @@ static NSMutableArray *GLRegisteredModules(void) {
             break;
         }
     }
-    // A modal left open over the tabs (e.g. the Clips player) would hide the
+    // A modal left open over the tabs would hide the
     // module this call just selected, so a deep link closes it first.
     if (target != nil && tabs.presentedViewController != nil) {
         [tabs dismissViewControllerAnimated:NO completion:nil];

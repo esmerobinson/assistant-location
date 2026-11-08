@@ -150,8 +150,6 @@ test.add_file_references([arbiter_ref])
 back_swipe_ref = group.new_reference("Modules/WebBridge/GLWebBackSwipe.m")
 test.add_file_references([back_swipe_ref])
 
-# ClipsTakesStore.m (Modules/Clips/, synced group): take-to-song map math.
-test.add_file_references([group.new_reference("Modules/Clips/ClipsTakesStore.m")])
 # GLDurableOutbox.m (Modules/, synced group, fresh reference). Foundation-only
 # by design so the persist/retry/reject rules run against NSURLProtocol stubs.
 outbox_durable_ref = group.new_reference("Modules/GLDurableOutbox.m")
@@ -170,9 +168,6 @@ test.add_file_references([group.new_reference("Modules/GLTabDoubleTap.m")])
 # GLGrowthQuietWindow.m (Modules/Growth/, synced group, fresh reference). Pure
 # Foundation: the Growth quiet-window max/never-shortens bookkeeping.
 test.add_file_references([group.new_reference("Modules/Growth/GLGrowthQuietWindow.m")])
-# Clips voice parser and manifest parser, pure Foundation.
-test.add_file_references([group.new_reference("Modules/Clips/ClipsVoiceCommand.m")])
-test.add_file_references([group.new_reference("Modules/Clips/ClipsCatalog.m")])
 
 # Cycle shell (CycleApp/): the store, notifier and bridge are Foundation/UserNotifications (bridge
 # also uses UIKit haptics, linked here); the view controller and app delegate are not compiled in.
@@ -214,7 +209,7 @@ test.build_configurations.each do |c|
   # "QuotesModels.h"/"QuotesRuleEngine.h"/"QuotesImportParser.h" flat.
   # "Modules" itself for GLDefaultTabArbiterTests.m's "GLDefaultTabArbiter.h".
   # "Modules/WebBridge" for GLWebBackSwipeTests.m's "GLWebBackSwipe.h".
-  c.build_settings["HEADER_SEARCH_PATHS"] = ["$(inherited)", "$(SRCROOT)/App", "$(SRCROOT)/Shared", "$(SRCROOT)/Modules/Todos", "$(SRCROOT)/Modules/Esme", "$(SRCROOT)/QuotesApp/Sources", "$(SRCROOT)/ListenApp","$(SRCROOT)/Modules", "$(SRCROOT)/Modules/WebBridge", "$(SRCROOT)/Modules/CrashReporter", "$(SRCROOT)/Modules/Growth", "$(SRCROOT)/Modules/Clips", "$(SRCROOT)/CycleApp", "$(SRCROOT)/CycleNSE"]
+  c.build_settings["HEADER_SEARCH_PATHS"] = ["$(inherited)", "$(SRCROOT)/App", "$(SRCROOT)/Shared", "$(SRCROOT)/Modules/Todos", "$(SRCROOT)/Modules/Esme", "$(SRCROOT)/QuotesApp/Sources", "$(SRCROOT)/ListenApp","$(SRCROOT)/Modules", "$(SRCROOT)/Modules/WebBridge", "$(SRCROOT)/Modules/CrashReporter", "$(SRCROOT)/Modules/Growth", "$(SRCROOT)/CycleApp", "$(SRCROOT)/CycleNSE"]
   # Deliberately no TEST_HOST / BUNDLE_LOADER: a standalone "logic test"
   # bundle needs no host app to launch, and no dependency edge onto
   # Overland -- which matters because a dependency edge would make the

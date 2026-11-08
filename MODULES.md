@@ -53,7 +53,7 @@ only the classes that actually are modules.)
 
 Orders in use: Sessions ("New Session") 50, Events 100, Todos 150, Football 200, Settings 300, Overstim 310,
 Finances 610, AutoJournal (Journal) 620,
-Esme 650, Growth 660, Outfits 670, Upload 690, Tracker 700, GoalTracker 705, Debate 707, Clips 710, Cooking 720. Pick an unused value;
+Esme 650, Growth 660, Outfits 670, Upload 690, Tracker 700, GoalTracker 705, Debate 707, Cooking 720. Pick an unused value;
 `new_module.sh` defaults to highest + 100.
 iOS shows only the first 4 tabs by order plus a "More" bucket for the rest,
 so today's visible tab bar is New Session | Events | Todos | Football, with
