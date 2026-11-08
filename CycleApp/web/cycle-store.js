@@ -581,12 +581,15 @@ var CycleStore = (function () {
   // Native hands over the APNs token (cycleNative.pushToken); the box stores it for this account so the
   // partner's new to dos reach this phone while the app is closed. Registered once per
   // token + account per launch, only after sync shows a couple (the box rejects non-members).
-  var pushRegistered = null, pushRetryAt = 0, PUSH_RETRY_MS = 60000;
+  var pushRegistered = null, pushRetryAt = 0, PUSH_RETRY_MS = 60000, pushInflight = false;
   function setPushToken(t) { S.pushToken = t; if (S.couple) registerPush(); }
   async function registerPush() {
     if (!cfg.boxUrl || !S.session || !S.pushToken || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
     var key = S.session.user.id + ':' + S.pushToken;
-    if (pushRegistered === key || Date.now() < pushRetryAt) return;
+    // pushInflight is load-bearing: setPushToken and a sync tick can both call this while the first is still awaiting
+    // ensureFresh, and both pass the back-off check before pushRetryAt is set, doubling the POSTs (sentinel red 3724801e).
+    if (pushRegistered === key || Date.now() < pushRetryAt || pushInflight) return;
+    pushInflight = true;
     try {
       await ensureFresh();
       var post = function () { return fetch(cfg.boxUrl + '/push/register', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + S.session.access_token }, body: JSON.stringify({ token: S.pushToken }) }); };
@@ -599,6 +602,7 @@ var CycleStore = (function () {
       }
       pushRegistered = key;
     } catch (e) { if (!(e instanceof TypeError)) console.error('cycle push register failed:', e); }
+    finally { pushInflight = false; }
   }
   // ---- talk -----------------------------------------------------------------------------------
   // One turn of the spoken fight conversation. Throws (with .status for HTTP failures) so the UI can keep the person's
