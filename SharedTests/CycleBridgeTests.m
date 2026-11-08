@@ -461,6 +461,17 @@
     XCTAssertTrue([[self run:@"speech.cancel" args:@{}][@"error"] containsString:@"no speech handler"]);
 }
 
+- (void)testShakeReachesThePageWithItsSnapshotOnlyOnceItIsReady {
+    [self.bridge deliverShake:@"iVBOR"];
+    XCTAssertEqual(self.js.count, 0u, @"a shake during launch is dropped, not queued");
+    [self run:@"ready" args:@{}];
+    [self.bridge deliverShake:@"iVBOR"];
+    [self.bridge deliverShake:nil];
+    XCTAssertEqual(self.js.count, 2u);
+    XCTAssertEqualObjects([self argsOfJS:self.js[0] prefix:@"window.cycleNative.shake.apply(window.cycleNative, "], (@[@"iVBOR"]));
+    XCTAssertEqualObjects([self argsOfJS:self.js[1] prefix:@"window.cycleNative.shake.apply(window.cycleNative, "], (@[NSNull.null]));
+}
+
 - (void)testSilenceAndErrorReachThePageOnlyOnceItIsReady {
     [self.bridge deliverSpeechSilence];
     [self.bridge deliverSpeechError:@"Mic busy"];

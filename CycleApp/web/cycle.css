@@ -581,3 +581,6 @@ svg.zoomchart{display:block;width:100%;height:auto;touch-action:pan-y;user-selec
 /* The same swipe on Home's to-do cards: the underlay is a matching rounded card one gap to the right. */
 .pts .nc.swp{position:relative;touch-action:pan-y}
 .pts .nc .sw-ul{position:absolute;left:calc(100% + 8px);top:-2px;bottom:-2px;width:100%;border-radius:16px;background:#ff2e88;color:#0a0a0a;display:flex;align-items:center;padding-left:20px;box-sizing:border-box;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+/* Complain sheet (shake): the screenshot it will send, small enough to leave room for the note and the keyboard. */
+.bs.gp .gshot{display:block;height:150px;width:auto;margin:4px auto 14px;border:2px solid #2a2a2a;border-radius:12px}
+.bs.gp .acts{margin-top:16px}

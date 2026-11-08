@@ -251,6 +251,11 @@ static NSString *CycleKeychainError(NSString *op, OSStatus st) {
     if (self.ready) [self callNative:@"speechSilence" arguments:@[]];
 }
 
+- (void)deliverShake:(NSString *)png {
+    // Dropped (not queued) while the page is not ready: a shake during launch is not a complaint about a screen.
+    if (self.ready) [self callNative:@"shake" arguments:@[png ?: NSNull.null]];
+}
+
 - (void)deliverSpeechError:(NSString *)message {
     if (self.ready) [self callNative:@"speechError" arguments:@[message ?: @""]];
 }

@@ -64,6 +64,8 @@
 - (void)deliverPushToken:(NSString *)hex;
 /// Speech then silence heard while recording -> window.cycleNative.speechSilence().
 - (void)deliverSpeechSilence;
+/// The phone was shaken -> window.cycleNative.shake(png): base64 PNG of the screen, or null when the snapshot failed.
+- (void)deliverShake:(NSString *)png;
 /// A running recording failed -> window.cycleNative.speechError(message).
 - (void)deliverSpeechError:(NSString *)message;
 /// The app is leaving the foreground: iOS stops the microphone, so the recording is finalized but kept for the page's

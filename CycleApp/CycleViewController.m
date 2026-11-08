@@ -251,4 +251,28 @@
     NSLog(@"[Cycle] page load failed: %@", error);
 }
 
+// Shake to complain. UIKit sends a shake to the first responder and up the chain; the web view's content is usually first
+// responder and passes it on to this controller. The page is handed a snapshot of what was on screen at the moment of the
+// shake (before its sheet covers it), as base64 PNG at 2x: 3x roughly doubles the bytes with no gain in legibility.
+// Skipped behind the lock cover, which would be the only thing in the picture. Whether a complaint is offered at all
+// (Esme only) is the page's call: cycleNative.shake ignores it otherwise.
+- (void)motionEnded:(UIEventSubtype)motion withEvent:(UIEvent *)event {
+    if (motion != UIEventSubtypeMotionShake) { [super motionEnded:motion withEvent:event]; return; }
+    if (!self.cover.hidden) return;
+    __weak typeof(self) weakSelf = self;
+    [self.webView takeSnapshotWithConfiguration:[[WKSnapshotConfiguration alloc] init] completionHandler:^(UIImage *image, NSError *error) {
+        if (error) NSLog(@"[Cycle] shake snapshot failed: %@", error);
+        NSString *png = nil;
+        if (image) {
+            UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+            format.scale = 2;
+            UIImage *small = [[[UIGraphicsImageRenderer alloc] initWithSize:image.size format:format] imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+                [image drawInRect:CGRectMake(0, 0, image.size.width, image.size.height)];
+            }];
+            png = [UIImagePNGRepresentation(small) base64EncodedStringWithOptions:0];
+        }
+        [weakSelf.bridge deliverShake:png];
+    }];
+}
+
 @end

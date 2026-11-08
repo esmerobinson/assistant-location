@@ -1389,6 +1389,7 @@ function fitNote(t) { t.style.height = 'auto'; t.style.height = t.scrollHeight +
 function draftKey() {
   var s = ui.sheet, name = currentScreen();
   if (name === 'auth' || name === 'setup') return null;
+  if (ui.gripe) return 'gripe'; // the complaint sheet covers whatever screen is under it
   if (s) {
     if (s.type === 'newtodo') return 'todo:' + (s.edit || 'new');
     if (s.type === 'still') return s.edit ? 'still:' + s.id : null;
@@ -1457,6 +1458,7 @@ function render() {
     // Sheets are rendered inside the owning screen (so they inherit its family CSS); screens that
     // host sheets read ui.sheet themselves. Everything else shows the sheet via the shared hook below.
     if (ui.notif && S.session) html = html.replace(/<\/div>$/, notifSheet() + '</div>');
+    if (ui.gripe) html = html.replace(/<\/div>$/, gripeSheet() + '</div>');
     if (!ui.talk && ui.sheet && name !== 'todo' && name !== 'tododetail' && name !== 'shop' && name !== 'challenge') html = html.replace(/<\/div>$/, sheetFor() + '</div>');
   } catch (e) {
     // A screen that cannot draw (e.g. a row it expects is missing) must not blank the app or poison every later render.
@@ -1497,6 +1499,36 @@ if (window.visualViewport) {
 function notifSheet() {
   return sheet('nf', '<div class="bsh"><h3>Notifications are off</h3><span class="xb" data-a="notifx">&#x2715;</span></div>' +
     '<div class="acts"><div class="save" data-a="notifset">Turn on</div><div class="tdrop" data-a="notifoff">Don&rsquo;t remind me</div></div>', 'notifx');
+}
+// ---- Complain (shake) ----------------------------------------------------------------------------------------------
+// Esme shakes the phone: the shell snapshots the screen and calls cycleNative.shake(png). This sheet then takes her words
+// (typed or dictated) and St.complain queues them with the screenshot and where she was; the box starts a Claude session
+// for Oliver, which proposes a fix and waits for his OK. Esme only: Oliver files his own issues straight with Claude.
+// Gated on the member name because the page has no other notion of who is who (the box knows Oliver's id; the page doesn't).
+function canComplain() { return !!S.session && !!S.couple && firstName(nameOf(St.me())) === 'Esme'; }
+function gripeSheet() {
+  return sheet('t3 gp', '<div class="bsh"><h3>Complain</h3><span class="xb" data-a="gripex">&#x2715;</span></div>' +
+    (ui.gripe.shot ? '<img class="gshot" alt="" src="' + ui.gripe.shot + '">' : '') +
+    micTa('gripe', 'nt', 'What\u2019s wrong?') +
+    '<div class="acts"><div class="save" data-a="gripesend">' + (ui.gripe.busy ? '<span class="spin"></span>' : 'Send') + '</div></div>', 'gripex');
+}
+// Opening stashes the screen's own typed fields: ui.d is shared, and closing must hand them back untouched.
+function openGripe(png) {
+  if (!canComplain() || ui.gripe || ui.talk) return;
+  ui.gripe = { shot: png ? 'data:image/png;base64,' + png : null, prevD: ui.d, route: ui.route };
+  ui.d = {}; render();
+}
+function closeGripe() { var g = ui.gripe; ui.gripe = null; ui.d = g ? g.prevD : {}; render(); }
+// What Claude needs to find the screen: the route stack, the ids it shows, and recent client errors.
+function gripeContext() {
+  return { route: ui.gripe.route, stack: ui.stack.map(function (x) { return x.route; }).join(' > '), fightId: ui.fightId || null, todoId: ui.todoId || null,
+    chId: ui.chId || null, who: firstName(nameOf(St.me())), userAgent: navigator.userAgent, errors: St.errLogText().slice(-3000) };
+}
+function sentToast() {
+  var el = document.createElement('div');
+  el.className = 'ign-toast'; el.innerHTML = '<span>Sent</span>';
+  document.body.appendChild(el);
+  setTimeout(function () { el.classList.add('out'); setTimeout(function () { el.remove(); }, 400); }, 1800);
 }
 function notifKey() { return 'notifnag:' + St.me(); }
 async function checkNotif() {
@@ -1867,6 +1899,17 @@ var ACT = {
   tkwords: guard(function () { return talkApply(ui.talk.msgs.filter(function (m) { return m.role === 'user'; }).map(function (m) { return m.text; }).join(' ')); }),
   upd: guard(function () { return St.openInstall(); }),
   notifx: function () { ui.notif = false; render(); },
+  gripex: closeGripe,
+  // Queued in kv before any network call (St.complain), so Sent is true even offline: it goes out on the next foreground.
+  gripesend: guard(async function () {
+    var g = ui.gripe, text = (ui.d.gripe || '').trim();
+    if (!g || g.busy || ui.rec || ui.busy) return;
+    if (!text) throw new Error('Say what\u2019s wrong');
+    g.busy = true; render();
+    try { await St.complain({ text: text, screenshot: g.shot, context: gripeContext() }); }
+    catch (e) { g.busy = false; render(); throw e; } // stays open with the words in it
+    draftSent('gripe'); ui.d = {}; closeGripe(); sentToast(); St.native.haptic('success');
+  }),
   notifset: function () { St.native.openSettings(); },
   notifoff: function () { ui.notif = false; render(); St.kv.set(notifKey(), '1'); },
   mode: function (m) { ui.mode = m; render(); },
@@ -2572,16 +2615,17 @@ window.cycleNative = {
   route: function (r) { if (ui.ready) guard(applyRoute)(r); else routeQ.push(r); },
   ready: function () { while (ui.ready && routeQ.length) guard(applyRoute)(routeQ.shift()); },
   pushToken: function (t) { St.setPushToken(t); },
+  shake: function (png) { if (ui.ready) openGripe(png); },
   // The shell heard speech and then silence (also sent when the app is backgrounded mid-recording; the clip is kept for the
   // stop). Only Talk acts on it; a dictated field waits for its mic tap.
   speechSilence: function () { if (ui.rec && ui.rec.field === 'talk') guard(talkEndTurn)(); },
   speechError: function (msg) { var talk = ui.rec && ui.rec.field === 'talk'; ui.rec = null; if (talk && ui.talk) { ui.talk.listen = false; render(); } showErr(plain(new Error(msg))); },
-  foreground: function () { St.retryPush(); St.abortInflight(); if (S.session) { St.sync(); St.pullPriv(); } render(); checkNotif(); checkUpdate(); }
+  foreground: function () { St.retryPush(); St.abortInflight(); guard(St.flushComplaints)(); if (S.session) { St.sync(); St.pullPriv(); } render(); checkNotif(); checkUpdate(); }
 };
 Object.keys(window.cycleNative).forEach(function (k) { window.cycleNative[k] = nativeEntry(window.cycleNative[k]); });
 
 // ---- boot --------------------------------------------------------------------------------------------------------------
-St.boot().then(function () { return St.hasNative ? St.native.lockGet() : false; }).then(function (lockOn) {  ui.lockOn = lockOn; ui.ready = true; render(); window.cycleNative.ready(); St.native.ready(); checkNotif(); checkUpdate();
+St.boot().then(function () { return St.hasNative ? St.native.lockGet() : false; }).then(function (lockOn) {  ui.lockOn = lockOn; ui.ready = true; render(); window.cycleNative.ready(); St.native.ready(); checkNotif(); checkUpdate(); guard(St.flushComplaints)();
   // No realtime channel: poll while visible (cursor-based, so a quiet poll is 9 tiny GETs), plus the
   // 15s repaint that moves countdowns and promotes a held item to "ready".
   setInterval(function () { if (document.visibilityState === 'visible' && S.session) St.sync(); }, 5000);

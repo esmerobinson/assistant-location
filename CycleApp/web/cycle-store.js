@@ -617,6 +617,36 @@ var CycleStore = (function () {
     if (!r.ok) { var e = new Error('talk failed: HTTP ' + r.status); e.status = r.status; throw e; }
     return r.json();
   }
+  // ---- complaints (shake to complain) ---------------------------------------------------------
+  // Queued in kv before any network call so a complaint survives offline and app kills; flushComplaints sends the queue
+  // oldest-first (on add, boot and foreground). The box is idempotent on opId, so a resend after a lost reply is harmless.
+  // A 4xx other than 401/429 will never succeed, so it is dropped and logged; anything else stays queued.
+  var complaintsKey = function () { return 'complaints.' + S.session.user.id; };
+  var complainBusy = false;
+  async function complain(entry) {
+    var q = JSON.parse((await kv.get(complaintsKey())) || '[]');
+    q.push(Object.assign({ opId: uuid(), at: new Date().toISOString() }, entry));
+    await kv.set(complaintsKey(), JSON.stringify(q));
+    return flushComplaints();
+  }
+  async function flushComplaints() {
+    if (!cfg.boxUrl || !S.session || complainBusy) return;
+    complainBusy = true;
+    try {
+      var q = JSON.parse((await kv.get(complaintsKey())) || '[]');
+      while (q.length) {
+        await ensureFresh();
+        var r;
+        try {
+          r = await fetch(cfg.boxUrl + '/complain', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + S.session.access_token }, body: JSON.stringify(q[0]) });
+        } catch (e) { if (e instanceof TypeError) return; throw e; }
+        if (!r.ok && (r.status >= 500 || r.status === 401 || r.status === 429)) return;
+        if (!r.ok) logErr('complain', new Error('complaint dropped: HTTP ' + r.status));
+        q.shift();
+        await kv.set(complaintsKey(), JSON.stringify(q));
+      }
+    } finally { complainBusy = false; }
+  }
   // Stops the recording and returns its transcript ('' when nothing was said). The box forwards the clip to Deepgram and keeps
   // nothing; a fetch TypeError means offline (same convention as talk).
   async function transcribe() {
@@ -758,6 +788,6 @@ var CycleStore = (function () {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
     kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, upsert: upsert, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
-    nativeUpdateAvailable: nativeUpdateAvailable, openInstall: openInstall, talk: talk, transcribe: transcribe, canTalk: !!cfg.boxUrl, api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, abortInflight: abortInflight, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, pullPriv: pullPriv, setPushToken: setPushToken,
+    nativeUpdateAvailable: nativeUpdateAvailable, openInstall: openInstall, talk: talk, transcribe: transcribe, complain: complain, flushComplaints: flushComplaints, canTalk: !!cfg.boxUrl, api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, abortInflight: abortInflight, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, pullPriv: pullPriv, setPushToken: setPushToken,
   };
 })();
