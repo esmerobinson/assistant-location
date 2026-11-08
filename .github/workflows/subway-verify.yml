@@ -1,0 +1,118 @@
+name: subway-verify
+
+# Verifies the Subway widget and Live Activity on a simulator, against real saved server output (SubwayTests/fixtures):
+#   1. SubwayTests (host-less): server JSON + APNs payload decode into SubwayState, widget renders (ImageRenderer).
+#   2. SubwayLiveActivityUITest: starts the Live Activity in the app, screenshots the lock screen and Dynamic Island,
+#      delivers the server's APNs payload (simctl push, falling back to the in-app decode hook) and screenshots again.
+# Manual only, opt-in (see MODULES.md "CI budget"). Screenshots are in the `subway-shots` artifact.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  subway:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Add test targets
+        run: |
+          gem install xcodeproj --no-document
+          ruby scripts/add_subway_tests_target.rb
+          ruby scripts/add_uitest_target.rb
+
+      - name: Boot an iOS 26 Pro simulator
+        run: |
+          set -euo pipefail
+          RUNTIME_ID=$(xcrun simctl list runtimes -j | jq -r \
+            '[.runtimes[] | select(.isAvailable) | select(.identifier | startswith("com.apple.CoreSimulator.SimRuntime.iOS-26"))] | sort_by(.version) | last | .identifier // empty')
+          test -n "$RUNTIME_ID" || { echo "FATAL: no iOS 26 runtime"; xcrun simctl list runtimes; exit 1; }
+          UDID=$(xcrun simctl list devices available -j | jq -r --arg rt "$RUNTIME_ID" \
+            '[.devices[$rt][]? | select(.name | test("^iPhone")) | select(.name | test("Pro$"))] | last | .udid // empty')
+          [ -n "$UDID" ] || UDID=$(xcrun simctl list devices available -j | jq -r --arg rt "$RUNTIME_ID" \
+            '[.devices[$rt][]? | select(.name | test("^iPhone"))] | first | .udid')
+          test -n "$UDID" || { echo "FATAL: no iPhone under $RUNTIME_ID"; exit 1; }
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl list devices | grep "$UDID"
+          xcrun simctl spawn "$UDID" defaults write com.oliverullman.assistantlocation UITestSkipNotificationPrompt -bool true
+          xcrun simctl spawn "$UDID" defaults write com.apple.assistant.support "Dictation Enabled" -bool true
+          xcrun simctl spawn "$UDID" defaults write com.apple.assistant.support "Suppress Dictation Opt In" -bool true
+          xcrun simctl spawn "$UDID" defaults write com.oliverullman.assistantlocation GLAPIEndpointDefaults "http://127.0.0.1:8399/overland"
+          xcrun simctl spawn "$UDID" defaults write com.oliverullman.assistantlocation GLAPIAccessTokenDefaults "simtok0123456789"
+
+      - name: Run SubwayTests (decode + widget render)
+        run: |
+          set -o pipefail
+          mkdir -p /tmp/subway-out
+          xcodebuild test \
+            -project Overland.xcodeproj \
+            -scheme SubwayTests \
+            -destination "id=$SIM_UDID" \
+            -resultBundlePath build/unit.xcresult \
+            -derivedDataPath build-unit \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee unit-output.log
+
+      - name: Install pods
+        if: always()
+        run: pod install
+
+      - name: Run Live Activity UI test
+        if: always()
+        run: |
+          set -o pipefail
+          rm -rf /tmp/subway-in /tmp/subway-out-ui; mkdir -p /tmp/subway-in
+          cp SubwayTests/fixtures/*.json /tmp/subway-in/
+          mkdir -p /tmp/subway-out
+          rm -f /tmp/subway-out/stage-* /tmp/subway-out/ack-* /tmp/subway-out/push.done /tmp/subway-out/activity.log
+          scripts/subway_sim_driver.sh "$SIM_UDID" &
+          DRIVER=$!
+          RC=0
+          xcodebuild test \
+            -workspace Overland.xcworkspace \
+            -scheme OverlandUITests \
+            -destination "id=$SIM_UDID" \
+            -only-testing:UITests/SubwayLiveActivityUITest \
+            -resultBundlePath build/ui.xcresult \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee ui-output.log || RC=$?
+          kill $DRIVER 2>/dev/null || true
+          echo "=== activity.log ==="; cat /tmp/subway-out/activity.log || true
+          echo "=== driver.log ==="; cat /tmp/subway-out/driver.log || true
+          grep -E "^Test Case '.*' (passed|failed)|Executed [0-9]+ test" ui-output.log || true
+          exit $RC
+
+      - name: Export xcresult attachments
+        if: always()
+        run: |
+          mkdir -p /tmp/subway-out/attachments-unit /tmp/subway-out/attachments-ui
+          xcrun xcresulttool export attachments --path build/unit.xcresult --output-path /tmp/subway-out/attachments-unit || true
+          xcrun xcresulttool export attachments --path build/ui.xcresult --output-path /tmp/subway-out/attachments-ui || true
+
+      - name: Per-test results
+        if: always()
+        run: grep -hE "^Test Case '.*' (passed|failed)|Executed [0-9]+ test" unit-output.log ui-output.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: subway-shots
+          path: |
+            /tmp/subway-out
+            unit-output.log
+            ui-output.log
+            build/unit.xcresult
+            build/ui.xcresult
+          if-no-files-found: warn

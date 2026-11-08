@@ -48,7 +48,7 @@ private struct RowView: View {
                 Text(row.dest).font(.caption).lineLimit(1)
             }
             Spacer(minLength: 4)
-            Text(row.sched ? "~\(row.mins)" : "\(row.mins)").font(.subheadline.bold()).monospacedDigit()
+            Text(row.minsLabel).font(.subheadline.bold()).monospacedDigit()
             Text(row.verdict).font(.caption2).foregroundStyle(verdictColor(row.verdict)).lineLimit(1)
         }
     }
@@ -83,7 +83,7 @@ struct SubwayLiveActivity: Widget {
             } compactLeading: {
                 if let row = context.state.topPerLine.first { Bullet(line: row.line) }
             } compactTrailing: {
-                if let row = context.state.topPerLine.first { Text(row.sched ? "~\(row.mins)" : "\(row.mins)").monospacedDigit() }
+                if let row = context.state.topPerLine.first { Text(row.minsLabel).monospacedDigit() }
             } minimal: {
                 if let row = context.state.topPerLine.first { Bullet(line: row.line) }
             }

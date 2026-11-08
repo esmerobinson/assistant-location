@@ -119,23 +119,31 @@ final class OneShotLocation: NSObject, CLLocationManagerDelegate {
     }
 }
 
-/// The widget button: starts the Live Activity without opening the app. Replaces any activity already running so a
-/// second tap never stacks two on the lock screen.
+/// Ends any running subway activity and requests a fresh one, so a second tap never stacks two on the lock screen.
+/// Shared by the widget button's intent and the UI-test hook below.
+@available(iOS 17.0, *)
+enum SubwayActivity {
+    static func start(state: SubwayState) async throws -> Activity<SubwayAttributes> {
+        for old in Activity<SubwayAttributes>.activities {
+            await old.end(nil, dismissalPolicy: .immediate)
+        }
+        return try Activity.request(
+            attributes: SubwayAttributes(),
+            content: .init(state: state, staleDate: nil),
+            pushType: .token
+        )
+    }
+}
+
+/// The widget button: starts the Live Activity without opening the app.
 @available(iOS 26.0, *)
 struct StartSubwayActivityIntent: LiveActivityStartingIntent {
     static let title: LocalizedStringResource = "Track subway times"
 
     func perform() async throws -> some IntentResult {
-        for old in Activity<SubwayAttributes>.activities {
-            await old.end(nil, dismissalPolicy: .immediate)
-        }
         let loc = try await OneShotLocation.current()
         let state = try await SubwayAPI.nearby(loc)
-        let activity = try Activity.request(
-            attributes: SubwayAttributes(),
-            content: .init(state: state, staleDate: nil),
-            pushType: .token
-        )
+        let activity = try await SubwayActivity.start(state: state)
         // The first token arrives within a second or two; the server needs it before it can push anything.
         for await token in activity.pushTokenUpdates {
             try await SubwayAPI.register(pushToken: token, loc)
@@ -143,6 +151,84 @@ struct StartSubwayActivityIntent: LiveActivityStartingIntent {
         }
         return .result()
     }
+}
+
+/// CI hook (UITests/SubwayLiveActivityUITest.swift): starts the Live Activity from a saved server response instead of
+/// location + HTTP, logs every state the activity ends up in to UITEST_SUBWAY_OUT/activity.log, and also applies a
+/// saved APNs payload dropped at UITEST_SUBWAY_PAYLOAD, decoding `aps.content-state` strictly into SubwayState (the
+/// same decode ActivityKit does), so a server/Swift key mismatch shows up as DECODE-FAIL.
+@objc public final class GLSubwayUITestHook: NSObject {
+    private static var started = false
+
+    private struct Envelope: Decodable {
+        struct APS: Decodable {
+            let state: SubwayState
+            enum CodingKeys: String, CodingKey { case state = "content-state" }
+        }
+        let aps: APS
+    }
+
+    @objc public static func startIfRequested() {
+        let env = ProcessInfo.processInfo.environment
+        guard !started, let statePath = env["UITEST_SUBWAY_STATE"], let out = env["UITEST_SUBWAY_OUT"],
+              let payloadPath = env["UITEST_SUBWAY_PAYLOAD"] else { return }
+        started = true
+        guard #available(iOS 17.0, *) else { return }
+        Task { @MainActor in
+            do {
+                try await run(statePath: statePath, out: out, payloadPath: payloadPath)
+            } catch {
+                log(out, "ERROR \(error)")
+            }
+        }
+    }
+
+    private static func log(_ out: String, _ line: String) {
+        let url = URL(fileURLWithPath: out).appendingPathComponent("activity.log")
+        let data = Data((line + "\n").utf8)
+        if let h = try? FileHandle(forWritingTo: url) {
+            h.seekToEndOfFile()
+            h.write(data)
+            h.closeFile()
+        } else {
+            try? data.write(to: url)
+        }
+    }
+
+    private static func summary(_ s: SubwayState) -> String {
+        "rows=" + s.rows.map { "\($0.line):\($0.mins)" }.joined(separator: ",")
+    }
+
+    @available(iOS 17.0, *)
+    @MainActor
+    private static func run(statePath: String, out: String, payloadPath: String) async throws {
+        let state = try JSONDecoder().decode(SubwayState.self, from: Data(contentsOf: URL(fileURLWithPath: statePath)))
+        log(out, "enabled=\(ActivityAuthorizationInfo().areActivitiesEnabled)")
+        let activity = try await SubwayActivity.start(state: state)
+        log(out, "started \(summary(state))")
+        Task {
+            for await content in activity.contentUpdates { log(out, "update \(summary(content.state))") }
+        }
+        var applied: Date?
+        while true {
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+            guard let mtime = (try? FileManager.default.attributesOfItem(atPath: payloadPath))?[.modificationDate] as? Date,
+                  mtime != applied else { continue }
+            applied = mtime
+            do {
+                let env = try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: URL(fileURLWithPath: payloadPath)))
+                log(out, "payload-decoded \(summary(env.aps.state))")
+                await activity.update(.init(state: env.aps.state, staleDate: nil))
+            } catch {
+                log(out, "DECODE-FAIL \(error)")
+            }
+        }
+    }
+}
+
+extension SubwayState.Row {
+    /// Minutes as shown: a schedule guess (no vehicle position yet) gets a "~".
+    var minsLabel: String { sched ? "~\(mins)" : "\(mins)" }
 }
 
 extension SubwayState {

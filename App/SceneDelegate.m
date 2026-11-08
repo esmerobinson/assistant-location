@@ -22,6 +22,7 @@
 #import "GLAppStateReporter.h"
 #import "GLCrashReporter.h"
 #import "BuildStamp.generated.h"
+#import "Overland-Swift.h" // GLSubwayUITestHook (JournalControl/SubwayShared.swift)
 
 // How long the app has to have been backgrounded before a foreground resume
 // resets to the default tab — a quick app-switch must not yank the user off
@@ -333,6 +334,10 @@ static void GLSceneDebugLog(NSString *message) {
                                                                   object:nil];
         });
     }
+
+    // CI hook: UITests/SubwayLiveActivityUITest.swift starts the subway Live Activity from a saved server response.
+    // No-op unless UITEST_SUBWAY_STATE is set.
+    [GLSubwayUITestHook startIfRequested];
 
     // Test hook (same pattern as UITEST_JOURNAL_AUTOSTART above): open
     // Journal's Recent-recordings web page (the Settings/More/Recents
