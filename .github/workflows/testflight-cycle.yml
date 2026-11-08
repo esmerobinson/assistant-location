@@ -15,6 +15,9 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: scripts/cycle-native-version.sh asks for the last native-file commit, which a depth-1 clone answers with HEAD.
+          fetch-depth: 0
 
       - name: Select newest Xcode (Apple requires iOS 26 SDK for uploads)
         run: |
@@ -64,6 +67,14 @@ jobs:
           # Commit time of the built commit (deploy-web.sh uses the same scheme), so a newer bundle beats an older downloaded copy.
           printf '{"version":%s}\n' "$(git log -1 --format=%ct)" > CycleApp/web/version.json
           cat CycleApp/web/version.json
+
+      - name: Stamp CycleNativeVersion into Info.plist
+        run: |
+          # The commit time of the last native change (list lives in scripts/cycle-native-version.sh). The app reports it via
+          # app.info and the box compares it with the build on the install page to decide whether to show "New version".
+          NATIVE="$(scripts/cycle-native-version.sh)"
+          /usr/libexec/PlistBuddy -c "Add :CycleNativeVersion integer $NATIVE" CycleApp/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CycleNativeVersion" CycleApp/Info.plist
 
       - name: Build + upload Cycle to TestFlight
         env:

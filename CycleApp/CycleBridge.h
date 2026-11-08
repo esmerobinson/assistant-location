@@ -4,7 +4,7 @@
 
 /// Native side of the page <-> shell contract (handler name `cycle`).
 /// JS -> native: {id, cmd, args}. Native answers with window.__cycleReply(id, result, error).
-/// Commands: store.get/set/keys, notify.permission/status/schedule/cancel, app.openSettings, speech.start/speech.stop/speech.cancel, haptic, share, share.text, clipboard.set, lock.get/set,
+/// Commands: store.get/set/keys, notify.permission/status/schedule/cancel, app.openSettings, app.info, app.openURL, speech.start/speech.stop/speech.cancel, haptic, share, share.text, clipboard.set, lock.get/set,
 /// creds.set/get/clear (Keychain), ready.
 /// Native -> JS: window.cycleNative.route(route) (queued until the page sends `ready`) and
 /// window.cycleNative.foreground() (only once the page is ready), window.cycleNative.pushToken(hex) (on `ready` and when a token arrives),
@@ -25,6 +25,12 @@
 
 /// Opens this app's page in iOS Settings (the `app.openSettings` command). Wired by the view controller.
 @property (nonatomic, copy) void (^openSettings)(void);
+
+/// This build's Info.plist values for the `app.info` command ({shell, native}); defaults to the main bundle's, tests inject their own.
+@property (nonatomic, copy) NSDictionary *bundleInfo;
+
+/// Opens an https URL outside the app (the `app.openURL` command, used for the install page). Wired by the view controller.
+@property (nonatomic, copy) void (^openURL)(NSURL *url);
 
 /// Starts recording (the `speech.start` command); `done(nil)` once recording, else a short reason ("Mic off" when denied).
 /// Wired by the view controller. The page, not native, uploads the clip for transcription.

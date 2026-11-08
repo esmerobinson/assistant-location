@@ -161,6 +161,33 @@
     XCTAssertEqual(opened, 1);
 }
 
+// ---- app.info / app.openURL ----
+
+- (void)testAppInfoReportsShellAndNativeVersions {
+    self.bridge.bundleInfo = @{ @"CycleShellVersion": @3, @"CycleNativeVersion": @1793976768 };
+    NSDictionary *out = [self run:@"app.info" args:@{}];
+    XCTAssertEqualObjects(out[@"error"], NSNull.null);
+    XCTAssertEqualObjects(out[@"result"], (@{ @"shell": @3, @"native": @1793976768 }));
+}
+
+- (void)testAppInfoNativeIsZeroForAnUnstampedBuild {
+    self.bridge.bundleInfo = @{ @"CycleShellVersion": @3 };
+    XCTAssertEqualObjects([self run:@"app.info" args:@{}][@"result"][@"native"], @0);
+}
+
+- (void)testAppOpenURLOpensHttpsOnly {
+    __block NSURL *opened = nil;
+    self.bridge.openURL = ^(NSURL *url) { opened = url; };
+    NSDictionary *out = [self run:@"app.openURL" args:@{ @"url": @"https://box.example/cycle/get/tok/" }];
+    XCTAssertEqualObjects(out[@"error"], NSNull.null);
+    XCTAssertEqualObjects(opened.absoluteString, @"https://box.example/cycle/get/tok/");
+    opened = nil;
+    for (NSString *bad in @[@"http://box.example/", @"itms-services://?action=download-manifest", @"javascript:alert(1)"]) {
+        XCTAssertTrue([[self run:@"app.openURL" args:@{ @"url": bad }][@"error"] containsString:@"https"], @"%@", bad);
+    }
+    XCTAssertNil(opened);
+}
+
 // ---- share ----
 
 - (void)testShareWritesTextToTempFileAndRepliesTrue {

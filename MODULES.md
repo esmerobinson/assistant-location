@@ -116,6 +116,15 @@ needs) is downloaded into `Application Support/web-ota/staging` (unchanged files
 checked, bundled `config.js` copied in), moved to `v<version>/` and activated by an atomic `active.txt` write. Any failure leaves the
 previous copy active. The page loads the newer of bundle and active copy at `viewDidLoad` and on a 15+ min absence return, and reloads once more when a copy finishes activating within 10 s of either (app still active); never otherwise mid-session. Each request has a 15 s timeout (60 s resource) so a hung fetch cannot block later checks, and the manifest GET carries `?have=<loaded version>&shell=<n>` so phone checks show in the box log. Data is unaffected:
 the page's store goes through the native bridge, not `localStorage` (only the no-bridge dev fallback uses it).
+Native update banner: web OTA cannot ship native code, so both phones show a slim "New version / Install" bar above the tabs when the
+install page carries a newer native build. The ota/testflight workflows stamp `CycleNativeVersion` (Info.plist) = commit time of the last
+native change, computed by `scripts/cycle-native-version.sh` (the one place listing what counts as native: `CycleApp` minus `web`, `CycleNSE`,
+the pbxproj, the add_cycle_* scripts, `fastlane`; any pbxproj commit bumps it, so an unrelated app's project edit can raise a false banner).
+The bridge's `app.info` returns `{shell, native}` and `app.openURL` opens the (https-only) install page. "Latest" is the build actually
+published, not main: ota.py (outside git) reads the stamp from each polled Cycle ipa, refreshes cycle-server's `get/` install page (ipa,
+manifest.plist) and writes `get/native.json`; cycle-server adds it as `native` in `/app/manifest.json` (ignored by CycleWebUpdater), and the
+authed `GET /install` returns the token install page url. The page checks on load and on foreground; offline, a fetch failure, or an app
+without `app.info` shows nothing. Web-only changes never touch the stamp. Test: `WebPagesTests/test/cycle-nativeupdate.test.mjs`.
 Layout rules and the layout sweep test: `CycleApp/web/LAYOUT.md`.
 (Finances held slot 50 — the first visible tab — until Esme took it over;
 Finances moved to 610, between Upload and Journal, to make room.)

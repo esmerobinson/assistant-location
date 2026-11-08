@@ -109,6 +109,8 @@ input[type=time].pick{background:none;font-family:inherit;width:auto}
 
 /* ---- Visual fixes (device review) ---- */
 /* Error line sits in the column between content and tab bar, so it never covers a control; over a sheet it rides the top. */
+.updbar{order:1;flex:none;display:flex;align-items:center;justify-content:space-between;margin:8px 12px;z-index:60;background:#0a0a0a;border:2px solid var(--ln);border-radius:16px;padding:6px 6px 6px 16px;font-size:14px;font-weight:700;color:#fff}
+.updbar .ubtn{display:inline-flex;align-items:center;height:32px;padding:0 16px;border-radius:16px;background:var(--pk);color:#0a0a0a;font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
 .errbar.top{position:absolute;order:0;left:12px;right:12px;top:calc(var(--st) + 4px);margin:0}
 /* Offline: bare label top right, in the band (dark on pink); on screens without a band it is pink on black. */
 .off{position:absolute;right:22px;top:calc(var(--st) - 24px);z-index:4;font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#0a0a0a}
@@ -167,6 +169,7 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 
 .srow .pn+*,.srow .pn{vertical-align:bottom}
 .p2 .seg span .pn{display:block;min-width:0;min-height:0;padding:0;border-radius:0;background:none;max-width:9em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.phone:not(:has(.tabbar)) .updbar{margin-bottom:calc(var(--sb) + 8px)}
 .phone:not(:has(.tabbar)) .errbar:not(.top){margin-bottom:calc(var(--sb) + 8px)}
 
 .pts .hr .bal[data-a]{min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;padding:0 6px}

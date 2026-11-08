@@ -196,7 +196,7 @@ function phone(cls, inner, o) {
   var err = shown || (dl ? dl + (dl === 1 ? ' change' : ' changes') + ' not sent' : null), dlBar = !shown && dl;
   var off = !navigator.onLine || (S.outbox && S.outbox.length) ? '<span class="off' + (o.band === false ? ' nb' : '') + '">Offline</span>' : '';
   return '<div class="phone ' + cls + (o.tab === false ? ' nt' : '') + '"><div class="scr">' + band + off + '<div class="status"></div><main>' + inner + '</main></div>' + (o.pin || '') +
-    (o.tab === false ? '' : tabbar(tabFor(ui.route))) + (o.sheet || '') + (err ? '<div class="errbar' + (o.sheet ? ' top' : '') + '" role="alert"' + (dlBar ? ' data-a="deadletters"' : '') + '>' + esc(err) + '</div>' : '') + '</div>';
+    (o.tab === false ? '' : tabbar(tabFor(ui.route))) + (o.sheet || '') + (ui.upd ? '<div class="updbar"><span>New version</span><span class="ubtn" data-a="upd">Install</span></div>' : '') + (err ? '<div class="errbar' + (o.sheet ? ' top' : '') + '" role="alert"' + (dlBar ? ' data-a="deadletters"' : '') + '>' + esc(err) + '</div>' : '') + '</div>';
 }
 function tabbar(active) {
   // Badge: open to-dos the partner created for me (what an Ask turns into).
@@ -1494,6 +1494,11 @@ async function checkNotif() {
   ui.notif = status === 'denied' && (await St.kv.get(notifKey())) !== '1';
   render();
 }
+// A newer native build is on the install page (never for web-only changes): the bar stays until the app is updated.
+async function checkUpdate() {
+  var on = !!S.session && await St.nativeUpdateAvailable();
+  if (on !== !!ui.upd) { ui.upd = on; render(); }
+}
 function sheetFor() { return ui.sheet.type === 'still' ? stillSheet() : ''; }
 
 // Re-render on store changes unless the user is typing.
@@ -1849,6 +1854,7 @@ var ACT = {
   tkkeep: function () { ui.talk.draft = null; ui.talk.muted = false; talkSave(ui.talk); render(); if (St.hasNative) guard(talkListen)(); },
   tkuse: guard(function () { return talkApply(ui.talk.draft); }),
   tkwords: guard(function () { return talkApply(ui.talk.msgs.filter(function (m) { return m.role === 'user'; }).map(function (m) { return m.text; }).join(' ')); }),
+  upd: guard(function () { return St.openInstall(); }),
   notifx: function () { ui.notif = false; render(); },
   notifset: function () { St.native.openSettings(); },
   notifoff: function () { ui.notif = false; render(); St.kv.set(notifKey(), '1'); },
@@ -2497,12 +2503,12 @@ window.cycleNative = {
   // stop). Only Talk acts on it; a dictated field waits for its mic tap.
   speechSilence: function () { if (ui.rec && ui.rec.field === 'talk') guard(talkEndTurn)(); },
   speechError: function (msg) { var talk = ui.rec && ui.rec.field === 'talk'; ui.rec = null; if (talk && ui.talk) { ui.talk.listen = false; render(); } showErr(plain(new Error(msg))); },
-  foreground: function () { St.retryPush(); St.abortInflight(); if (S.session) { St.sync(); St.pullPriv(); } render(); checkNotif(); }
+  foreground: function () { St.retryPush(); St.abortInflight(); if (S.session) { St.sync(); St.pullPriv(); } render(); checkNotif(); checkUpdate(); }
 };
 Object.keys(window.cycleNative).forEach(function (k) { window.cycleNative[k] = nativeEntry(window.cycleNative[k]); });
 
 // ---- boot --------------------------------------------------------------------------------------------------------------
-St.boot().then(function () { return St.hasNative ? St.native.lockGet() : false; }).then(function (lockOn) {  ui.lockOn = lockOn; ui.ready = true; render(); window.cycleNative.ready(); St.native.ready(); checkNotif();
+St.boot().then(function () { return St.hasNative ? St.native.lockGet() : false; }).then(function (lockOn) {  ui.lockOn = lockOn; ui.ready = true; render(); window.cycleNative.ready(); St.native.ready(); checkNotif(); checkUpdate();
   // No realtime channel: poll while visible (cursor-based, so a quiet poll is 9 tiny GETs), plus the
   // 15s repaint that moves countdowns and promotes a held item to "ready".
   setInterval(function () { if (document.visibilityState === 'visible' && S.session) St.sync(); }, 5000);

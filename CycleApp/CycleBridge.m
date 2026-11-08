@@ -113,6 +113,19 @@ static NSString *CycleKeychainError(NSString *op, OSStatus st) {
     } else if ([cmd isEqualToString:@"app.openSettings"]) {
         self.openSettings();
         done(NSNull.null, nil);
+    } else if ([cmd isEqualToString:@"app.info"]) {
+        // CycleNativeVersion is stamped into Info.plist by the ota/testflight workflows; a local dev build has none, reported as 0
+        // so the page never shows an update bar for it.
+        NSDictionary *info = self.bundleInfo ?: NSBundle.mainBundle.infoDictionary;
+        done(@{ @"shell": info[@"CycleShellVersion"] ?: @0, @"native": info[@"CycleNativeVersion"] ?: @0 }, nil);
+    } else if ([cmd isEqualToString:@"app.openURL"]) {
+        // https only: the page hands us the install page url, and nothing else may be opened from here.
+        NSString *raw = args[@"url"];
+        NSURL *url = [raw isKindOfClass:NSString.class] ? [NSURL URLWithString:raw] : nil;
+        if (![url.scheme isEqualToString:@"https"] || !url.host.length) { done(nil, @"app.openURL: 'url' must be an https url"); return; }
+        if (!self.openURL) { done(nil, @"app.openURL: no opener wired"); return; }
+        self.openURL(url);
+        done(NSNull.null, nil);
     } else if ([cmd isEqualToString:@"speech.start"]) {
         if (!self.speechStart) { done(nil, @"speech.start: no speech handler wired"); return; }
         self.speechStart(^(NSString *error) { if (error) done(nil, error); else done(NSNull.null, nil); });

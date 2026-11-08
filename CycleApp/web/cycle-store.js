@@ -47,6 +47,10 @@ var CycleStore = (function () {
     status: function () { return hasNative ? bridge('notify.status') : Promise.resolve('unsupported'); },
     // Opens this app's page in iOS Settings.
     openSettings: function () { return hasNative ? bridge('app.openSettings') : Promise.resolve(); },
+    // {shell, native}: this build's CycleShellVersion and CycleNativeVersion (Info.plist). Old apps reject it.
+    appInfo: function () { return bridge('app.info'); },
+    // Opens an https url in Safari (the install page).
+    openURL: function (url) { return bridge('app.openURL', { url: url }); },
     haptic: function (kind) { return hasNative ? bridge('haptic', { kind: kind }) : Promise.resolve(); },
     // Presents the iOS share sheet with `text` as a file; resolves true once presented.
     share: function (o) { return bridge('share', o); },
@@ -66,6 +70,24 @@ var CycleStore = (function () {
     lockGet: function () { return hasNative ? bridge('lock.get') : Promise.resolve(false); },
     lockSet: function (on) { return hasNative ? bridge('lock.set', { on: on }) : Promise.resolve(); }
   };
+  // True when the box's install page carries a newer native build than the installed one. Web-only changes never
+  // move `native`. Offline, a failed fetch, no bridge or an app too old for app.info all read as "no update".
+  async function nativeUpdateAvailable() {
+    if (!hasNative || !cfg.boxUrl) return false;
+    try {
+      var info = await bridge('app.info');
+      var r = await fetch(cfg.boxUrl + '/app/manifest.json', { cache: 'no-store' });
+      if (!r.ok) return false;
+      var m = await r.json();
+      return !!(info && +info.native > 0 && m && +m.native > +info.native);
+    } catch (e) { return false; }
+  }
+  // Opens the install page (its url is behind sign-in, so it comes from the box rather than the public manifest).
+  async function openInstall() {
+    var r = await fetch(cfg.boxUrl + '/install', { headers: { Authorization: 'Bearer ' + S.session.access_token } });
+    if (!r.ok) throw new Error('Install page unavailable');
+    return native.openURL((await r.json()).url);
+  }
   // Keychain-held credentials for silent re-login when GoTrue rejects the refresh token.
   var creds = {
     set: function (email, password) { return hasNative ? bridge('creds.set', { email: email, password: password }) : Promise.resolve(); },
@@ -728,6 +750,6 @@ var CycleStore = (function () {
     S: S, boot: boot, on: on, emit: emit, uuid: uuid, me: me, partner: partner, myMember: myMember, list: list, get: get,
     signUp: signUp, signIn: signIn, signOut: signOut, createCouple: createCouple, joinCouple: joinCouple,
     kv: kv, sync: sync, syncNow: syncNow, insert: insert, patch: patch, upsert: upsert, savePriv: savePriv, native: native, creds: creds, reschedule: reschedule,
-    talk: talk, transcribe: transcribe, canTalk: !!cfg.boxUrl, api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, abortInflight: abortInflight, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, pullPriv: pullPriv, setPushToken: setPushToken,
+    nativeUpdateAvailable: nativeUpdateAvailable, openInstall: openInstall, talk: talk, transcribe: transcribe, canTalk: !!cfg.boxUrl, api: api, logErr: logErr, errLogText: errLogText, deadLetterText: deadLetterText, retryPush: retryPush, abortInflight: abortInflight, notSent: notSent, rawExport: rawExport, persistNow: persistNow, persist: persist, hasNative: hasNative, backup: backup, pullPriv: pullPriv, setPushToken: setPushToken,
   };
 })();
