@@ -65,7 +65,7 @@ struct SubwayLiveActivity: Widget {
                     Spacer()
                     Text("\(context.state.walkMin) min walk").font(.caption).foregroundStyle(.secondary)
                 }
-                ForEach(Array(context.state.rows.enumerated()), id: \.offset) { _, row in
+                ForEach(Array(context.state.topPerLine.prefix(5).enumerated()), id: \.offset) { _, row in
                     RowView(row: row)
                 }
             }
@@ -75,17 +75,17 @@ struct SubwayLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("\(context.state.station) · \(context.state.walkMin) min walk").font(.caption).lineLimit(1)
-                        ForEach(Array(context.state.rows.prefix(3).enumerated()), id: \.offset) { _, row in
+                        ForEach(Array(context.state.topPerLine.prefix(3).enumerated()), id: \.offset) { _, row in
                             RowView(row: row)
                         }
                     }
                 }
             } compactLeading: {
-                if let row = context.state.rows.first { Bullet(line: row.line) }
+                if let row = context.state.topPerLine.first { Bullet(line: row.line) }
             } compactTrailing: {
-                if let row = context.state.rows.first { Text(row.sched ? "~\(row.mins)" : "\(row.mins)").monospacedDigit() }
+                if let row = context.state.topPerLine.first { Text(row.sched ? "~\(row.mins)" : "\(row.mins)").monospacedDigit() }
             } minimal: {
-                if let row = context.state.rows.first { Bullet(line: row.line) }
+                if let row = context.state.topPerLine.first { Bullet(line: row.line) }
             }
         }
     }
@@ -137,7 +137,7 @@ struct SubwayWidgetView: View {
                     Spacer()
                     Text("\(state.walkMin) min").font(.caption2).foregroundStyle(.secondary)
                 }
-                ForEach(Array(state.rows.prefix(family == .systemSmall ? 3 : 4).enumerated()), id: \.offset) { _, row in
+                ForEach(Array(state.topPerLine.prefix(family == .systemSmall ? 3 : 4).enumerated()), id: \.offset) { _, row in
                     RowView(row: row, showDest: family != .systemSmall)
                 }
             } else {

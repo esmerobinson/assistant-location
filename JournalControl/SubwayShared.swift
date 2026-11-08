@@ -144,3 +144,12 @@ struct StartSubwayActivityIntent: LiveActivityStartingIntent {
         return .result()
     }
 }
+
+extension SubwayState {
+    /// Soonest train per line+destination (the server sends the next two of each), so one busy line cannot crowd
+    /// the others out of a small UI.
+    var topPerLine: [Row] {
+        var seen = Set<String>()
+        return rows.filter { seen.insert($0.line + $0.dest).inserted }
+    }
+}
