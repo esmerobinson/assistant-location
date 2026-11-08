@@ -428,8 +428,9 @@ var CycleCore = (function () {
 
 
   // ---- fight patterns (shared markers, both partners) ---------------------
-  // days: local YYYY-MM-DD of every fight either partner logged. Calm days are the days from `since` up to
-  // yesterday with no fight, the same rule computeLedger pays +3 for, so the numbers agree with the Points ledger.
+  // days: local YYYY-MM-DD of every streak-breaking fight either partner logged (callers drop level-1 fights via
+  // breaksStreak). Calm days are the days from `since` up to yesterday with none of them. computeLedger's Calm day +3
+  // still needs a fight-free day, so a day with only a level-1 fight is calm here but pays no Calm day there.
   // streak = calm days in a row ending yesterday (today is not over yet); best = longest such run; last28 = calm days
   // among the 28 days before today. A `since` after today yields zeros.
   function calmStats(days, today, since) {
@@ -441,6 +442,16 @@ var CycleCore = (function () {
       if (!fought[d] && dayDiff(d, today) <= 28) last28++;
     }
     return { streak: run, best: best, last28: last28 };
+  }
+  // Does this fight end the viewer's calm streak? Every fight does except one whose chart value is a real rating of 1,
+  // the bottom of the scale (Oliver, 2026-11-08: a level-1 fight should not break the streak). It goes through
+  // chartValue, so each phone judges by its owner's own rating else the partner's, the same per-viewer rule the chart
+  // uses, and a partner's hidden rating never shows through. An unrated fight counts as a break: chartValue plots it at 1
+  // only so it shows, nobody said it was minor. Points are untouched: computeLedger's Calm day +3 needs a fight-free
+  // day on both phones, so a level-1 fight day keeps the streak but earns no Calm day.
+  function breaksStreak(fightId, me, ratings) {
+    var v = chartValue(fightId, me, ratings);
+    return v.unrated || v.value > 1;
   }
   // ---- fights chart: one number per fight, summed per day --------------------------------------------------------
   // What a fight counts as on the chart: my rating, else my partner's, else 1 and flagged unrated (a fight still has to
@@ -597,7 +608,7 @@ var CycleCore = (function () {
     zonedMs: zonedMs, deliverAt: deliverAt, issueHeldUntil: issueHeldUntil, sectionNudges: sectionNudges,
     addMonths: addMonths, splitPayout: splitPayout, awardStatus: awardStatus,
     earnPts: earnPts, missPts: missPts, periodOf: periodOf, habitCount: habitCount, habitMisses: habitMisses, requireNote: requireNote, isEdited: isEdited,
-    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, phaseLabel: phaseLabel, needsYou: needsYou, homeList: homeList, calmStats: calmStats, inEditWindow: inEditWindow, monthGrid: monthGrid, chartValue: chartValue, dailyTotals: dailyTotals, rollingAvg: rollingAvg, niceAxis: niceAxis, fightActions: fightActions, fightGap: fightGap,
+    computeLedger: computeLedger, hitText: hitText, groupWeek: groupWeek, phase: phase, phaseLabel: phaseLabel, needsYou: needsYou, homeList: homeList, calmStats: calmStats, breaksStreak: breaksStreak, inEditWindow: inEditWindow, monthGrid: monthGrid, chartValue: chartValue, dailyTotals: dailyTotals, rollingAvg: rollingAvg, niceAxis: niceAxis, fightActions: fightActions, fightGap: fightGap,
     // Only a still-held item may offer Send / Edit / Drop; a stale notification can point at a delivered or dropped one.
     isStillHeld: function (i) { return !!i && i.status === 'held' && !i.deleted_at; }
   };

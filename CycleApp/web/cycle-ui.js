@@ -310,8 +310,10 @@ SCREEN.setup = function () {
 };
 
 // Calm days in a row, from the shared fight markers (either partner's). Named on Home and Progress so the number is never bare.
+// A level-1 fight (by my rating, else my partner's) does not end it; see C.breaksStreak.
 function calm() {
-  var days = L('fight_markers').map(function (m) { return C.localDay(C.ms(m.at), tz()); });
+  var me = St.me(), ratings = L('fight_ratings');
+  var days = L('fight_markers').filter(function (m) { return C.breaksStreak(m.id, me, ratings); }).map(function (m) { return C.localDay(C.ms(m.at), tz()); });
   return C.calmStats(days, today(), C.localDay(C.ms(S.couple.created_at), tz()));
 }
 function addRow(label, a) { return '<div class="row r2" data-a="' + a + '"><p class="lb">' + label + '</p><p class="mt">' + ic('plus', 'sm') + '</p></div>'; }

@@ -749,6 +749,18 @@ test('chartValue: own rating beats the partner\'s, the partner\'s beats unrated'
   assert.deepEqual(C.chartValue('f', 'me', [R('g', 'me', 4)]), { value: 1, unrated: true }, 'a rating of another fight does not count');
 });
 
+test('breaksStreak: only a real level-1 rating (mine, else my partner\'s) keeps the calm streak', () => {
+  assert.equal(C.breaksStreak('f', 'me', [R('f', 'me', 1)]), false);
+  assert.equal(C.breaksStreak('f', 'me', [R('f', 'her', 1)]), false, 'the partner\'s 1 counts when I have not rated');
+  assert.equal(C.breaksStreak('f', 'me', [R('f', 'her', 1), R('f', 'me', 2)]), true, 'my own 2 beats the partner\'s 1');
+  assert.equal(C.breaksStreak('f', 'me', [R('f', 'her', 4), R('f', 'me', 1)]), false, 'my own 1 beats the partner\'s 4');
+  assert.equal(C.breaksStreak('f', 'me', []), true, 'unrated plots at 1 but is not a minor fight');
+  // End to end with calmStats: a level-1 fight yesterday leaves a 9-day streak intact, a level-2 one ends it.
+  const days = (r) => [{ id: 'f', d: '2026-10-09' }].filter((m) => C.breaksStreak(m.id, 'me', r)).map((m) => m.d);
+  assert.equal(C.calmStats(days([R('f', 'me', 1)]), '2026-10-10', '2026-10-01').streak, 9);
+  assert.equal(C.calmStats(days([R('f', 'me', 2)]), '2026-10-10', '2026-10-01').streak, 0);
+});
+
 test('dailyTotals: sums chart values per local day, counts unrated, omits empty days', () => {
   const at = (iso) => new Date(iso).toISOString();
   const fights = [{ id: 'a', at: at('2026-11-01T15:00:00Z') }, { id: 'b', at: at('2026-11-01T20:00:00Z') }, { id: 'c', at: at('2026-11-03T15:00:00Z') }];
