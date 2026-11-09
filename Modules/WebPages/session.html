@@ -580,6 +580,7 @@
 </div>
 
 <div class="gl-body" style="padding-bottom:0;flex:0 0 auto">
+  <div id="gl-tailnet-banner" class="gl-error-banner gl-hidden" role="status"></div>
   <div id="gl-error" class="gl-error-banner gl-hidden">
     <span id="gl-error-text"></span>
     <button id="gl-error-dismiss" class="gl-btn-plain" type="button">Dismiss</button>
@@ -902,6 +903,20 @@
   var FETCH_TIMEOUT_MS = 15000;
   var SPAWN_TIMEOUT_MS = 60000;
   var UPLOAD_TIMEOUT_MS = 120000;
+  // Any answer from the box proves the tailnet is up; a network-level failure
+  // while the phone has internet means it is off Tailscale. While the banner
+  // shows, a cheap probe retries so it clears on its own once the VPN is back.
+  var TAILNET_PROBE_MS = 10000;
+  var tailnetBannerEl = document.getElementById('gl-tailnet-banner');
+  var tailnetProbeTimer = null;
+  function setBoxReachable(ok) {
+    tailnetBannerEl.textContent = navigator.onLine === false ? 'Offline' : 'Not on Tailscale';
+    tailnetBannerEl.classList.toggle('gl-hidden', ok);
+    clearTimeout(tailnetProbeTimer);
+    if (!ok) tailnetProbeTimer = setTimeout(function () { authedFetch('/sessions/recent').catch(function () {}); }, TAILNET_PROBE_MS);
+  }
+  window.addEventListener('online', function () { authedFetch('/sessions/recent').catch(function () {}); });
+
   function authedFetch(path, opts) {
     return GLBridge.call('getApiToken', {}).then(function (tokenRes) {
       var token = tokenRes && tokenRes.token;
@@ -915,9 +930,12 @@
       delete init.timeoutMs;
       return fetch(apiBase() + path, init).then(function (res) {
         clearTimeout(timer);
+        setBoxReachable(true);
         return res;
       }, function (err) {
         clearTimeout(timer);
+        // A long-deadline request (spawn, upload) timing out means a busy box, not a missing tailnet.
+        if (!(timedOut && opts && opts.timeoutMs)) setBoxReachable(false);
         throw timedOut ? new Error('no answer after ' + Math.round(timeoutMs / 1000) + 's') : err;
       });
     });

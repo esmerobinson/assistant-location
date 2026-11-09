@@ -4765,3 +4765,29 @@ test('a native startVoiceMode logs its timing to /debug-log, queued while the bo
   assert.match(sent[0], /^session-voice: \S+ page age at startVoiceMode \d+ms, page \d+ms, native voiceStart \d+ms, online=\w+, attachments=\d+$/);
   await context.close();
 });
+
+test('box unreachable at the network level shows "Not on Tailscale"; the next answer from the box hides it', async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(buildMockBridgeScript(baseConfig()));
+  let down = true;
+  await context.route(`${API_BASE}/sessions/**`, (route) => down
+    ? route.abort('addressunreachable')
+    : route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: [], sessions: [] }) }));
+  const page = await newSessionPage(context);
+  await page.waitForSelector('#gl-tailnet-banner:not(.gl-hidden)');
+  assert.equal(await page.locator('#gl-tailnet-banner').textContent(), 'Not on Tailscale');
+  down = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.waitForSelector('#gl-tailnet-banner.gl-hidden', { state: 'attached' });
+  await context.close();
+});
+
+test('an HTTP error response (box reachable) never shows the Tailscale banner', async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(buildMockBridgeScript(baseConfig()));
+  await context.route(`${API_BASE}/sessions/**`, (route) => route.fulfill({ status: 500, body: 'boom' }));
+  const page = await newSessionPage(context);
+  await page.waitForSelector('#gl-error:not(.gl-hidden)');
+  assert.equal(await page.locator('#gl-tailnet-banner').isHidden(), true);
+  await context.close();
+});
