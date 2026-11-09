@@ -352,6 +352,7 @@
   }
   #session-confirmation .gl-confirm-title { font-weight: 600; margin-bottom: 4px; }
   #session-confirmation .gl-confirm-title.gl-confirm-skill { font-size: 18px; font-weight: 700; }
+  #session-confirmation-cancel { margin-top: 8px; padding-left: 0; }
   #session-ask-skill, .gl-ask-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   #session-ask-skill button, .gl-ask-chips button, #session-ask-skill select, .gl-ask-chips select {
     min-height: 40px; padding: 8px 14px; border-radius: 20px; font-size: 15px; font-family: inherit;
@@ -662,6 +663,7 @@
   <div id="session-confirmation" class="gl-hidden">
     <div id="session-confirmation-title" class="gl-confirm-title">Started</div>
     <div id="session-confirmation-body"></div>
+    <button id="session-confirmation-cancel" class="gl-btn-plain gl-hidden" type="button">Cancel</button>
     <div id="session-ask-skill" class="gl-hidden"></div>
     <div id="session-clarify" class="gl-hidden">
       <input id="session-clarify-attach-input" type="file" accept="image/*" multiple class="gl-hidden">
@@ -779,6 +781,7 @@
   var confirmationEl = document.getElementById('session-confirmation');
   var confirmationBodyEl = document.getElementById('session-confirmation-body');
   var confirmationTitleEl = document.getElementById('session-confirmation-title');
+  var confirmationCancelEl = document.getElementById('session-confirmation-cancel');
   var clarifyEl = document.getElementById('session-clarify');
   var clarifyTextEl = document.getElementById('session-clarify-text');
   var clarifySendBtn = document.getElementById('session-clarify-send');
@@ -808,6 +811,8 @@
     }
     clarifyStartKey = startKey || null;
     clarifyEl.classList.toggle('gl-hidden', !clarifyStartKey);
+    // Only a Start the box has not taken yet can be cancelled.
+    confirmationCancelEl.classList.toggle('gl-hidden', !(clarifyStartKey && title === 'Starting'));
   }
   var recentListEl = document.getElementById('session-recent-list');
   var recentSavedEl = document.getElementById('session-recent-saved');
@@ -2860,6 +2865,11 @@
     // project === null means nothing chosen yet -- '' (None) is a real,
     // startable choice (see updateStartEnabled's comment on this contract).
     if (project === null || (!promptText && !attachmentIds.length && !pendingIds.length)) return;
+    // A voice send cancelled while it was transcribing: its launch row is gone, so nothing starts.
+    if (launchId && !readVoiceLaunches()[launchId]) {
+      if (voiceId) ackVoice(voiceId).catch(function (err) { showError("Couldn't delete the recording: " + err.message); });
+      return;
+    }
 
     // Every attempt owns its own idempotency key and carries it in the
     // persisted queue entry, so a replay after a reload re-sends the SAME key
@@ -3200,6 +3210,20 @@
     postJson('/sessions/submissions/' + encodeURIComponent(entry.key) + '/dismiss', {}).then(loadRecent, function () {});
   }
 
+  /**
+   * Cancel on the Starting card or a Sending row: drops a Start (typed or
+   * voice) the box has not taken yet. A request already in flight may still
+   * start; it then shows up as a normal session.
+   */
+  function cancelStart(key) {
+    var queued = readQueue(PENDING_STARTS_KEY).filter(function (e) { return e.key === key; })[0];
+    var launch = readVoiceLaunches()[key];
+    if (clarifyStartKey === key) { clarifyStartKey = null; confirmationEl.classList.add('gl-hidden'); }
+    if (queued) discardFailedStart(queued);
+    else if (launch) discardVoiceLaunch(launch);
+  }
+  confirmationCancelEl.addEventListener('click', function () { cancelStart(clarifyStartKey); });
+
   /** Failed Start -> Discard: the user's explicit choice to lose it, screenshots and recording included. */
   function discardFailedStart(entry) {
     (entry.pending || []).forEach(function (p) { idbLoud(idbDelete(p.localId)); });
@@ -3482,7 +3506,10 @@
       var actions = [];
       if (e.voiceId && nativeKnowsLaunches) actions.push({ label: '▶ Play', run: function () { playVoice(e.voiceId); } });
       var name = prompt.slice(0, 80) || (e.body.project ? '/' + e.body.project : 'Screenshot only');
-      if (!e.failed) actions.push(clarifyAction(e.key, name));
+      if (!e.failed) {
+        actions.push(clarifyAction(e.key, name));
+        actions.push({ label: 'Cancel', run: function () { cancelStart(e.key); } });
+      }
       if (e.failed) {
         actions.push({ label: 'Retry', run: function () { retryFailedStart(e); } });
         if (!e.voiceId) actions.push({ label: 'Edit', run: function () { editFailedStart(e); } });

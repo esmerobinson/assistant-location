@@ -3296,7 +3296,7 @@ test('an asked Recent row whose answer is queued stays hidden across a reload wh
   assert.equal(queue[0].body.answers, 'askk1');
   await page.reload();
   await page.waitForSelector('#session-recent-list .gl-recent-group');
-  assert.deepEqual(await page.locator('#session-recent-list .gl-ask-chips button').allTextContents(), ['Clarify'], 'the answered question is not repainted; only the queued Start\'s own chip remains');
+  assert.deepEqual(await page.locator('#session-recent-list .gl-ask-chips button').allTextContents(), ['Clarify', 'Cancel'], 'the answered question is not repainted; only the queued Start\'s own chips remain');
   await context.close();
 });
 
@@ -4810,5 +4810,79 @@ test('an HTTP error response (box reachable) never shows the Tailscale banner', 
   const page = await newSessionPage(context);
   await page.waitForSelector('#gl-error:not(.gl-hidden)');
   assert.equal(await page.locator('#gl-tailnet-banner').isHidden(), true);
+  await context.close();
+});
+
+// --- Cancel: withdraw a Start the box has not taken yet ---------------------
+
+test('Cancel on the Starting card drops a queued Start: card and Sending row gone, queue empty, box row dismissed, never sent once the box is back', async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(buildMockBridgeScript(baseConfig()));
+  await routeProjects(context);
+  await routeRecent(context);
+  let startCalls = 0;
+  const dismissed = [];
+  await context.route(`${API_BASE}/sessions/start`, (route) => { startCalls++; route.abort('connectionrefused'); });
+  await context.route(`${API_BASE}/sessions/submissions/*/dismiss`, (route) => {
+    dismissed.push(route.request().url());
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  const page = await newSessionPage(context);
+  await page.fill('#session-prompt', 'never mind this one');
+  await page.locator('#session-prompt').blur();
+  await page.click('#session-start-btn');
+  await page.waitForSelector('#gl-error:not(.gl-hidden)'); // the box is unreachable, so the Start waits in the queue
+  await page.waitForSelector('.gl-row:has-text("never mind this one") button:has-text("Cancel")');
+  await page.click('#session-confirmation-cancel');
+  assert.equal(await page.locator('#session-confirmation').isHidden(), true);
+  assert.equal(await page.locator('.gl-row:has-text("never mind this one")').count(), 0);
+  assert.equal(await page.evaluate(() => localStorage.getItem('gl-session-pending-starts-v1')), null);
+  await waitFor(() => dismissed.length === 1, 'the box row dismiss');
+  const before = startCalls;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.waitForTimeout(300);
+  assert.equal(startCalls, before, 'a cancelled Start is never retried');
+  await context.close();
+});
+
+test('the Sending row Cancel chip drops that queued Start too', async () => {
+  const context = await browser.newContext();
+  await context.addInitScript(buildMockBridgeScript(baseConfig()));
+  await routeProjects(context);
+  await routeRecent(context);
+  await context.route(`${API_BASE}/sessions/start`, (route) => route.abort('connectionrefused'));
+  await context.route(`${API_BASE}/sessions/submissions/*/dismiss`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  const page = await newSessionPage(context);
+  await page.fill('#session-prompt', 'row cancel');
+  await page.locator('#session-prompt').blur();
+  await page.click('#session-start-btn');
+  await page.click('.gl-row:has-text("row cancel") button:has-text("Cancel")');
+  assert.equal(await page.locator('.gl-row:has-text("row cancel")').count(), 0);
+  assert.equal(await page.locator('#session-confirmation').isHidden(), true);
+  assert.equal(await page.evaluate(() => localStorage.getItem('gl-session-pending-starts-v1')), null);
+  await context.close();
+});
+
+test('Cancel while a voice send is still transcribing: the transcript arrives later but nothing starts, and the recording is deleted', async () => {
+  const bodies = [];
+  const context = await browser.newContext({ hasTouch: true });
+  await context.addInitScript(buildMockBridgeScript({ ...baseConfig({ voiceStop: { id: 'v1', text: 'spoken words' } }), delays: { voiceStop: 1000 } }));
+  await routeProjects(context);
+  await routeRecent(context);
+  await context.route(`${API_BASE}/sessions/start`, (route) => {
+    bodies.push(JSON.parse(route.request().postData()));
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 's1', name: 'x', project: '' }) });
+  });
+  const page = await newSessionPage(context);
+  await page.fill('#session-prompt', 'typed words');
+  await page.click('#session-record-btn');
+  await page.waitForSelector('#session-record-btn.recording');
+  await page.click('#session-record-btn'); // tap-stop = send
+  await page.waitForSelector('#session-confirmation-cancel:not(.gl-hidden)');
+  await page.click('#session-confirmation-cancel');
+  await page.waitForFunction(() => window.__glCallLog.some((c) => c.method === 'voiceAck'), null, { timeout: 4000 });
+  await page.waitForTimeout(300);
+  assert.equal(bodies.length, 0, 'a cancelled voice send must not start a session');
+  assert.equal(await page.locator('#session-confirmation').isHidden(), true);
   await context.close();
 });
