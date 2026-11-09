@@ -17,7 +17,7 @@
 // "fork.knife" exists from iOS 14; the app target's deployment target is 18.0.
 + (UIImage *)moduleIcon { return [UIImage systemImageNamed:@"fork.knife"]; }
 
-// After Clips (710); lands in the More grid.
+// Lands in the More grid.
 + (NSInteger)moduleOrder { return 720; }
 
 + (UIViewController *)makeViewController {
