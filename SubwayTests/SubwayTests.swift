@@ -23,8 +23,8 @@ final class SubwayDecodeTests: XCTestCase {
         XCTAssertEqual(s.walkMin, 0)
         XCTAssertEqual(s.rows.count, 24)
         XCTAssertFalse(s.rows.contains { $0.verdict == "miss" }, "server drops missed trains")
-        // Server invariant the UI relies on: minutes is the whole minutes from ts to arrive.
-        for r in s.rows { XCTAssertEqual(r.mins, Int((r.arrive - s.ts) / 60), "\(r.line) \(r.dest)") }
+        // Server invariant the UI relies on (floor, so a train 1-59 s past can be -1): minutes is the whole minutes from ts to arrive.
+        for r in s.rows { XCTAssertEqual(r.mins, Int(((r.arrive - s.ts) / 60).rounded(.down)), "\(r.line) \(r.dest)") }
         XCTAssertEqual(s.rows[0].minsLabel, s.rows[0].sched ? "~\(s.rows[0].mins)" : "\(s.rows[0].mins)")
     }
 
@@ -126,7 +126,7 @@ final class SubwayTimingTests: XCTestCase {
         let s = try JSONDecoder().decode(SubwayState.self, from: fixture("nearby_update.json"))
         let rows = s.catchable(now: s.ts)
         XCTAssertFalse(rows.isEmpty)
-        for r in rows { XCTAssertEqual(r.timing(walkSec: s.walkSec, now: s.ts).minsToTrain, r.mins) }
+        for r in rows { XCTAssertEqual(r.timing(walkSec: s.walkSec, now: s.ts).minsToTrain, max(0, r.mins)) }
     }
 }
 
