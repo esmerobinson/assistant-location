@@ -282,9 +282,10 @@ func subwayClock(_ epoch: Double, _ timeZone: TimeZone = .current) -> String {
     return f.string(from: Date(timeIntervalSince1970: epoch))
 }
 
-/// Short destination for the small widget ("Jamaica Center" -> "Jamaica Ctr").
+/// Short destination for the small widget: the part before the first "-" (terminal complex suffix), abbreviated
+/// ("Jamaica Center-Parsons/Archer" -> "Jamaica Ctr").
 func subwayShortDest(_ dest: String) -> String {
-    var d = dest
+    var d = String(dest.split(separator: "-", maxSplits: 1).first ?? Substring(dest))
     for (long, short) in [("Center", "Ctr"), ("Village", "Vlg"), ("Street", "St"), ("Avenue", "Av"), ("Boulevard", "Blvd")] {
         d = d.replacingOccurrences(of: long, with: short)
     }

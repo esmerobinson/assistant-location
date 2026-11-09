@@ -68,16 +68,16 @@ enum SubwayDensity {
     var rowGap: CGFloat { self == .live ? 4 : 0 }
     var maxRows: Int { 3 }
     var bullet: CGFloat { self == .small ? 20 : 24 }
-    var ring: CGFloat { self == .small ? 27 : self == .medium ? 34 : 30 }
+    var ring: CGFloat { self == .small ? 26 : self == .medium ? 34 : 30 }
     var ringLine: CGFloat { self == .small ? 3 : 3.5 }
     var ringFont: CGFloat { self == .small ? 11 : self == .medium ? 14 : 13 }
     var destFont: CGFloat { self == .small ? 12 : 13 }
     var subFont: CGFloat { self == .small ? 10 : 12 }
-    var subGap: CGFloat { self == .small ? 3 : 8 }
+    var subGap: CGFloat { self == .small ? 2 : 8 }
     var hPad: CGFloat { self == .live ? 16 : 14 }
     var vPad: CGFloat { self == .live ? 12 : 14 }
     var titleFont: CGFloat { self == .small ? 14 : 15 }
-    var rowSpacing: CGFloat { self == .small ? 7 : 9 }
+    var rowSpacing: CGFloat { self == .small ? 6 : 9 }
 }
 
 private struct Glyph: View {
@@ -139,7 +139,7 @@ private struct TrainRow: View {
                         Text(row.leaveLabel(walkSec: walkSec, now: now)).fontWeight(.semibold).foregroundStyle(palette.color(u))
                     }
                 }
-                .font(.system(size: density.subFont)).monospacedDigit().lineLimit(1)
+                .font(.system(size: density.subFont)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Ring(timing: t, density: density, palette: palette)
@@ -169,7 +169,7 @@ struct SubwayBoard: View {
                 Spacer(minLength: 2)
                 HStack(spacing: 4) {
                     Glyph(name: "figure.walk", size: 11)
-                    Text("\(state.walkMin) min").lineLimit(1).fixedSize()
+                    Text(density == .small ? "\(state.walkMin)" : "\(state.walkMin) min").lineLimit(1).fixedSize()
                 }
                 .font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.mut)
                 if trackButton {
@@ -177,7 +177,7 @@ struct SubwayBoard: View {
                         Button(intent: StartSubwayActivityIntent()) {
                             Glyph(name: "tram.fill", size: 11)
                                 .foregroundStyle(palette.mut)
-                                .frame(width: 22, height: 22)
+                                .frame(width: 20, height: 20)
                                 .background(palette.chip, in: Circle())
                         }
                         .buttonStyle(.plain)

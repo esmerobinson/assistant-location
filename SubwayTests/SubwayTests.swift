@@ -118,7 +118,8 @@ final class SubwayTimingTests: XCTestCase {
     }
 
     func testShortDest() {
-        XCTAssertEqual(subwayShortDest("Jamaica Center-Parsons/Archer"), "Jamaica Ctr-Parsons/Archer")
+        XCTAssertEqual(subwayShortDest("Jamaica Center-Parsons/Archer"), "Jamaica Ctr")
+        XCTAssertEqual(subwayShortDest("Middle Village-Metropolitan Av"), "Middle Vlg")
         XCTAssertEqual(subwayShortDest("Broad St"), "Broad St")
     }
 
