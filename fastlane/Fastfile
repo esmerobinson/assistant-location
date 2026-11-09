@@ -52,6 +52,11 @@ LISTEN_GUEST_ID = "com.oliverullman.listenguest"
 LISTEN_GUEST_APPSTORE_PROFILE_NAME = "Listen Guest AppStore"
 LISTEN_GUEST_ADHOC_PROFILE_NAME = "Listen Guest AdHoc"
 LISTEN_GUEST_GROUP = "Listen Testers"
+# The Listen lock-screen Practice Control extension (ListenControl/), embedded in both Listen copies.
+LISTEN_CONTROL_SUFFIX = ".practice"
+LISTEN_CONTROL_ADHOC_PROFILE_NAME = "Listen Practice AdHoc"
+LISTEN_GUEST_CONTROL_ADHOC_PROFILE_NAME = "Listen Guest Practice AdHoc"
+LISTEN_GUEST_CONTROL_APPSTORE_PROFILE_NAME = "Listen Guest Practice AppStore"
 
 platform :ios do
   desc "Build signed (manual, pre-imported cert+profile) and upload to TestFlight"
@@ -199,11 +204,14 @@ platform :ios do
     UI.success("Ad hoc ipa: #{lane_context[SharedValues::IPA_OUTPUT_PATH]}")
   end
 
-  desc "Build the standalone Listen app as an ad-hoc signed ipa (no Pods, no extensions); guest:true builds the guest copy"
+  desc "Build the standalone Listen app (with its Practice Control extension) as an ad-hoc signed ipa; guest:true builds the guest copy"
   lane :listen_adhoc do |options|
     guest = options[:guest]
     bundle_id = guest ? LISTEN_GUEST_ID : LISTEN_ID
     profile = guest ? LISTEN_GUEST_ADHOC_PROFILE_NAME : LISTEN_ADHOC_PROFILE_NAME
+    # The lock-screen Practice Control (ListenControl/): a second bundle id under the app's, with its own profile.
+    ext_id = "#{bundle_id}#{LISTEN_CONTROL_SUFFIX}"
+    ext_profile = guest ? LISTEN_GUEST_CONTROL_ADHOC_PROFILE_NAME : LISTEN_CONTROL_ADHOC_PROFILE_NAME
     api_key = asc_api_key
 
     Spaceship::ConnectAPI.auth(
@@ -211,38 +219,48 @@ platform :ios do
       issuer_id: ENV["ASC_ISSUER_ID"],
       key: ENV["ASC_KEY_P8"],
     )
-    if Spaceship::ConnectAPI::BundleId.find(bundle_id)
-      UI.message("Bundle id #{bundle_id} is already registered")
-    else
-      Spaceship::ConnectAPI::BundleId.create(
-        name: "Listen",
-        identifier: bundle_id,
-        platform: Spaceship::ConnectAPI::BundleIdPlatform::IOS,
-      )
-      UI.success("Registered bundle id #{bundle_id}")
+    [[bundle_id, "Listen"], [ext_id, "Listen Practice"]].each do |identifier, name|
+      if Spaceship::ConnectAPI::BundleId.find(identifier)
+        UI.message("Bundle id #{identifier} is already registered")
+      else
+        Spaceship::ConnectAPI::BundleId.create(
+          name: name,
+          identifier: identifier,
+          platform: Spaceship::ConnectAPI::BundleIdPlatform::IOS,
+        )
+        UI.success("Registered bundle id #{identifier}")
+      end
     end
 
-    get_provisioning_profile(
-      api_key: api_key,
-      adhoc: true,
-      app_identifier: bundle_id,
-      provisioning_name: profile,
-      team_id: TEAM_ID,
-      force: true,
-    )
+    [[bundle_id, profile], [ext_id, ext_profile]].each do |identifier, name|
+      get_provisioning_profile(
+        api_key: api_key,
+        adhoc: true,
+        app_identifier: identifier,
+        provisioning_name: name,
+        team_id: TEAM_ID,
+        force: true,
+      )
+    end
 
-    set_info_plist_value(path: "ListenApp/Info.plist", key: "CFBundleVersion",
-                         value: Time.now.strftime("%Y%m%d%H%M"))
+    # The extension's version must equal its host app's.
+    build_number = Time.now.strftime("%Y%m%d%H%M")
+    ["ListenApp/Info.plist", "ListenControl/Info.plist"].each do |plist|
+      set_info_plist_value(path: plist, key: "CFBundleVersion", value: build_number)
+    end
 
-    update_code_signing_settings(
-      path: "Overland.xcodeproj",
-      targets: ["Listen"],
-      use_automatic_signing: false,
-      team_id: TEAM_ID,
-      code_sign_identity: "Apple Distribution",
-      profile_name: profile,
-      bundle_identifier: bundle_id,
-    )
+    # Per target, bundle id included: a PRODUCT_BUNDLE_IDENTIFIER xcarg would apply to the extension too.
+    { "Listen" => [profile, bundle_id], "ListenControl" => [ext_profile, ext_id] }.each do |target, (prof, id)|
+      update_code_signing_settings(
+        path: "Overland.xcodeproj",
+        targets: [target],
+        use_automatic_signing: false,
+        team_id: TEAM_ID,
+        code_sign_identity: "Apple Distribution",
+        profile_name: prof,
+        bundle_identifier: id,
+      )
+    end
 
     build_app(
       project: "Overland.xcodeproj",
@@ -252,12 +270,11 @@ platform :ios do
       output_name: "Listen",
       export_options: {
         signingStyle: "manual",
-        provisioningProfiles: { bundle_id => profile },
+        provisioningProfiles: { bundle_id => profile, ext_id => ext_profile },
       },
       xcargs: "CODE_SIGN_STYLE=Manual " \
               "DEVELOPMENT_TEAM=#{TEAM_ID} " \
-              "CODE_SIGN_IDENTITY='Apple Distribution' " \
-              "PRODUCT_BUNDLE_IDENTIFIER=#{bundle_id}",
+              "CODE_SIGN_IDENTITY='Apple Distribution'",
     )
 
     UI.success("Listen ad hoc ipa: #{lane_context[SharedValues::IPA_OUTPUT_PATH]}")
@@ -844,26 +861,41 @@ platform :ios do
     UI.user_error!("No App Store Connect app record for #{LISTEN_GUEST_ID}. Create it once in App Store Connect " \
                    "(My Apps > + > New App, bundle id #{LISTEN_GUEST_ID}); the API cannot do this.") unless app
 
-    get_provisioning_profile(
-      api_key: api_key,
-      app_identifier: LISTEN_GUEST_ID,
-      provisioning_name: LISTEN_GUEST_APPSTORE_PROFILE_NAME,
-      team_id: TEAM_ID,
-      readonly: false,
-    )
+    ext_id = "#{LISTEN_GUEST_ID}#{LISTEN_CONTROL_SUFFIX}"
+    # The Practice Control extension: a Developer Portal identifier only, never an App Store Connect app record.
+    unless Spaceship::ConnectAPI::BundleId.find(ext_id)
+      Spaceship::ConnectAPI::BundleId.create(name: "Listen Guest Practice", identifier: ext_id,
+                                             platform: Spaceship::ConnectAPI::BundleIdPlatform::IOS)
+      UI.success("Registered bundle id #{ext_id}")
+    end
+    [[LISTEN_GUEST_ID, LISTEN_GUEST_APPSTORE_PROFILE_NAME],
+     [ext_id, LISTEN_GUEST_CONTROL_APPSTORE_PROFILE_NAME]].each do |identifier, name|
+      get_provisioning_profile(
+        api_key: api_key,
+        app_identifier: identifier,
+        provisioning_name: name,
+        team_id: TEAM_ID,
+        readonly: false,
+      )
+    end
 
     build_number = Time.now.strftime("%Y%m%d%H%M")
-    set_info_plist_value(path: "ListenApp/Info.plist", key: "CFBundleVersion", value: build_number)
+    ["ListenApp/Info.plist", "ListenControl/Info.plist"].each do |plist|
+      set_info_plist_value(path: plist, key: "CFBundleVersion", value: build_number)
+    end
 
-    update_code_signing_settings(
-      path: "Overland.xcodeproj",
-      targets: ["Listen"],
-      use_automatic_signing: false,
-      team_id: TEAM_ID,
-      code_sign_identity: "Apple Distribution",
-      profile_name: LISTEN_GUEST_APPSTORE_PROFILE_NAME,
-      bundle_identifier: LISTEN_GUEST_ID,
-    )
+    { "Listen" => [LISTEN_GUEST_APPSTORE_PROFILE_NAME, LISTEN_GUEST_ID],
+      "ListenControl" => [LISTEN_GUEST_CONTROL_APPSTORE_PROFILE_NAME, ext_id] }.each do |target, (prof, id)|
+      update_code_signing_settings(
+        path: "Overland.xcodeproj",
+        targets: [target],
+        use_automatic_signing: false,
+        team_id: TEAM_ID,
+        code_sign_identity: "Apple Distribution",
+        profile_name: prof,
+        bundle_identifier: id,
+      )
+    end
 
     build_app(
       project: "Overland.xcodeproj",
@@ -873,12 +905,12 @@ platform :ios do
       output_name: "Listen",
       export_options: {
         signingStyle: "manual",
-        provisioningProfiles: { LISTEN_GUEST_ID => LISTEN_GUEST_APPSTORE_PROFILE_NAME },
+        provisioningProfiles: { LISTEN_GUEST_ID => LISTEN_GUEST_APPSTORE_PROFILE_NAME,
+                                ext_id => LISTEN_GUEST_CONTROL_APPSTORE_PROFILE_NAME },
       },
       xcargs: "CODE_SIGN_STYLE=Manual " \
               "DEVELOPMENT_TEAM=#{TEAM_ID} " \
-              "CODE_SIGN_IDENTITY='Apple Distribution' " \
-              "PRODUCT_BUNDLE_IDENTIFIER=#{LISTEN_GUEST_ID}",
+              "CODE_SIGN_IDENTITY='Apple Distribution'",
     )
 
     upload_to_testflight(

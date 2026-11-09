@@ -1,12 +1,13 @@
 name: ota-listen
 
 # Builds the standalone Listen app (com.oliverullman.listen) as an ad-hoc ipa for
-# over-the-air install. Same cert/ASC-key flow as ota.yml; no Pods, no extensions.
+# over-the-air install. Same cert/ASC-key flow as ota.yml; no Pods; embeds the ListenControl extension.
 on:
   push:
     branches: [main]
     paths:
       - "ListenApp/**"
+      - "ListenControl/**"
       - "Shared/GLLog.h"
       - "Shared/GLOfflineShell.*"
       - "Overland.xcodeproj/**"

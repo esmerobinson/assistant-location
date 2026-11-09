@@ -7,9 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		6708B6CC16544035F6E9D126 /* SubwayShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C5DF014B6944C007657B01 /* SubwayShared.swift */; };
-		CB7CA5FC7A36CCB5805088E5 /* SubwayWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55219593C3B0D1C421C1B219 /* SubwayWidget.swift */; };
-		E500E76CD1FB7767D22305BD /* SubwayShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C5DF014B6944C007657B01 /* SubwayShared.swift */; };
 		01656A7139741925E53416F8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9AAA4C27E2C30D0CC9906742 /* Assets.xcassets */; };
 		01745689886E5896C84307D5 /* VoiceToDesktop.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D3402F5F3C817C2253C97EE0 /* VoiceToDesktop.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		07809E65B90BEA5D4421C019 /* GLFormat.m in Sources */ = {isa = PBXBuildFile; fileRef = 557A0353C5AA4C08AD032BC4 /* GLFormat.m */; };
@@ -61,7 +58,9 @@
 		4312A30D92B958553F76905E /* GLTheme.m in Sources */ = {isa = PBXBuildFile; fileRef = AFB849B93E04E67B8ECAB758 /* GLTheme.m */; };
 		44798CCB7F2FC0AAFD74C9A0 /* GripesAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = C18F3769FCC5261152B88157 /* GripesAppDelegate.m */; };
 		4686E4D4C21FC2D681FB5E19 /* MarketplaceAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 3606117AE6D8C917D05BFCA9 /* MarketplaceAppDelegate.m */; };
+		4BCB0090A125E5C9EC2DE69A /* ListenControlBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC89C83FEF68B89B53898F17 /* ListenControlBundle.swift */; };
 		4D6C0BA4C08F38478E8B0403 /* CycleViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 2D295CB7F8A901E60A30D124 /* CycleViewController.m */; };
+		4E5E68FCADE35B4D59ECCA84 /* PracticeIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09A8110F25AA03E0C2CFD03E /* PracticeIntent.swift */; };
 		5059B36743C696317488B849 /* CycleNotificationService.m in Sources */ = {isa = PBXBuildFile; fileRef = 0E008A35B5F7D8F2A8E373DE /* CycleNotificationService.m */; };
 		508E69B394DE7BA2889B9DA8 /* QuotesDailyNotifier.m in Sources */ = {isa = PBXBuildFile; fileRef = 6BB00D20F2C5F4B29C6577C6 /* QuotesDailyNotifier.m */; };
 		51E9530999CB831E5A97C73D /* ListenVoiceListener.m in Sources */ = {isa = PBXBuildFile; fileRef = ABA35468274A7A69C930D00C /* ListenVoiceListener.m */; };
@@ -70,6 +69,7 @@
 		5C03C0933E88FD209FE62267 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C733B18E36967EC64A31541F /* Assets.xcassets */; };
 		5C4B3A2918706F5E4D3C2B1A /* ListenSpeakTurn.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C /* ListenSpeakTurn.m */; };
 		5FB9329B37FD5A4D3EFB77E0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 07A7B8A17F764964E81B7FAD /* Assets.xcassets */; };
+		6708B6CC16544035F6E9D126 /* SubwayShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C5DF014B6944C007657B01 /* SubwayShared.swift */; };
 		674F296DEE216C04EEED51C1 /* QuotesScheduleViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 772F99293EFB33B3E6ADF6E4 /* QuotesScheduleViewController.m */; };
 		6A1D0F3E5B7C4A2D91E8F0A3 /* GLOfflineShell.m in Sources */ = {isa = PBXBuildFile; fileRef = 6A1D0F3E5B7C4A2D91E8F0A1 /* GLOfflineShell.m */; };
 		6A1D0F3E5B7C4A2D91E8F0A4 /* GLOfflineShell.m in Sources */ = {isa = PBXBuildFile; fileRef = 6A1D0F3E5B7C4A2D91E8F0A1 /* GLOfflineShell.m */; };
@@ -113,12 +113,14 @@
 		B4BEEBE09183763A14362DF7 /* ListenPlayer.m in Sources */ = {isa = PBXBuildFile; fileRef = D4725020E164C9D057AD611E /* ListenPlayer.m */; };
 		B6975ED8BF6FD6BB6640FF88 /* CycleStore.m in Sources */ = {isa = PBXBuildFile; fileRef = 78D013249414C7AF007C270F /* CycleStore.m */; };
 		BA57EE8153BC49AFB53C63CE /* web in Resources */ = {isa = PBXBuildFile; fileRef = 9B9C3630350F31EA96DDDA42 /* web */; };
+		BB932D376AD94A3969BD4581 /* PracticeIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09A8110F25AA03E0C2CFD03E /* PracticeIntent.swift */; };
 		BD2B85B1D77507E3A2B4B2D9 /* ListenViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 36A1CFBAB181380A3B05056A /* ListenViewController.m */; };
 		C4B99FE33D8B959CA897E3E7 /* gl-bridge.js in Resources */ = {isa = PBXBuildFile; fileRef = ABF6D7BD5B21E5D5B36842A4 /* gl-bridge.js */; };
 		C521E33995C5E809AE47176A /* gripes-core.js in Resources */ = {isa = PBXBuildFile; fileRef = 9C294439988784877805A9B2 /* gripes-core.js */; };
 		C6D9E814EB3331864AC1AFC7 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = DC8785220B06DF00E6DDF13A /* main.m */; };
 		C74239B138D3319A4623C2AB /* QuotesStore.m in Sources */ = {isa = PBXBuildFile; fileRef = 99D9444F36981D9A3694E3B9 /* QuotesStore.m */; };
 		C77F8B92A4BF4DB1B7C3BFC6 /* GripesViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 36E26DEE3A40CC6E945CC86B /* GripesViewController.m */; };
+		CB7CA5FC7A36CCB5805088E5 /* SubwayWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55219593C3B0D1C421C1B219 /* SubwayWidget.swift */; };
 		D226B88D069E012B579BA21D /* QuotesWidgetLoader.m in Sources */ = {isa = PBXBuildFile; fileRef = 3DC73AA48D5FEE5DA2D2D55C /* QuotesWidgetLoader.m */; };
 		D3B54E1CCA9E6A9BE049C42A /* CycleReceipt.m in Sources */ = {isa = PBXBuildFile; fileRef = AB28C2D3C22F31376C448054 /* CycleReceipt.m */; };
 		D3C648D717AE356C1F5953AD /* QuotesWidgetReload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA6B7A4DC8EB14D7DA615D0 /* QuotesWidgetReload.swift */; };
@@ -136,9 +138,11 @@
 		E44CACC765BC42ECD30E9C02 /* GLWebKeyboardFocus.m in Sources */ = {isa = PBXBuildFile; fileRef = 3845CA82B3CED7FF9D0C0FB5 /* GLWebKeyboardFocus.m */; };
 		E49249CA108D62D4E6FD43C9 /* JournalIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 229AAEA2CB7EDD309E3673F4 /* JournalIntent.swift */; };
 		E49249CB108D62D4E6FD43CA /* JournalDebug.swift in Sources */ = {isa = PBXBuildFile; fileRef = 229AAEA3CB7EDD309E3673F5 /* JournalDebug.swift */; };
+		E500E76CD1FB7767D22305BD /* SubwayShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C5DF014B6944C007657B01 /* SubwayShared.swift */; };
 		E55DDDC057012E14DF79FB90 /* page.css in Resources */ = {isa = PBXBuildFile; fileRef = 920190CEEE6D73701B94D235 /* page.css */; };
 		E71D46A22BE57D05465E02E4 /* ShareToDesktop.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 52370A678E69E142A4EEB802 /* ShareToDesktop.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E72705635CDCFEC198D26AC1 /* QuotesBrowseViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1CC8CDDB0D392741D9BB226E /* QuotesBrowseViewController.m */; };
+		E74EF92AA025DF6FA0830CC1 /* ListenControl.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = DF4B079444AD6AB55F365589 /* ListenControl.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E93B2113D2267AD3DB966B10 /* GLTodoOutbox.m in Sources */ = {isa = PBXBuildFile; fileRef = C26862A877E083F3D9FC04FF /* GLTodoOutbox.m */; };
 		F86D2A567B37B6720EA36746 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 20EE9E881A52E03D60743412 /* Assets.xcassets */; };
 		F87824B3678FD75F13286822 /* libPods-Overland.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E0A408349E469AC6E6DA46BA /* libPods-Overland.a */; };
@@ -167,6 +171,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 10694AC288C074B5431563F5;
 			remoteInfo = QuotesWidget;
+		};
+		8ADF16AD502047786B36DB69 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0FFD314A1BAB7A34009B3A03 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 057764C365D399D24DA68738;
+			remoteInfo = ListenControl;
 		};
 		95E0825F66F3FA73C6FBCAE0 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -214,6 +225,17 @@
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5E1B98521BDF4CF852BB21C5 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				E74EF92AA025DF6FA0830CC1 /* ListenControl.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CE64BB60562BA411F4AE7B71 /* Embed App Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -241,8 +263,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		55219593C3B0D1C421C1B219 /* SubwayWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubwayWidget.swift; path = JournalControl/SubwayWidget.swift; sourceTree = "<group>"; };
-		F0C5DF014B6944C007657B01 /* SubwayShared.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubwayShared.swift; path = JournalControl/SubwayShared.swift; sourceTree = "<group>"; };
 		00AC709BF0BE0004768193D4 /* QuotesAppDelegate.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = QuotesAppDelegate.m; path = QuotesApp/QuotesAppDelegate.m; sourceTree = "<group>"; };
 		01702F6755566F66715FE7C3 /* ListenVoiceListener.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ListenVoiceListener.h; path = ListenApp/ListenVoiceListener.h; sourceTree = "<group>"; };
 		0203D4801700D82D09FF6817 /* ListenViewController.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ListenViewController.h; path = ListenApp/ListenViewController.h; sourceTree = "<group>"; };
@@ -250,6 +270,7 @@
 		041AE546989A57C5A53A202D /* ListenPlayer.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ListenPlayer.h; path = ListenApp/ListenPlayer.h; sourceTree = "<group>"; };
 		060ABE65969295F82C561522 /* QuotesWidget.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; name = QuotesWidget.entitlements; path = QuotesWidget/QuotesWidget.entitlements; sourceTree = "<group>"; };
 		07A7B8A17F764964E81B7FAD /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = MarketplaceApp/Assets.xcassets; sourceTree = "<group>"; };
+		09A8110F25AA03E0C2CFD03E /* PracticeIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PracticeIntent.swift; path = ListenControl/PracticeIntent.swift; sourceTree = "<group>"; };
 		0CF6D6486AE0D28C75579A71 /* ListenPocketView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = ListenPocketView.h; path = ListenApp/ListenPocketView.h; sourceTree = "<group>"; };
 		0DD5A3D05DBA43B38657EAE2 /* ListenSpeakPhrases.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = ListenSpeakPhrases.m; path = ListenApp/ListenSpeakPhrases.m; sourceTree = "<group>"; };
 		0E008A35B5F7D8F2A8E373DE /* CycleNotificationService.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = CycleNotificationService.m; path = CycleNSE/CycleNotificationService.m; sourceTree = "<group>"; };
@@ -349,6 +370,7 @@
 		52370A678E69E142A4EEB802 /* ShareToDesktop.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareToDesktop.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		53DE1C3EDEC2FC20DBBE3E4D /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = QuotesApp/Info.plist; sourceTree = "<group>"; };
 		541EB8CD40ED8147F1DD190B /* stock-quotes.json */ = {isa = PBXFileReference; includeInIndex = 1; name = "stock-quotes.json"; path = "QuotesApp/Sources/stock-quotes.json"; sourceTree = "<group>"; };
+		55219593C3B0D1C421C1B219 /* SubwayWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubwayWidget.swift; path = JournalControl/SubwayWidget.swift; sourceTree = "<group>"; };
 		5563403DED47F478977BA796 /* SessionIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionIntent.swift; path = JournalControl/SessionIntent.swift; sourceTree = "<group>"; };
 		557A0353C5AA4C08AD032BC4 /* GLFormat.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GLFormat.m; path = Shared/GLFormat.m; sourceTree = "<group>"; };
 		57889160C257E5E5A8A0A306 /* GLKeyboardWebInset.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GLKeyboardWebInset.m; path = Shared/GLKeyboardWebInset.m; sourceTree = "<group>"; };
@@ -419,6 +441,7 @@
 		ABA35468274A7A69C930D00C /* ListenVoiceListener.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = ListenVoiceListener.m; path = ListenApp/ListenVoiceListener.m; sourceTree = "<group>"; };
 		ABF6D7BD5B21E5D5B36842A4 /* gl-bridge.js */ = {isa = PBXFileReference; includeInIndex = 1; name = "gl-bridge.js"; path = "Modules/WebPages/gl-bridge.js"; sourceTree = "<group>"; };
 		AC51FC170FA08071F428C8BA /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Security.framework; sourceTree = DEVELOPER_DIR; };
+		AC89C83FEF68B89B53898F17 /* ListenControlBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ListenControlBundle.swift; path = ListenControl/ListenControlBundle.swift; sourceTree = "<group>"; };
 		AD882F1ADA28AE4AEB7AE145 /* main.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = main.m; path = GripesApp/main.m; sourceTree = "<group>"; };
 		AFB849B93E04E67B8ECAB758 /* GLTheme.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GLTheme.m; path = Shared/GLTheme.m; sourceTree = "<group>"; };
 		B103F2C207695937B2639179 /* DueSpike.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; name = DueSpike.entitlements; path = DueSpikeApp/DueSpike.entitlements; sourceTree = "<group>"; };
@@ -450,6 +473,7 @@
 		DA7B2FA9447E86DDEAF382ED /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = ShareToDesktop/Info.plist; sourceTree = "<group>"; };
 		DC459A6C6618BAB47D3B2BEB /* CycleBridge.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = CycleBridge.h; path = CycleApp/CycleBridge.h; sourceTree = "<group>"; };
 		DC8785220B06DF00E6DDF13A /* main.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = main.m; path = ListenApp/main.m; sourceTree = "<group>"; };
+		DF4B079444AD6AB55F365589 /* ListenControl.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ListenControl.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E020C3F8CA67589B3EC7D31F /* ShareViewController.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = ShareViewController.m; path = ShareToDesktop/ShareViewController.m; sourceTree = "<group>"; };
 		E0A408349E469AC6E6DA46BA /* libPods-Overland.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Overland.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E0B73196C3F2C0B1E24ACEB6 /* NotificationService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotificationService.swift; path = DueSpikeNSE/NotificationService.swift; sourceTree = "<group>"; };
@@ -459,9 +483,12 @@
 		E70E6E9899DAB913030A6D97 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = CycleApp/Assets.xcassets; sourceTree = "<group>"; };
 		EA42534321515D2254D7C72F /* Marketplace.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Marketplace.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EDE1E109868E6969AD3F2FAE /* GLTheme.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = GLTheme.h; path = Shared/GLTheme.h; sourceTree = "<group>"; };
+		F0C5DF014B6944C007657B01 /* SubwayShared.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubwayShared.swift; path = JournalControl/SubwayShared.swift; sourceTree = "<group>"; };
 		F2C1B6DBF9842DBFD664EC5E /* GLAppStateReporter.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GLAppStateReporter.m; path = Shared/GLAppStateReporter.m; sourceTree = "<group>"; };
 		F4889B9491026E38CD6369CB /* MarketplaceAppDelegate.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = MarketplaceAppDelegate.h; path = MarketplaceApp/MarketplaceAppDelegate.h; sourceTree = "<group>"; };
 		F4DFFAB32440A8511E1D869A /* Pods-Overland.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Overland.debug.xcconfig"; path = "Pods/Target Support Files/Pods-Overland/Pods-Overland.debug.xcconfig"; sourceTree = "<group>"; };
+		F7D42ECBA9A3EF0EF88CFFEE /* ListenControl.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; name = ListenControl.entitlements; path = ListenControl/ListenControl.entitlements; sourceTree = "<group>"; };
+		FB7C16E670E4622ACAE3837D /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = ListenControl/Info.plist; sourceTree = "<group>"; };
 		FC1C3E3DFAA6171ED1009517 /* GLKeyboardWebInset.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = GLKeyboardWebInset.h; path = Shared/GLKeyboardWebInset.h; sourceTree = "<group>"; };
 		FDE72BEFF07638FD4DABF8D5 /* GLTheme.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = GLTheme.m; path = Shared/GLTheme.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -535,6 +562,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		9AC420956B2A5AD9DD4BBC04 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF8C9E7789DB2AA8489E8C12 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -672,6 +706,7 @@
 				E42359B626B8D0AD2B41DD1B /* CycleApp */,
 				41744AB01A90A61F2AF04D0D /* VoiceToDesktop */,
 				86833AC44917FDF83150EAA2 /* CycleNSE */,
+				8448E537B0FD86EBD0E4E4CA /* ListenControl */,
 			);
 			sourceTree = "<group>";
 		};
@@ -692,6 +727,7 @@
 				81790464364EA8E68F4C7C18 /* Cycle.app */,
 				D3402F5F3C817C2253C97EE0 /* VoiceToDesktop.appex */,
 				AA6D686B07B52AA8BCABECC7 /* CycleNSE.appex */,
+				DF4B079444AD6AB55F365589 /* ListenControl.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -866,6 +902,17 @@
 			name = ShareToDesktop;
 			sourceTree = SOURCE_ROOT;
 		};
+		8448E537B0FD86EBD0E4E4CA /* ListenControl */ = {
+			isa = PBXGroup;
+			children = (
+				FB7C16E670E4622ACAE3837D /* Info.plist */,
+				F7D42ECBA9A3EF0EF88CFFEE /* ListenControl.entitlements */,
+				AC89C83FEF68B89B53898F17 /* ListenControlBundle.swift */,
+				09A8110F25AA03E0C2CFD03E /* PracticeIntent.swift */,
+			);
+			name = ListenControl;
+			sourceTree = SOURCE_ROOT;
+		};
 		86833AC44917FDF83150EAA2 /* CycleNSE */ = {
 			isa = PBXGroup;
 			children = (
@@ -1006,6 +1053,23 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
+		057764C365D399D24DA68738 /* ListenControl */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4075756BD4BDFED14E8E3FA8 /* Build configuration list for PBXNativeTarget "ListenControl" */;
+			buildPhases = (
+				5C76CA44BD4D85AE762021A9 /* Sources */,
+				AF8C9E7789DB2AA8489E8C12 /* Frameworks */,
+				67579414AD4A0CE453B0A4C1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ListenControl;
+			productName = ListenControl;
+			productReference = DF4B079444AD6AB55F365589 /* ListenControl.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		0FFD31511BAB7A34009B3A03 /* Overland */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 0FFD316C1BAB7A34009B3A03 /* Build configuration list for PBXNativeTarget "Overland" */;
@@ -1075,10 +1139,12 @@
 				2496851D3C6B967E18E53E0E /* Sources */,
 				E819C15779C66086845455BB /* Frameworks */,
 				74D1CFA08157B0555DEE4031 /* Resources */,
+				5E1B98521BDF4CF852BB21C5 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C52914EA694207FFA81ED3F1 /* PBXTargetDependency */,
 			);
 			name = Listen;
 			productName = Listen;
@@ -1316,6 +1382,7 @@
 				4B03125E0607B4000E59DC43 /* Cycle */,
 				8BE9BE028670C5A5882323AA /* VoiceToDesktop */,
 				E2A90AC703FE0B33CEB9530F /* CycleNSE */,
+				057764C365D399D24DA68738 /* ListenControl */,
 			);
 		};
 /* End PBXProject section */
@@ -1371,6 +1438,13 @@
 			files = (
 				A1EB2BDB66EA15EA70A987BB /* Assets.xcassets in Resources */,
 				BA57EE8153BC49AFB53C63CE /* web in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		67579414AD4A0CE453B0A4C1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1565,6 +1639,7 @@
 				51E9530999CB831E5A97C73D /* ListenVoiceListener.m in Sources */,
 				5C4B3A2918706F5E4D3C2B1A /* ListenSpeakTurn.m in Sources */,
 				C6D9E814EB3331864AC1AFC7 /* main.m in Sources */,
+				BB932D376AD94A3969BD4581 /* PracticeIntent.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1587,6 +1662,15 @@
 				2C8C263E39AD887F4C2B76A8 /* ShareViewController.m in Sources */,
 				0FA0000200000000000AA02A /* GLDropUploader.m in Sources */,
 				0FA0000400000000000AA04A /* GLDropBackground.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5C76CA44BD4D85AE762021A9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4BCB0090A125E5C9EC2DE69A /* ListenControlBundle.swift in Sources */,
+				4E5E68FCADE35B4D59ECCA84 /* PracticeIntent.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1731,6 +1815,12 @@
 			target = E2A90AC703FE0B33CEB9530F /* CycleNSE */;
 			targetProxy = ED49F9228A0BFF425CE3F8D0 /* PBXContainerItemProxy */;
 		};
+		C52914EA694207FFA81ED3F1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = ListenControl;
+			target = 057764C365D399D24DA68738 /* ListenControl */;
+			targetProxy = 8ADF16AD502047786B36DB69 /* PBXContainerItemProxy */;
+		};
 		DCA55DD52AE4FFD7517AA376 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = JournalControl;
@@ -1795,6 +1885,33 @@
 				PROVISIONING_PROFILE_SPECIFIER = "Cycle NSE AdHoc";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		06D7823F89032D6974F4072F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = ListenControl/ListenControl.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = J66WVM2DTX;
+				ENABLE_BITCODE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ListenControl/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oliverullman.listen.practice;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "Listen Practice AdHoc";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
@@ -2355,6 +2472,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "Listen AdHoc";
 				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -2386,6 +2504,34 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "Goals AppStore";
 				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		9CDEC826DE6C168D0F7E372A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = ListenControl/ListenControl.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = J66WVM2DTX;
+				ENABLE_BITCODE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ListenControl/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oliverullman.listen.practice;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "Listen Practice AdHoc";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -2664,6 +2810,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "Listen AdHoc";
 				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
@@ -2795,6 +2942,15 @@
 			buildConfigurations = (
 				78AD55CAE63A295FECE1049A /* Release */,
 				CEC5702EBF441AEB4DF28442 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4075756BD4BDFED14E8E3FA8 /* Build configuration list for PBXNativeTarget "ListenControl" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9CDEC826DE6C168D0F7E372A /* Release */,
+				06D7823F89032D6974F4072F /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

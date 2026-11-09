@@ -60,6 +60,8 @@ static NSURL *ListenBaseURL(void) {
     // The stop chime (public/speak-chime.mp3), fetched once and kept; the player must outlive -chime or it stops at once.
     NSData *_chimeData;
     AVAudioPlayer *_chimePlayer;
+    // Epoch ms of the latest Practice shortcut press; the page dedupes on it (see -openPracticeFromShortcut).
+    NSNumber *_openAt;
 }
 
 - (WKWebView *)listenWebView { return _webView; }
@@ -128,6 +130,17 @@ static NSURL *ListenBaseURL(void) {
                                              selector:@selector(appWillEnterForeground)
                                                  name:UIApplicationWillEnterForegroundNotification
                                                object:nil];
+    // The Practice shortcut's two in-process signals (PracticeIntent.swift): the posted notification, and the flag
+    // perform() leaves for a press that ran before this controller existed, checked when the app becomes active.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(openPracticeFromShortcut)
+                                                 name:@"ListenOpenPractice"
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(consumePracticeFlag)
+                                                 name:UIApplicationDidBecomeActiveNotification
+                                               object:nil];
+    [self consumePracticeFlag];
 
     _player = [[ListenPlayer alloc] init];
     _voice = [[ListenVoiceListener alloc] initWithPlayer:_player];
@@ -221,6 +234,58 @@ static NSURL *ListenBaseURL(void) {
     [_shellLoader swapToLiveIfReachable];
 }
 
+#pragma mark - Practice shortcut
+
+// How long a press stays deliverable. A cold launch can take a few seconds to paint the page, and the foreground shell
+// swap may reload the page seconds after that; 20 s covers both with room (a guess, not measured). After it, nothing
+// re-sends the press, so a reload much later never yanks the view back to Practice.
+static NSTimeInterval const kOpenWindowSeconds = 20;
+
+// One press reaches here up to three times (notification, URL, active-flag) in any order, before or after the page has
+// loaded. All of them collapse onto one `at`: a repeat within 2 s keeps the first stamp, and the page handles each
+// `at` once (sessionStorage listen.openAt), so a double delivery never re-navigates. Delivery is belt and braces:
+//  - a document-start user script sets window.__listenOpen, read by the page's boot (covers a page that has not
+//    loaded yet, or reloads within the window);
+//  - an `open` event reaches a page that is already running (its handler navigates at once, or tells a boot still in
+//    progress to start on Practice);
+//  - didFinishNavigation re-sends both (a press that came while a load was in flight, after its scripts were read).
+- (void)openPracticeFromShortcut {
+    // perform() posts its notification from whatever thread the intent runs on; WebKit is main-thread only.
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self openPracticeFromShortcut]; });
+        return;
+    }
+    // This press is handled: its active-flag must not fire it again when the app becomes active later than 2 s.
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"ListenPendingPracticeAt"];
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+    if (!_openAt || now - _openAt.doubleValue / 1000 > 2) _openAt = @((long long)(now * 1000));
+    GLLog(@"listen: practice shortcut (at=%@)", _openAt);
+    [self deliverPendingOpen];
+}
+
+- (void)consumePracticeFlag {
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    double at = [d doubleForKey:@"ListenPendingPracticeAt"];
+    if (at <= 0) return;
+    [d removeObjectForKey:@"ListenPendingPracticeAt"];
+    if ([NSDate date].timeIntervalSince1970 - at < kOpenWindowSeconds) [self openPracticeFromShortcut];
+}
+
+- (void)deliverPendingOpen {
+    if (!_openAt || [NSDate date].timeIntervalSince1970 - _openAt.doubleValue / 1000 > kOpenWindowSeconds) return;
+    NSDictionary *payload = @{@"target": @"practice", @"at": _openAt};
+    // The script carries its own expiry: user scripts stay installed until the next didFinishNavigation, which may be
+    // an hour later, and that load must not read a stale press.
+    NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:payload options:0 error:nil]
+                                           encoding:NSUTF8StringEncoding];
+    NSString *source = [NSString stringWithFormat:@"if (Date.now() - %@ < %d) window.__listenOpen = %@;",
+                        _openAt, (int)(kOpenWindowSeconds * 1000), json];
+    [_webView.configuration.userContentController addUserScript:
+        [[WKUserScript alloc] initWithSource:source injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+                            forMainFrameOnly:YES]];
+    [self emitEvent:@"open" payload:payload];
+}
+
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
@@ -244,6 +309,8 @@ static NSURL *ListenBaseURL(void) {
     [_shellLoader webView:webView didFinishNavigation:navigation];
     // The one-shot reload reason (see webViewWebContentProcessDidTerminate:) has been read by the page's head script.
     [webView.configuration.userContentController removeAllUserScripts];
+    // A Practice press still in its window goes again: it may have come while this load was in flight.
+    [self deliverPendingOpen];
 }
 
 // iOS kills the web content process of an app left in the background; the view then stays blank (or WebKit reloads the
@@ -256,6 +323,7 @@ static NSURL *ListenBaseURL(void) {
                                                forMainFrameOnly:YES];
     [webView.configuration.userContentController removeAllUserScripts];
     [webView.configuration.userContentController addUserScript:reason];
+    [self deliverPendingOpen];
     [self loadPage];
 }
 

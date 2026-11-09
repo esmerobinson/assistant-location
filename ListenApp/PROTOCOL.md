@@ -62,6 +62,7 @@ State = {itemId:string|null, idx:int, step:"vocab"|"clear"|"translation"|"origin
 - `heard {transcript, matched:string|null}` — what the voice listener recognised (for the page to show briefly).
 - `location {lat, lng, accuracy, heading:number|null, speed:number|null}` — one fix while location is started (degrees/metres/m·s⁻¹). `heading` is GPS course while moving, else the compass heading, `null` if neither; `speed` `null` if unknown.
 - `speakResult {...}` — the grade JSON from POST /api/speak/grade for a native speak turn (score, feedback, corrections, transcript, kind, from, to, feedbackAudioUrl), emitted as soon as it is back, before the feedback is spoken.
+- `open {target:'practice', at}` — the lock-screen Practice Control was pressed (`at` = press time, epoch ms). Native also installs a document-start script setting `window.__listenOpen` to the same payload (self-expiring after 20 s) and re-sends both after each navigation within 20 s. The page opens Practice once per `at`, ahead of launch/resume/restore.
 - `error {message}` — playback/audio-session failures, with the real underlying message. Also every failure of a native speak turn.
 
 ## Step loop semantics (identical in native and the JS fallback)

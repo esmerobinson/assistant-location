@@ -35,6 +35,19 @@
 	<string>Listens for spoken commands while audio plays.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Understands spoken commands for Listen.</string>
+	<!-- The lock-screen Practice Control opens <bundle id>://practice (ListenAppDelegate application:openURL:). The
+	     bundle id as the scheme keeps the guest copy (com.oliverullman.listenguest) from claiming the same URL. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

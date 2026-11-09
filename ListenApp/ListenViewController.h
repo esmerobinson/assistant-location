@@ -5,4 +5,7 @@
 #import <UIKit/UIKit.h>
 
 @interface ListenViewController : UIViewController
+/// The lock-screen Practice Control was pressed (PracticeIntent.swift): open the page on Practice. Safe to call more
+/// than once per press and at any point of launch; see the implementation.
+- (void)openPracticeFromShortcut;
 @end
