@@ -46,6 +46,24 @@ var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct',
 var WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 var KIND = { focus: 'Focus', kudos: 'Kudos', truth: 'Truth', ask: 'Ask' };
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+// Renders a challenge-day note as HTML: **text** → bold, "• " lines → <li>, newlines → paragraph breaks.
+// Used in both the log list and the read-only view sheet so they always match.
+function noteHtml(note) {
+  var lines = esc(note).split('\n');
+  var out = [], inUl = false;
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i].replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    if (ln.slice(0, 2) === '• ') {
+      if (!inUl) { out.push('<ul class="nlog">'); inUl = true; }
+      out.push('<li>' + ln.slice(2) + '</li>');
+    } else {
+      if (inUl) { out.push('</ul>'); inUl = false; }
+      out.push('<p class="nlogp">' + ln + '</p>');
+    }
+  }
+  if (inUl) out.push('</ul>');
+  return out.join('');
+}
 function ic(id, cls) { return '<svg class="ic ' + (cls || '') + '"><use href="#' + id + '"/></svg>'; }
 function now() { return Date.now(); }
 function tz() { return S.couple.tz; }
@@ -955,6 +973,7 @@ SCREEN.challenge = function () {
   var tap = c.breaks_on === 'tap', goal = c.breaks_on === 'goal';
   var logRow = ui.sheet && ui.sheet.id ? S.rows.challenge_days[ui.sheet.id] : null;
   var sh = ui.sheet && ui.sheet.type === 'chlog' ? sheet('t3', '<div class="bsh"><h3>Log today</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Note</p>' + micField('chlognote', 'What did you do?') + '<div class="acts" style="margin-top:44px"><div class="save" data-a="chlogsave">Save</div></div>')
+    : ui.sheet && ui.sheet.type === 'chlogview' && logRow ? sheet('t3 nlogview', '<div class="bsh"><h3>' + fmtShort(logRow.day) + '</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><div class="nlogbody">' + noteHtml(logRow.note) + '</div><div class="acts" style="margin-top:44px"><div class="save" data-a="chlogedit:' + esc(logRow.id) + '">Edit</div></div>')
     : ui.sheet && ui.sheet.type === 'chlogedit' && logRow ? sheet('t3', '<div class="bsh"><h3>' + fmtShort(logRow.day) + '</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Note</p>' + micField('chlognote', 'What did you do?') + '<div class="acts" style="margin-top:44px"><div class="save" data-a="chlogeditsave">Save</div><div class="tdrop" data-a="chlogdelq">Delete</div></div>')
     : ui.sheet && ui.sheet.type === 'chlogdel' && logRow ? sheet('t3', '<div class="bsh"><h3>Delete ' + fmtShort(logRow.day) + '?</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><div class="acts" style="margin-top:44px"><div class="save" data-a="chlogdel">Delete</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>')
     : ui.sheet && ui.sheet.type === 'broke' ? sheet('t3', '<div class="bsh"><h3>Broke it</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Note</p>' + inp('brnote', 'Optional').replace('class="inp"', 'class="inp fill"') + '<div class="acts" style="margin-top:44px"><div class="save" data-a="brsave">Save</div></div>')
@@ -964,7 +983,7 @@ SCREEN.challenge = function () {
   var notes = L('challenge_days').filter(function (x) { return x.challenge_id === c.id && !x.deleted_at; }).sort(function (a, b) { return a.day < b.day ? 1 : -1; });
   function goalBody() { var open = c.opens <= today(); return '<p class="rule">' + esc(c.rule || '') + '</p>' + (c.accepted && open
     ? '<div class="four g">' + stat('Days', c.count + '/' + c.goal_days) + stat('Due', monDay(c.deadline)) + stat('Reward', sg(c.goal_earn)) + stat('Miss', sg(-c.goal_miss)) + '</div>' + challengeCal(c, today()) +
-      notes.map(function (x) { return '<p class="rule" data-a="chlogedit:' + esc(x.id) + '"><b>' + fmtShort(x.day) + '</b> ' + esc(x.note) + '</p>'; }).join('') +
+      notes.map(function (x) { var preview = x.note.replace(/\n[\s\S]*/,''); return '<p class="rule" data-a="chlogview:' + esc(x.id) + '"><b>' + fmtShort(x.day) + '</b> ' + esc(preview) + '</p>'; }).join('') +
       (c.for_user === St.me() && c.status === 'active' && !c.logged_today ? '<div class="pin"><div class="save" data-a="chlog">Log today</div></div>' : '')
     : '<div class="four g">' + stat(open ? 'Days' : 'Starts', open ? '0/' + c.goal_days : monDay(c.opens)) + stat('Due', monDay(c.deadline)) + stat('Reward', sg(c.goal_earn)) + stat('Miss', sg(-c.goal_miss)) + '</div>' + (c.accepted ? '' : c.for_user === St.me() ? '<div class="save" data-a="chaccept">Accept</div>' : '<p class="lab">Waiting for ' + esc(nameOf(c.for_user)) + '</p>')); }
   // Ping: only on the partner's challenge, until it is done or failed (not started counts). Pinned with Broke it when both show.
@@ -1393,7 +1412,7 @@ function draftKey() {
   if (s) {
     if (s.type === 'newtodo') return 'todo:' + (s.edit || 'new');
     if (s.type === 'still') return s.edit ? 'still:' + s.id : null;
-    if (s.type === 'note' || s.type === 'decline' || s.type === 'chlogedit') return s.type + ':' + s.id;
+    if (s.type === 'note' || s.type === 'decline' || s.type === 'chlogedit' || s.type === 'chlogview') return s.type + ':' + s.id;
     if (s.type === 'chlog' || s.type === 'broke' || s.type === 'chedit') return s.type + ':' + ui.chId;
     if (s.type === 'editreward') return s.type + ':' + s.id;
     return s.type === 'addreward' ? 'addreward' : null; // the rest (pickers, confirms) have no text field
@@ -2285,6 +2304,7 @@ var ACT = {
       draftSent(); ui.sheet = null; ui.d = {}; render();
     });
   }),
+  chlogview: function (id) { ui.sheet = { type: 'chlogview', id: id }; render(); },
   chlogedit: function (id) { ui.sheet = { type: 'chlogedit', id: id }; ui.d = { chlognote: S.rows.challenge_days[id].note }; render(); },
   chlogeditsave: guard(function () {
     var note = (ui.d.chlognote || '').trim(); if (!note) throw new Error('Note needed');

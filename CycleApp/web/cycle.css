@@ -403,6 +403,12 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .vhold-t[data-t=cancel]{background:#1a1a1a;color:#fff;border:2px solid #3a3a3a}
 .vhold-t[data-t=cancel].armed{background:#ff3b30;color:#fff;border-color:transparent}
 .cdet .rule[data-a]{cursor:pointer}
+/* Read-only note sheet: .nlogbody scrolls if the note is long; list and para styles match the entry format. */
+.bs.nlogview .nlogbody{overflow-y:auto;flex:1;padding:0 0 8px}
+.bs.nlogview .nlogp{margin:0 0 10px;font-size:15px;line-height:1.5;color:#e8e8e8}
+.bs.nlogview .nlogp:empty{margin:0 0 4px}
+.bs.nlogview ul.nlog{margin:0 0 10px;padding-left:20px}
+.bs.nlogview ul.nlog li{font-size:15px;line-height:1.5;color:#e8e8e8;margin-bottom:4px}
 
 /* ---- Job tabs: Home / To-dos / Fights / Progress ---- */
 /* Four tabs share the bar, so each takes a quarter instead of the base 96px that fitted three. */
