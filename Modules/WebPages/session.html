@@ -1511,6 +1511,11 @@
   // call() for the opts.timeoutMs mechanism this uses.
   var VOICE_START_TIMEOUT_MS = 60000;
   var VOICE_STOP_TIMEOUT_MS = 90000;
+  // How long a voice SEND keeps the mic spinner and the Starting card before
+  // handing off to the Recent row (stopVoiceCapture). A guess, not measured:
+  // long enough that a healthy transcribe usually answers first (a few
+  // seconds), short enough that a dead box never looks stuck.
+  var VOICE_STOP_DETACH_MS = 3000;
 
   function startVoiceCapture(target) {
     if (recording || starting) return;
@@ -1907,12 +1912,39 @@
     function failLaunch(msg, voiceId) {
       // A reply's or clarification's failure puts its typed text back in that box instead.
       if (sink) { sink.fail(sink.localId, msg, voiceId); return; }
-      confirmationEl.classList.add('gl-hidden');
+      hideLaunchCard();
       updateVoiceLaunch(launchId, { status: 'failed', error: msg, voiceId: voiceId || null });
     }
-    GLBridge.call('voiceStop', { launchId: launchId }, { timeoutMs: VOICE_STOP_TIMEOUT_MS }).then(function (res) {
+    // The Starting card may already show a newer launch (this one detached, see
+    // below), so only hide it while it still belongs to this launch.
+    function hideLaunchCard() {
+      if (clarifyStartKey === launchId) confirmationEl.classList.add('gl-hidden');
+    }
+    // A send never holds the composer hostage. Native saves the recording to its
+    // durable outbox before it uploads, so after VOICE_STOP_DETACH_MS the launch
+    // moves to the same 'waiting' state a "queued" answer gives: mic free, card
+    // gone, the Recent row carries it. voiceStop keeps running; when its answer
+    // comes it still starts the session at once (handledVoice stops pollVoice
+    // starting it twice). Without this, a box that is down or rebooting held the
+    // mic spinner (pointer-events: none) and the card for up to 90s.
+    var detached = false;
+    var detachTimer = (autoSend || sink) ? setTimeout(function () {
+      detached = true;
       setVoiceStatus('', target);
       setMicBusy(target, false);
+      if (sink) sink.store.update(sink.localId, { status: 'waiting' });
+      else { updateVoiceLaunch(launchId, { status: 'waiting' }); hideLaunchCard(); }
+      pollVoice();
+    }, VOICE_STOP_DETACH_MS) : null;
+    /** Clears this stop's busy UI, unless it detached: by then the mic may belong to a newer recording. */
+    function settle() {
+      clearTimeout(detachTimer);
+      if (detached) return;
+      setVoiceStatus('', target);
+      setMicBusy(target, false);
+    }
+    GLBridge.call('voiceStop', { launchId: launchId }, { timeoutMs: VOICE_STOP_TIMEOUT_MS }).then(function (res) {
+      settle();
       var text = res && res.text;
       var code = res && res.code;
       // mic_denied is NOT expected here -- voiceStop only ever runs after a
@@ -1937,7 +1969,7 @@
         // exists, however late it is.
         if (autoSend) {
           updateVoiceLaunch(launchId, { voiceId: res.id, status: 'waiting' });
-          confirmationEl.classList.add('gl-hidden');
+          hideLaunchCard();
         }
         // Same for a reply or clarification: its record waits on disk for the transcript.
         if (sink) sink.store.update(sink.localId, { voiceId: res.id, status: 'waiting' });
@@ -1965,8 +1997,7 @@
         ackVoice(res.id).catch(function () {});
       }
     }).catch(function (err) {
-      setVoiceStatus('', target);
-      setMicBusy(target, false);
+      settle();
       if (!autoSend && !sink) { showError('Transcription failed: ' + err.message); return; }
       // A timeout leaves native still working on the recording; pollVoice picks it up by launchId. Any other error means native has nothing to retry.
       if (err.message === 'timeout') {

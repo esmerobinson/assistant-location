@@ -2422,6 +2422,27 @@ test('LAUNCH: pressing voice send puts a Transcribing row in Recent before any n
   await context.close();
 });
 
+// A box that is down or rebooting used to keep the launcher mic spinning (and
+// untappable) and the Starting card up for the whole 90s voiceStop wait.
+test('LAUNCH: a voice send with no answer frees the mic within seconds, waits in Recent, and the late transcript still starts it without disturbing a newer recording', async () => {
+  const bodies = [];
+  const { context, page } = await slidePage(bodies);
+  await page.evaluate(() => window.__glMock.configure({ neverReply: ['voiceStop'] }));
+  await page.click('#session-record-btn'); // stop = send; the box never answers
+  await page.waitForSelector('#session-record-btn.busy');
+  await page.waitForSelector('#session-record-btn:not(.busy)', { timeout: 5000 });
+  assert.equal(await page.locator('#session-confirmation').evaluate((el) => el.classList.contains('gl-hidden')), true, 'the Starting card hands off to the Recent row');
+  const [launch] = Object.values(await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), LAUNCHES));
+  assert.equal(launch.status, 'waiting');
+  await page.click('#session-record-btn'); // the mic works again: a second recording
+  await page.waitForSelector('#session-record-btn.recording');
+  await page.evaluate(() => window.__glMock.replyNow('voiceStop', { text: 'late transcript' }));
+  await waitFor(() => bodies.length === 1, 'the late voiceStop answer starts the first send');
+  assert.equal(bodies[0].prompt, 'typed words late transcript');
+  assert.equal(await page.locator('#session-record-btn').evaluate((el) => el.classList.contains('recording') && !el.classList.contains('busy')), true, 'the newer recording is untouched');
+  await context.close();
+});
+
 test('LAUNCH: a launch whose recording native never heard of (app died mid-send) becomes a loud Failed row after reload, not a silent loss', async () => {
   const bodies = [];
   const { context, page } = await slidePage(bodies);
