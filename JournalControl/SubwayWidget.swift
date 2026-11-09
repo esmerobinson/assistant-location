@@ -126,7 +126,7 @@ private struct TrainRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text("\u{2192}").foregroundStyle(palette.mut).fontWeight(.medium)
-                    Text(dest).foregroundStyle(palette.fg).fontWeight(.semibold).lineLimit(1)
+                    Text(dest).foregroundStyle(palette.fg).fontWeight(.semibold).lineLimit(1).minimumScaleFactor(0.85)
                 }
                 .font(.system(size: density.destFont))
                 HStack(spacing: density.subGap) {
