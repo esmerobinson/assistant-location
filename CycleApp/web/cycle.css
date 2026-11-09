@@ -409,6 +409,7 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .bs.nlogview .nlogp:empty{margin:0 0 4px}
 .bs.nlogview ul.nlog{margin:0 0 10px;padding-left:20px}
 .bs.nlogview ul.nlog li{font-size:15px;line-height:1.5;color:#e8e8e8;margin-bottom:4px}
+.bs.nlogview .nlogh{margin:16px 0 6px;font-size:17px;font-weight:600;color:#fff}
 
 /* ---- Job tabs: Home / To-dos / Fights / Progress ---- */
 /* Four tabs share the bar, so each takes a quarter instead of the base 96px that fitted three. */

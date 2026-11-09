@@ -46,14 +46,17 @@ var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct',
 var WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 var KIND = { focus: 'Focus', kudos: 'Kudos', truth: 'Truth', ask: 'Ask' };
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-// Renders a challenge-day note as HTML: **text** → bold, "• " lines → <li>, newlines → paragraph breaks.
+// Renders a challenge-day note as HTML: **text** → bold, "• " lines → <li>, "## " lines → <h3>, newlines → paragraph breaks.
 // Used in both the log list and the read-only view sheet so they always match.
 function noteHtml(note) {
   var lines = esc(note).split('\n');
   var out = [], inUl = false;
   for (var i = 0; i < lines.length; i++) {
     var ln = lines[i].replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    if (ln.slice(0, 2) === '• ') {
+    if (ln.slice(0, 3) === '## ') {
+      if (inUl) { out.push('</ul>'); inUl = false; }
+      out.push('<h3 class="nlogh">' + ln.slice(3) + '</h3>');
+    } else if (ln.slice(0, 2) === '• ') {
       if (!inUl) { out.push('<ul class="nlog">'); inUl = true; }
       out.push('<li>' + ln.slice(2) + '</li>');
     } else {
