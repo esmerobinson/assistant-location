@@ -25,9 +25,11 @@ struct SubwayState: Codable, Hashable {
         var mins: Int         // whole minutes to arrival
         var verdict: String   // "N min spare" | "run" | "miss", vs the walk to the station
         var sched: Bool       // no vehicle position yet: schedule guess, shown as "~N"
+        var arrive: Double    // epoch seconds the train reaches the station; the UI derives minutes and leave-by from it
     }
     var station: String
     var walkMin: Int
+    var walkSec: Double   // walk to the station in seconds (walkMin is this, rounded)
     var rows: [Row]
     var ts: Double
 }
@@ -202,7 +204,8 @@ struct StartSubwayActivityIntent: LiveActivityStartingIntent {
     @available(iOS 17.0, *)
     @MainActor
     private static func run(statePath: String, out: String, payloadPath: String) async throws {
-        let state = try JSONDecoder().decode(SubwayState.self, from: Data(contentsOf: URL(fileURLWithPath: statePath)))
+        // The saved response is old by the time CI runs; shift its absolute times so the board shows live-looking rows.
+        let state = try JSONDecoder().decode(SubwayState.self, from: Data(contentsOf: URL(fileURLWithPath: statePath))).rebased(to: Date().timeIntervalSince1970)
         log(out, "enabled=\(ActivityAuthorizationInfo().areActivitiesEnabled)")
         // No push type: `.token` needs the aps-environment entitlement, which the unsigned simulator build lacks.
         let activity = try await SubwayActivity.start(state: state, pushType: nil)
@@ -219,7 +222,7 @@ struct StartSubwayActivityIntent: LiveActivityStartingIntent {
             do {
                 let env = try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: URL(fileURLWithPath: payloadPath)))
                 log(out, "payload-decoded \(summary(env.aps.state))")
-                await activity.update(.init(state: env.aps.state, staleDate: nil))
+                await activity.update(.init(state: env.aps.state.rebased(to: Date().timeIntervalSince1970), staleDate: nil))
             } catch {
                 log(out, "DECODE-FAIL \(error)")
             }
@@ -232,7 +235,82 @@ extension SubwayState.Row {
     var minsLabel: String { sched ? "~\(mins)" : "\(mins)" }
 }
 
+/// How urgent leaving for a train is. Drives the colour of the leave-by text, the ring and the row tint.
+enum SubwayUrgency: Equatable {
+    case now    // leave-by is now or past: red
+    case soon   // within 2 min: orange
+    case ok     // more than 2 min to spare: green
+}
+
+/// Everything the redesigned rows show, computed from absolute times so it stays right between server pushes.
+struct SubwayTiming: Equatable {
+    let minsToTrain: Int       // number inside the ring: whole minutes until the train arrives
+    let leaveInSec: Double     // seconds until you must leave (negative = already late)
+    let fraction: Double       // ring fill: share of the walk time still available, 0 (leave now) ... 1 (>= walk to spare)
+    let urgency: SubwayUrgency
+    var leaveNow: Bool { leaveInSec <= 0 }
+
+    static let soonThresholdSec: Double = 120
+    /// Server verdict() treats up to 60 s late as "run"; later than that is a miss and the row is dropped.
+    static let lateGraceSec: Double = 60
+
+    init(arrive: Double, walkSec: Double, now: Double) {
+        minsToTrain = max(0, Int(((arrive - now) / 60).rounded(.down)))
+        leaveInSec = arrive - walkSec - now
+        fraction = walkSec > 0 ? min(max(leaveInSec / walkSec, 0), 1) : (leaveInSec > 0 ? 1 : 0)
+        urgency = leaveInSec <= 0 ? .now : (leaveInSec <= Self.soonThresholdSec ? .soon : .ok)
+    }
+}
+
+extension SubwayState.Row {
+    func timing(walkSec: Double, now: Double) -> SubwayTiming {
+        SubwayTiming(arrive: arrive, walkSec: walkSec, now: now)
+    }
+    /// Departure time as a clock string ("4:46", no am/pm like the design).
+    func clock(timeZone: TimeZone = .current) -> String { subwayClock(arrive, timeZone) }
+    /// Leave-by clock string, or "Now" once it is due.
+    func leaveLabel(walkSec: Double, now: Double, timeZone: TimeZone = .current) -> String {
+        timing(walkSec: walkSec, now: now).leaveNow ? "Now" : subwayClock(arrive - walkSec, timeZone)
+    }
+}
+
+func subwayClock(_ epoch: Double, _ timeZone: TimeZone = .current) -> String {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.timeZone = timeZone
+    f.dateFormat = "h:mm"
+    return f.string(from: Date(timeIntervalSince1970: epoch))
+}
+
+/// Short destination for the small widget ("Jamaica Center" -> "Jamaica Ctr").
+func subwayShortDest(_ dest: String) -> String {
+    var d = dest
+    for (long, short) in [("Center", "Ctr"), ("Village", "Vlg"), ("Street", "St"), ("Avenue", "Av"), ("Boulevard", "Blvd")] {
+        d = d.replacingOccurrences(of: long, with: short)
+    }
+    return d
+}
+
 extension SubwayState {
+    /// Same state with every absolute time shifted so `ts` becomes `now` (CI replays saved server responses).
+    func rebased(to now: Double) -> SubwayState {
+        var s = self
+        let d = now - ts
+        s.ts = now
+        s.rows = rows.map { var r = $0; r.arrive += d; return r }
+        return s
+    }
+
+    /// Rows still catchable at `now`: soonest per line+destination, minus trains you can no longer reach (more than
+    /// the server's 60 s of grace past leave-by), soonest leave-by first.
+    func catchable(now: Double) -> [Row] {
+        var seen = Set<String>()
+        return rows
+            .filter { $0.arrive - walkSec - now >= -SubwayTiming.lateGraceSec }
+            .sorted { $0.arrive < $1.arrive }
+            .filter { seen.insert($0.line + $0.dest).inserted }
+    }
+
     /// Soonest train per line+destination (the server sends the next two of each), so one busy line cannot crowd
     /// the others out of a small UI.
     var topPerLine: [Row] {
