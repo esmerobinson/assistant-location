@@ -46,25 +46,112 @@ var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct',
 var WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 var KIND = { focus: 'Focus', kudos: 'Kudos', truth: 'Truth', ask: 'Ask' };
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-// Renders a challenge-day note as HTML: **text** → bold, "• " lines → <li>, "## " lines → <h3>, newlines → paragraph breaks.
-// Used in both the log list and the read-only view sheet so they always match.
-function noteHtml(note) {
-  var lines = esc(note).split('\n');
-  var out = [], inUl = false;
-  for (var i = 0; i < lines.length; i++) {
-    var ln = lines[i].replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    if (ln.slice(0, 3) === '## ') {
-      if (inUl) { out.push('</ul>'); inUl = false; }
-      out.push('<h3 class="nlogh">' + ln.slice(3) + '</h3>');
-    } else if (ln.slice(0, 2) === '• ') {
-      if (!inUl) { out.push('<ul class="nlog">'); inUl = true; }
-      out.push('<li>' + ln.slice(2) + '</li>');
-    } else {
-      if (inUl) { out.push('</ul>'); inUl = false; }
-      out.push('<p class="nlogp">' + ln + '</p>');
-    }
+// ---- challenge-day notes (the Esmeworld exercise log) --------------------------------------------------------------
+// A note is plain text. Optional structure: first line = short summary; "## X" = section (Mental Health Exercise, Research
+// notes, Check In, anything else); "### X" = one exercise card; a line that is wholly **bold** = a question, and the lines
+// under it (until the next question or heading) = the answer; "• " / "- " = list item. Anything else is a plain line.
+// Every shape degrades to plain paragraphs, so an old note or a hand-typed one still reads. All text is escaped here.
+function noteInline(s) { return esc(s).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>'); }
+// "Fake book · Day 6 · Some title": the old format listed exercise titles as plain lines; shown as small headings.
+function noteTitleLine(s) { return s.indexOf(' · ') > 0 && s.length <= 90 && !/[.?!:]$/.test(s); }
+function parseNote(note) {
+  var lines = String(note == null ? '' : note).replace(/\r/g, '').split('\n');
+  var structured = lines.some(function (l) { return /^##\s/.test(l.trim()); });
+  var m = { summary: '', pre: [], sections: [], structured: structured };
+  var sec = null, card = null, q = null, ex = null;
+  function exHost() {
+    if (ex) return ex;
+    ex = { title: 'Mental Health Exercise', kind: 'ex', items: [], cards: [], research: null };
+    m.sections.push(ex); return ex;
   }
-  if (inUl) out.push('</ul>');
+  function target() { return card ? card.items : sec ? sec.items : m.pre; }
+  lines.forEach(function (raw, i) {
+    var l = raw.trim(), h;
+    if (structured && !m.summary && i === 0 && l && !/^#/.test(l)) { m.summary = l; return; }
+    if ((h = /^#{3,}\s+(.*)$/.exec(l))) {
+      // A card always belongs to the exercise section, even when it follows "## Research notes".
+      var host = sec && sec.kind !== 'research' ? sec : exHost();
+      card = { title: h[1], items: [] }; host.cards.push(card); q = null; return;
+    }
+    if ((h = /^##\s+(.*)$/.exec(l))) {
+      var t = h[1], kind = /research/i.test(t) ? 'research' : /check.?in/i.test(t) ? 'checkin' : /exercise/i.test(t) ? 'ex' : 'other';
+      card = null; q = null;
+      if (kind === 'research') { var e = exHost(); e.research = e.research || []; sec = { kind: 'research', items: e.research, cards: [] }; return; }
+      if (kind === 'ex' && ex && !ex.cards.length && !ex.items.length) { sec = ex; ex.title = t; return; }
+      sec = { title: t, kind: kind, items: [], cards: [] }; m.sections.push(sec);
+      if (kind === 'ex' && !ex) ex = sec;
+      return;
+    }
+    var qm = /^\*\*(.+)\*\*:?$/.exec(l);
+    if (qm && qm[1].indexOf('**') < 0) {
+      // Questions under "## Research notes" are the exercise's own questions (older notes put them there).
+      if (sec && sec.kind === 'research' && !card) { sec = exHost(); }
+      q = { q: qm[1], a: [] }; target().push(q); return;
+    }
+    if (!l) return;
+    var li = /^(?:•|-)\s+(.*)$/.exec(l), it = li ? { li: li[1] } : { p: l };
+    if (q) q.a.push(it); else target().push(it);
+  });
+  return m;
+}
+// Every question in the note and how many have an answer.
+function noteQs(m) {
+  var all = [];
+  function walk(items) { items.forEach(function (x) { if (x.q != null) all.push(x); }); }
+  walk(m.pre); m.sections.forEach(function (s) { walk(s.items); s.cards.forEach(function (c) { walk(c.items); }); });
+  return { total: all.length, answered: all.filter(function (x) { return x.a.length; }).length };
+}
+function noteCards(m) { return m.sections.reduce(function (n, s) { return n + s.cards.length; }, 0); }
+// One-line summary for the day list: counted from the cards when there are any, else the note's own first line.
+function noteSummary(note) {
+  var m = parseNote(note), n = noteCards(m), ck = m.sections.some(function (s) { return s.kind === 'checkin'; });
+  if (n) return n + (n === 1 ? ' exercise' : ' exercises') + (ck ? ' · Check In' : '');
+  return m.summary || String(note || '').split('\n')[0];
+}
+// '' (no questions), 'in' (every question answered) or 'pend'.
+function noteState(m) { var c = noteQs(m); return !c.total ? '' : c.answered === c.total ? 'in' : 'pend'; }
+function rdItems(items) {
+  var out = [], ul = false;
+  function close() { if (ul) { out.push('</ul>'); ul = false; } }
+  items.forEach(function (x) {
+    if (x.li != null) { if (!ul) { out.push('<ul class="rdul">'); ul = true; } out.push('<li>' + noteInline(x.li) + '</li>'); return; }
+    close();
+    if (x.p != null) { out.push(noteTitleLine(x.p) ? '<p class="rdh">' + noteInline(x.p) + '</p>' : '<p class="rdp">' + noteInline(x.p) + '</p>'); return; }
+    out.push('<div class="rdqa"><p class="rdq">' + esc(x.q) + '</p>' + (x.a.length
+      ? '<div class="rda">' + rdItems(x.a) + '</div>'
+      : '<p class="rdpend">' + ic('hg') + 'Answer arrives later</p>') + '</div>');
+  });
+  close();
+  return out.join('');
+}
+function rdCard(title, items, k, n, shut) {
+  var qs = items.filter(function (x) { return x.q != null; }), done = qs.filter(function (x) { return x.a.length; }).length;
+  var hd = title == null ? '' : '<div class="rdch" data-a="rdcard:' + k + '">' + (n ? '<span class="rdn">' + n + '</span>' : '') + '<p class="rdt">' + noteInline(title) + '</p>' + ic('down', 'rdcv') + '</div>';
+  var sub = shut && qs.length ? '<p class="rdcs">' + (done === qs.length ? qs.length + (qs.length === 1 ? ' answer' : ' answers') : done + ' of ' + qs.length + ' answered') + '</p>' : '';
+  return '<div class="rdcard' + (shut ? ' shut' : '') + '">' + hd + sub + (shut ? '' : '<div class="rdcb">' + rdItems(items) + '</div>') + '</div>';
+}
+// The day sheet's reading page. ui.rdShut holds the cards folded on this open (keys from rdCard).
+function noteReader(note) {
+  var m = parseNote(note), shut = ui.rdShut || {}, out = [];
+  if (!m.structured) return '<div class="rdcard"><div class="rdcb">' + (rdItems(m.pre) || '<p class="rdp">' + esc(note) + '</p>') + '</div></div>';
+  if (m.pre.length) out.push('<div class="rdcard"><div class="rdcb">' + rdItems(m.pre) + '</div></div>');
+  m.sections.forEach(function (s, si) {
+    var body = [];
+    if (s.kind === 'ex') {
+      var r = s.research || [];
+      body.push('<div class="rdres"><p class="lab">Research notes</p>' + (r.length ? rdItems(r) : '<p class="rdnone">No research notes this day</p>') + '</div>');
+      var items = s.items, title = null;
+      // Old single-exercise notes: "Day 1 · Topic" then its questions, with no ### card. Give it the card look.
+      if (!s.cards.length && items.length && items[0].p != null && items.some(function (x) { return x.q != null; })) { title = items[0].p; items = items.slice(1); }
+      if (items.length) body.push(rdCard(title, items, si + '-0', 0, title != null && shut[si + '-0']));
+      var total = s.cards.length;
+      s.cards.forEach(function (c, ci) { var k = si + '-' + (ci + 1); body.push(rdCard(c.title, c.items, k, total > 1 ? (ci + 1) + '/' + total : 0, shut[k])); });
+    } else if (s.items.length || s.cards.length) {
+      if (s.items.length) body.push(rdCard(null, s.items, si + '-0', 0, false));
+      s.cards.forEach(function (c, ci) { var k = si + '-' + (ci + 1); body.push(rdCard(c.title, c.items, k, 0, shut[k])); });
+    } else body.push('<p class="rdnone">Nothing here this day</p>');
+    out.push('<section class="rdsec"><p class="lab">' + esc(s.title) + '</p>' + body.join('') + '</section>');
+  });
   return out.join('');
 }
 function ic(id, cls) { return '<svg class="ic ' + (cls || '') + '"><use href="#' + id + '"/></svg>'; }
@@ -970,13 +1057,23 @@ function todayBreak(chId, mineOnly) {
   var b = todayBreakRow(chId);
   return b && !b.deleted_at && (!mineOnly || b.by === St.me()) ? b : null;
 }
+// A logged day in the goal challenge's list: date and the one-line summary, with whether the answers are in yet.
+function logRowHtml(x) {
+  var st = noteState(parseNote(x.note));
+  return '<div class="rdrow" data-a="chlogview:' + esc(x.id) + '"><div class="mid"><p class="rdl1"><b>' + dayName(x.day) + ' ' + fmtShort(x.day) + '</b><span>' + esc(noteSummary(x.note)) + '</span></p>' +
+    (st ? '<p class="s rdst' + (st === 'pend' ? ' pend' : '') + '">' + (st === 'in' ? 'Answers in' : 'Answers pending') + '</p>' : '') + '</div>' + ic('chevr', 'chv') + '</div>';
+}
+function logViewHead(row) {
+  var m = parseNote(row.note), st = noteState(m), sum = m.structured ? noteSummary(row.note) : '';
+  return '<div class="bsh"><div class="rdhd"><h3>' + dayName(row.day) + ' ' + fmtShort(row.day) + '</h3>' + (sum || st ? '<p class="rdmeta">' + (sum ? '<span>' + esc(sum) + '</span>' : '') + (st ? '<span class="rdst' + (st === 'pend' ? ' pend' : '') + '">' + (st === 'in' ? 'Answers in' : 'Answers pending') + '</span>' : '') + '</p>' : '') + '</div><span class="xb" data-a="sheet:close">&#x2715;</span></div>';
+}
 SCREEN.challenge = function () {
   var c = ledger().challenges.filter(function (x) { return x.id === ui.chId; })[0];
   if (!c) return bounce('progress');
   var tap = c.breaks_on === 'tap', goal = c.breaks_on === 'goal';
   var logRow = ui.sheet && ui.sheet.id ? S.rows.challenge_days[ui.sheet.id] : null;
   var sh = ui.sheet && ui.sheet.type === 'chlog' ? sheet('t3', '<div class="bsh"><h3>Log today</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Note</p>' + micField('chlognote', 'What did you do?') + '<div class="acts" style="margin-top:44px"><div class="save" data-a="chlogsave">Save</div></div>')
-    : ui.sheet && ui.sheet.type === 'chlogview' && logRow ? sheet('t3 nlogview', '<div class="bsh"><h3>' + fmtShort(logRow.day) + '</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><div class="nlogbody">' + noteHtml(logRow.note) + '</div><div class="acts" style="margin-top:44px"><div class="save" data-a="chlogedit:' + esc(logRow.id) + '">Edit</div></div>')
+    : ui.sheet && ui.sheet.type === 'chlogview' && logRow ? sheet('t3 nlogview', logViewHead(logRow) + '<div class="rdbody" data-k="' + esc(logRow.id) + '">' + noteReader(logRow.note) + '</div><div class="acts"><div class="save" data-a="chlogedit:' + esc(logRow.id) + '">Edit</div></div>')
     : ui.sheet && ui.sheet.type === 'chlogedit' && logRow ? sheet('t3', '<div class="bsh"><h3>' + fmtShort(logRow.day) + '</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Note</p>' + micField('chlognote', 'What did you do?') + '<div class="acts" style="margin-top:44px"><div class="save" data-a="chlogeditsave">Save</div><div class="tdrop" data-a="chlogdelq">Delete</div></div>')
     : ui.sheet && ui.sheet.type === 'chlogdel' && logRow ? sheet('t3', '<div class="bsh"><h3>Delete ' + fmtShort(logRow.day) + '?</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><div class="acts" style="margin-top:44px"><div class="save" data-a="chlogdel">Delete</div><div class="tdrop" data-a="sheet:close">Cancel</div></div>')
     : ui.sheet && ui.sheet.type === 'broke' ? sheet('t3', '<div class="bsh"><h3>Broke it</h3><span class="xb" data-a="sheet:close">&#x2715;</span></div><p class="lab">Note</p>' + inp('brnote', 'Optional').replace('class="inp"', 'class="inp fill"') + '<div class="acts" style="margin-top:44px"><div class="save" data-a="brsave">Save</div></div>')
@@ -986,7 +1083,7 @@ SCREEN.challenge = function () {
   var notes = L('challenge_days').filter(function (x) { return x.challenge_id === c.id && !x.deleted_at; }).sort(function (a, b) { return a.day < b.day ? 1 : -1; });
   function goalBody() { var open = c.opens <= today(); return '<p class="rule">' + esc(c.rule || '') + '</p>' + (c.accepted && open
     ? '<div class="four g">' + stat('Days', c.count + '/' + c.goal_days) + stat('Due', monDay(c.deadline)) + stat('Reward', sg(c.goal_earn)) + stat('Miss', sg(-c.goal_miss)) + '</div>' + challengeCal(c, today()) +
-      notes.map(function (x) { var preview = x.note.replace(/\n[\s\S]*/,''); return '<p class="rule" data-a="chlogview:' + esc(x.id) + '"><b>' + fmtShort(x.day) + '</b> ' + esc(preview) + '</p>'; }).join('') +
+      (notes.length ? '<div class="rdlist">' + notes.map(logRowHtml).join('') + '</div>' : '') +
       (c.for_user === St.me() && c.status === 'active' && !c.logged_today ? '<div class="pin"><div class="save" data-a="chlog">Log today</div></div>' : '')
     : '<div class="four g">' + stat(open ? 'Days' : 'Starts', open ? '0/' + c.goal_days : monDay(c.opens)) + stat('Due', monDay(c.deadline)) + stat('Reward', sg(c.goal_earn)) + stat('Miss', sg(-c.goal_miss)) + '</div>' + (c.accepted ? '' : c.for_user === St.me() ? '<div class="save" data-a="chaccept">Accept</div>' : '<p class="lab">Waiting for ' + esc(nameOf(c.for_user)) + '</p>')); }
   // Ping: only on the partner's challenge, until it is done or failed (not started counts). Pinned with Broke it when both show.
@@ -1487,7 +1584,10 @@ function render() {
     console.error('cycle screen failed:', name, e);
     html = errScreen(true);
   }
+  var rb = document.querySelector('.rdbody'), rbk = rb && rb.getAttribute('data-k'), rbt = rb ? rb.scrollTop : 0;
   app.innerHTML = html;
+  // The day reading sheet scrolls inside .rdbody; a sync or the 15s repaint must not throw the reader back to the top.
+  var nrb = rbk && document.querySelector('.rdbody'); if (nrb && nrb.getAttribute('data-k') === rbk) nrb.scrollTop = rbt;
   // The mic only lives while its field is on screen; with the field gone there is nowhere to put the words, so the recording is dropped.
   if (ui.rec && ui.rec.field !== 'talk' && !app.querySelector('[data-d="' + ui.rec.field + '"]')) guard(stopRec)();
   // Before scrollTop is restored below: a box still at its min height would make .scr too short and clamp it.
@@ -2307,7 +2407,9 @@ var ACT = {
       draftSent(); ui.sheet = null; ui.d = {}; render();
     });
   }),
-  chlogview: function (id) { ui.sheet = { type: 'chlogview', id: id }; render(); },
+  chlogview: function (id) { ui.sheet = { type: 'chlogview', id: id }; ui.rdShut = {}; render(); },
+  // Folds or unfolds one exercise card in the day reading sheet.
+  rdcard: function (k) { ui.rdShut = ui.rdShut || {}; ui.rdShut[k] = !ui.rdShut[k]; render(); },
   chlogedit: function (id) { ui.sheet = { type: 'chlogedit', id: id }; ui.d = { chlognote: S.rows.challenge_days[id].note }; render(); },
   chlogeditsave: guard(function () {
     var note = (ui.d.chlognote || '').trim(); if (!note) throw new Error('Note needed');

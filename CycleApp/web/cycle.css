@@ -403,13 +403,63 @@ label.pick{min-height:44px;display:inline-flex;align-items:center}
 .vhold-t[data-t=cancel]{background:#1a1a1a;color:#fff;border:2px solid #3a3a3a}
 .vhold-t[data-t=cancel].armed{background:#ff3b30;color:#fff;border-color:transparent}
 .cdet .rule[data-a]{cursor:pointer}
-/* Read-only note sheet: .nlogbody scrolls if the note is long; list and para styles match the entry format. */
-.bs.nlogview .nlogbody{overflow-y:auto;flex:1;padding:0 0 8px}
-.bs.nlogview .nlogp{margin:0 0 10px;font-size:15px;line-height:1.5;color:#e8e8e8}
-.bs.nlogview .nlogp:empty{margin:0 0 4px}
-.bs.nlogview ul.nlog{margin:0 0 10px;padding-left:20px}
-.bs.nlogview ul.nlog li{font-size:15px;line-height:1.5;color:#e8e8e8;margin-bottom:4px}
-.bs.nlogview .nlogh{margin:16px 0 6px;font-size:17px;font-weight:600;color:#fff}
+/* Goal challenge day list: one row per logged day, date + one-line summary (never wraps), answers hint under it. */
+.pts .rdlist{display:flex;flex-direction:column;margin-top:-8px}
+.pts .rdrow{display:flex;align-items:center;gap:12px;min-height:64px;padding:10px 0;border-bottom:1px solid #262626;cursor:pointer}
+.pts .rdrow:last-child{border-bottom:0}
+.pts .rdrow .mid{gap:4px}
+.pts .rdl1{display:flex;align-items:baseline;gap:10px;min-width:0;font-size:16px;line-height:1.3}
+.pts .rdl1 b{flex:none;font-weight:700}
+.pts .rdl1 span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8e8e8;font-weight:500}
+.pts .rdst{font-size:12px;letter-spacing:.1em}
+.pts .rdst.pend{color:var(--pk)}
+.pts .rdrow .chv{margin-left:0}
+
+/* Day reading sheet: a full-height page. The header and Edit stay put and .rdbody scrolls between them. */
+.sheetlayer .bs.nlogview{height:calc(100% - var(--st))!important;overflow:hidden;padding-bottom:0}
+.bs.nlogview .bsh{align-items:flex-start;gap:14px;margin-bottom:6px}
+.bs.nlogview .rdhd{flex:1;min-width:0;padding-top:6px}
+.bs.nlogview .rdmeta{display:flex;align-items:baseline;gap:12px;margin-top:8px;font-size:14px;line-height:1.35;color:var(--mu);font-weight:500;min-width:0}
+.bs.nlogview .rdmeta span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bs.nlogview .rdmeta .rdst{flex:none;font-size:12px;letter-spacing:.1em}
+.bs.nlogview .rdmeta .rdst{font-weight:700;text-transform:uppercase;color:var(--mu)}
+.bs.nlogview .rdmeta .rdst.pend{color:var(--pk)}
+.bs.nlogview .xb{flex:none}
+.sheetlayer .bs.nlogview > .rdbody{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;margin:0 -22px;padding:12px 22px 24px;display:flex;flex-direction:column;gap:28px;border-top:1px solid #262626}
+.bs.nlogview .acts{flex:none;margin:0 -22px;padding:12px 22px max(env(safe-area-inset-bottom),14px);border-top:1px solid #262626;background:#141414}
+.bs.nlogview .acts .save{margin:0!important}
+.bs.nlogview .rdsec{display:flex;flex-direction:column;gap:12px}
+.bs.nlogview .rdsec > .lab{margin-bottom:2px}
+/* Research notes: its own tinted box at the top of the exercise section, there even when empty. */
+.bs.nlogview .rdres{background:#1c1c1c;border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.bs.nlogview .rdres .lab{color:var(--mu)}
+.bs.nlogview .rdres .rdul li,.bs.nlogview .rdres .rdp{font-size:15px}
+.bs.nlogview .rdnone{font-size:14px;line-height:1.4;color:#8a8a8a}
+/* One exercise (or Check In) per card. The header folds it. */
+.bs.nlogview .rdcard{border:2px solid #2a2a2a;border-radius:20px;overflow:hidden}
+.bs.nlogview .rdch{display:flex;align-items:flex-start;gap:10px;padding:14px 16px 12px;cursor:pointer;border-bottom:1px solid #262626}
+.bs.nlogview .rdcard.shut .rdch{border-bottom:0;padding-bottom:6px}
+.bs.nlogview .rdn{flex:none;font-family:"Archivo Black",sans-serif;font-size:13px;line-height:21px;color:var(--pk)}
+.bs.nlogview .rdt{flex:1;min-width:0;font-size:16px;line-height:1.3;font-weight:700;color:#fff;overflow-wrap:anywhere}
+.bs.nlogview .rdcv{width:20px;height:20px;margin-top:1px;color:#6a6a6a;transition:transform .15s}
+.bs.nlogview .rdcard.shut .rdcv{transform:rotate(-90deg)}
+.bs.nlogview .rdcs{padding:0 16px 12px;font-size:13px;color:var(--mu)}
+.bs.nlogview .rdcb{padding:4px 16px 16px;display:flex;flex-direction:column}
+/* Question = small muted label; answer = large, light weight, full white. */
+.bs.nlogview .rdqa{padding:14px 0 2px}
+.bs.nlogview .rdqa + .rdqa{border-top:1px solid #262626;margin-top:12px}
+.bs.nlogview .rdq{font-size:13px;line-height:1.4;font-weight:700;color:var(--mu);margin-bottom:8px;overflow-wrap:anywhere}
+.bs.nlogview .rda .rdp,.bs.nlogview .rda .rdh,.bs.nlogview .rda .rdul li{font-size:18px;line-height:1.5;font-weight:500;color:#fff}
+.bs.nlogview .rda > * + *{margin-top:8px}
+.bs.nlogview .rdpend{display:inline-flex;align-self:flex-start;align-items:center;gap:6px;height:32px;padding:0 12px 0 10px;border:1.5px dashed #5e5e5e;border-radius:16px;font-size:13px;font-weight:700;color:var(--mu)}
+.bs.nlogview .rdpend .ic{width:16px;height:16px}
+.bs.nlogview .rdp{font-size:16px;line-height:1.5;font-weight:500;color:#e8e8e8;overflow-wrap:anywhere;padding-top:6px}
+.bs.nlogview .rda .rdp{padding-top:0}
+.bs.nlogview .rdh{font-size:15px;line-height:1.35;font-weight:700;color:#fff;padding-top:12px;overflow-wrap:anywhere}
+.bs.nlogview .rdul{list-style:none;display:flex;flex-direction:column;gap:6px}
+.bs.nlogview .rdul li{position:relative;padding-left:18px;font-size:16px;line-height:1.5;font-weight:500;color:#e8e8e8;overflow-wrap:anywhere}
+.bs.nlogview .rdul li::before{content:"";position:absolute;left:2px;top:.62em;width:6px;height:6px;border-radius:50%;background:var(--pk)}
+.bs.nlogview strong{font-weight:700}
 
 /* ---- Job tabs: Home / To-dos / Fights / Progress ---- */
 /* Four tabs share the bar, so each takes a quarter instead of the base 96px that fitted three. */
