@@ -1,6 +1,12 @@
-// Lock-screen / Control Center Control that opens Listen straight into
-// practice. The intent (PracticeIntent.swift) is compiled into this
-// extension AND the Listen app; see that file for the delivery design.
+// Two ways onto Listen's Practice from the lock screen, both in this one
+// extension:
+// - ListenPracticeControl: an iOS 18 Control (lock-screen corner buttons and
+//   Control Center). Runs ListenPracticeIntent (PracticeIntent.swift, compiled
+//   into this extension AND the app; see that file for the delivery design).
+// - ListenPracticeLockScreenWidget: an accessoryCircular widget for the widget
+//   row under the clock. That row's picker lists only widgets, never Controls,
+//   so without this Listen is absent from it (the Superapp's +/mic buttons
+//   there are widgets too, JournalLockScreenWidget.swift).
 
 import AppIntents
 import Foundation
@@ -9,8 +15,7 @@ import WidgetKit
 
 struct ListenPracticeControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        listenDebugLog("control body")
-        return StaticControlConfiguration(kind: "com.oliverullman.listen.practicecontrol") {
+        StaticControlConfiguration(kind: "com.oliverullman.listen.practicecontrol") {
             ControlWidgetButton(action: ListenPracticeIntent()) {
                 Label("Practice", systemImage: "rectangle.stack.fill")
             }
@@ -19,37 +24,56 @@ struct ListenPracticeControl: ControlWidget {
     }
 }
 
-@main
-struct ListenControlBundle: WidgetBundle {
-    init() { listenDebugLog("bundle init") }
+struct ListenPracticeEntry: TimelineEntry {
+    let date: Date
+}
 
-    var body: some Widget {
-        ListenPracticeControl()
+// Static content: the widget is a button, so one entry that never refreshes.
+struct ListenPracticeProvider: TimelineProvider {
+    func placeholder(in context: Context) -> ListenPracticeEntry { ListenPracticeEntry(date: Date()) }
+    func getSnapshot(in context: Context, completion: @escaping (ListenPracticeEntry) -> Void) {
+        completion(ListenPracticeEntry(date: Date()))
+    }
+    func getTimeline(in context: Context, completion: @escaping (Timeline<ListenPracticeEntry>) -> Void) {
+        completion(Timeline(entries: [ListenPracticeEntry(date: Date())], policy: .never))
     }
 }
 
-// TEMPORARY: reports when iOS launches this extension and asks it for its
-// control, to find out why "Listen Practice" never appeared in the control
-// gallery. No log line at all = iOS never launches the extension (registration
-// problem); "bundle init" with no "control body" = it launches but the control
-// isn't read. Lines show in `journalctl --user -u assistant-location` as
-// "[JOURNAL DEBUG] listen-control ...". The host is a placeholder that
-// ota-listen.yml seds to DROP_HOST (the repo is public). Delete this, the sed
-// and the ATS key in Info.plist once the gallery problem is solved.
-private let listenDebugHost = "NO_HOST_BAKED_IN"
+// <app bundle id>://practice, the same URL the Control opens. A widget tap
+// goes through the OS deep-link path straight to the app's
+// application:openURL:options: (ListenAppDelegate.m), cold launch included.
+// The scheme is derived from this extension's id so the guest copy
+// (com.oliverullman.listenguest.practice) opens the guest app, never the
+// personal one.
+private let practiceURL: URL = {
+    let id = Bundle.main.bundleIdentifier!
+    let app = id.hasSuffix(".practice") ? String(id.dropLast(".practice".count)) : id
+    return URL(string: "\(app)://practice")!
+}()
 
-func listenDebugLog(_ message: String) {
-    // Compares the suffix, not the full sentinel: the CI post-bake grep would
-    // otherwise match the sentinel in this line.
-    guard !listenDebugHost.hasSuffix("BAKED_IN") else { return }
-    var comps = URLComponents()
-    comps.scheme = "http"
-    comps.host = listenDebugHost
-    comps.port = 8302
-    comps.path = "/debug-log"
-    let info = ProcessInfo.processInfo
-    comps.queryItems = [URLQueryItem(name: "msg", value: "listen-control \(message) [proc=\(info.processName) os=\(info.operatingSystemVersionString)]")]
-    var req = URLRequest(url: comps.url!)
-    req.timeoutInterval = 3
-    URLSession.shared.dataTask(with: req).resume()
+struct ListenPracticeLockScreenWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "com.oliverullman.listen.practicecircle", provider: ListenPracticeProvider()) { _ in
+            // AccessoryWidgetBackground gives the filled circle the Superapp's
+            // lock-screen buttons have; lock-screen widgets render monochrome.
+            ZStack {
+                AccessoryWidgetBackground()
+                Image(systemName: "rectangle.stack.fill")
+                    .font(.title2)
+            }
+            .widgetURL(practiceURL)
+            .widgetAccentable()
+        }
+        .configurationDisplayName("Listen Practice")
+        .description("Open Listen straight into practice.")
+        .supportedFamilies([.accessoryCircular])
+    }
+}
+
+@main
+struct ListenControlBundle: WidgetBundle {
+    var body: some Widget {
+        ListenPracticeControl()
+        ListenPracticeLockScreenWidget()
+    }
 }

@@ -64,11 +64,6 @@ jobs:
           grep -q NO_HOST_BAKED_IN ListenApp/ListenBakedConfig.h \
             && { echo "host placeholder survived the bake"; exit 1; } || true
           echo "ListenBakedConfig.h written"
-          # TEMPORARY: debug-log host for ListenControl/ListenControlBundle.swift.
-          sed -i '' "s/^private let listenDebugHost = .*/private let listenDebugHost = \"$DROP_HOST\"/" ListenControl/ListenControlBundle.swift
-          grep -q '^private let listenDebugHost = "NO_HOST' ListenControl/ListenControlBundle.swift \
-            && { echo "debug host placeholder survived the bake"; exit 1; } || true
-
       - name: Build Listen ad-hoc ipa
         env:
           FASTLANE_APPLE_ID: ${{ secrets.FASTLANE_APPLE_ID }}
